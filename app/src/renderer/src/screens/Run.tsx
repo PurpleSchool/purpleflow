@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
@@ -220,7 +220,9 @@ export function RunScreen({ runId }: { runId: string }) {
             ]}
           />
           <span className="grow" />
-          <span className="muted tab-hint">{view === 'timeline' ? 'Нажмите на стадию, чтобы открыть детали' : ''}</span>
+          {view === 'timeline' && (
+            <span className="tab-hint"><MousePointerClick size={14} /> Нажмите на стадию — откроются её детали</span>
+          )}
         </div>
 
         <Banner run={run} />

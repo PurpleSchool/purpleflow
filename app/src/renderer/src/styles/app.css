@@ -891,3 +891,31 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .gantt.is-large .gantt-row.is-click { padding-top: 6px; padding-bottom: 6px; }
 .run-v3 .banner { margin-top: var(--s-4); }
 .drawer .gate-text { min-width: 0; }
+
+/* ——— Строки ганта явно кликабельны ——— */
+.gantt.is-large .gantt-row.is-click { grid-template-columns: 220px 1fr 76px; cursor: pointer; }
+.gantt.is-large .gantt-row.is-click:disabled { cursor: default; }
+.gantt-go { display: flex; align-items: center; justify-content: flex-end; gap: 2px; color: var(--text-4); font-size: var(--fs-12); transition: color 0.25s var(--ease); }
+.gantt-go span { opacity: 0; transform: translateX(6px); transition: opacity 0.25s var(--ease), transform 0.35s var(--ease); }
+.gantt-go svg { transition: transform 0.35s var(--ease); }
+.gantt-row.is-click:disabled .gantt-go { visibility: hidden; }
+.gantt-row.is-click:hover:not(:disabled) .gantt-go, .gantt-row.is-selected .gantt-go { color: var(--text-1); }
+.gantt-row.is-click:hover:not(:disabled) .gantt-go span { opacity: 1; transform: none; }
+.gantt-row.is-click:hover:not(:disabled) .gantt-go svg { transform: translateX(3px); }
+.gantt-row.is-click:hover:not(:disabled) .gantt-bar { filter: brightness(1.18); }
+.gantt-row.is-click:hover:not(:disabled) .gantt-name > span { color: var(--text-1); }
+.gantt-row.is-click:active:not(:disabled) { transform: scale(0.995); }
+.gantt.is-large .gantt-grid, .gantt.is-large .gantt-gaps { right: 88px; }
+.gantt.is-large .gantt-axis, .gantt-legend { margin-right: 88px; }
+.tab-hint { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-pill); background: var(--bg-2); color: var(--text-3); font-size: var(--fs-12); }
+.tab-hint svg { color: var(--text-2); }
+
+/* Первая подсказка: строка текущей стадии один раз мягко подсвечивается */
+.gantt-row.is-current:not(.is-selected) { animation: rowHint 1.6s var(--ease) 0.7s 1 both; }
+@keyframes rowHint {
+  0% { background: transparent; }
+  35% { background: rgba(255, 255, 255, 0.06); }
+  100% { background: transparent; }
+}
+.gantt-go { color: var(--text-3); }
+.gantt-go svg { width: 18px; height: 18px; }

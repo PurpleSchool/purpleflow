@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import type { RunFile, StageId } from '@psflow/core';
 import { STAGES, nodeState } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
@@ -85,6 +86,10 @@ export function Timeline({ run, onSelect, selected = null, current = null }: {
                   </i>
                 );
               })}
+            </span>
+            <span className="gantt-go" aria-hidden>
+              <span>Детали</span>
+              <ChevronRight size={16} />
             </span>
           </button>
         );
