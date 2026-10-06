@@ -1007,3 +1007,8 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 @media (prefers-reduced-motion: reduce) {
   .split, .gantt.is-large .gantt-row.is-click { transition: none; }
 }
+
+/* Строка статуса: все элементы одной высоты */
+.run-meta { --meta-h: 30px; align-items: center; }
+.run-meta .pill, .run-meta .chip, .run-meta .merge-inline .select, .run-meta .merge-btn.btn { height: var(--meta-h); box-sizing: border-box; }
+.run-meta .pill, .run-meta .chip { padding-top: 0; padding-bottom: 0; }
