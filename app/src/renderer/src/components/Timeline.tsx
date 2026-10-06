@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RunFile, StageId } from '@psflow/core';
-import { STAGES } from '../lib/stages';
+import { STAGES, nodeState } from '../lib/stages';
+import { STAGE_ICON } from './StageRail';
 import { activeClock, ms } from '../lib/clock';
 import { isGate, stageBars, type BarKind } from '../lib/bars';
 
@@ -24,7 +25,16 @@ export function useNow(run: RunFile): number {
 }
 
 /** Большой гант: строка на стадию, полоска на попытку; ожидание человека — штриховкой. */
-export function Timeline({ run, onSelect }: { run: RunFile; onSelect?: (s: StageId) => void }) {
+const WORD: Record<string, string> = {
+  idle: 'впереди', active: 'работает', waiting: 'ждёт вас', done: 'готово', failed: 'ошибка', stopped: 'остановлено', stale: 'будет повторено',
+};
+
+/** Сколько символов влезает в полоску: ширина трека ~ 1100px, моноширинный 11px ≈ 7px на символ. */
+const fits = (widthPct: number, text: string) => (widthPct / 100) * 1100 > text.length * 7 + 18;
+
+export function Timeline({ run, onSelect, selected = null, current = null }: {
+  run: RunFile; onSelect?: (s: StageId) => void; selected?: StageId | null; current?: StageId | null;
+}) {
   const now = useNow(run);
   const clock = activeClock(run, now);
   const span = Math.max(1000, clock.total);
@@ -44,19 +54,39 @@ export function Timeline({ run, onSelect }: { run: RunFile; onSelect?: (s: Stage
       )}
       {STAGES.map((st) => {
         const bars = stageBars(run, clock, st.id, now, 0.4);
+        const state = nodeState(run, st.id);
+        const reachable = bars.length > 0 || st.id === run.next;
+        const tries = bars.filter((b) => !b.attempt.stage.startsWith('gate') && b.attempt.stage !== 'limit').length;
         return (
-          <div key={st.id} className="gantt-row">
-            <button className="gantt-label" title={`Открыть «${st.title}»`} onClick={() => onSelect?.(st.id)} disabled={!bars.length}>
-              {st.title}
-            </button>
-            <span className="gantt-track">
-              {bars.map((b, i) => (
-                <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: `${b.left}%`, width: `${b.width}%` }} title={b.tip}>
-                  {b.width > 7 && <b>{bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}{b.took}</b>}
-                </i>
-              ))}
+          <button
+            key={st.id}
+            className={`gantt-row is-click st-${state} ${selected === st.id ? 'is-selected' : ''} ${current === st.id ? 'is-current' : ''}`}
+            onClick={() => onSelect?.(st.id)}
+            disabled={!reachable}
+            title={reachable ? `Открыть детали «${st.title}»` : st.hint}
+          >
+            <span className="gantt-label">
+              <span className={`gantt-node ${st.gate ? 'is-gate-node' : ''}`}>
+                {STAGE_ICON[st.id]}
+                {current === st.id && <span className="tab-live" />}
+              </span>
+              <span className="gantt-name">
+                <span>{st.title}{tries > 1 && <em> ×{tries}</em>}</span>
+                <small className={`w-${state}`}>{WORD[state]}</small>
+              </span>
             </span>
-          </div>
+            <span className="gantt-track">
+              {bars.map((b, i) => {
+                const full = `${bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}${b.took}`;
+                const label = fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
+                return (
+                  <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: `${b.left}%`, width: `${b.width}%` }} title={b.tip}>
+                    {label && <b>{label}</b>}
+                  </i>
+                );
+              })}
+            </span>
+          </button>
         );
       })}
       <div className="gantt-axis">
