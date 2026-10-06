@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, Maximize2, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
-import { StageRail } from '../components/StageRail';
+import { STAGE_ICON, StageRail } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
-import { Timeline, TimelinePanel } from '../components/Timeline';
+import { TimelinePanel, useNow } from '../components/Timeline';
+import { isGate } from '../lib/bars';
+import { STAGES } from '../lib/stages';
 import { activeClock, ms } from '../lib/clock';
-import { LiveLog } from '../components/Terminal';
+import { LiveLog, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
 import { Button, Empty, StatusPill, TextArea } from '../components/ui';
@@ -15,19 +17,32 @@ import { onCoreEvent, useStore } from '../lib/store';
 import { cost, duration, shortPath, tokens, usageTotal } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 
-type Tab = 'timeline' | 'log' | 'plan' | 'tests' | 'review' | 'accept';
+type View = 'stage' | 'timeline' | 'log';
 
-const TAB_FOR: Record<StageId, Tab> = {
-  plan: 'plan', gate1: 'plan', implement: 'log', tests: 'tests', review: 'review', gate2: 'accept', limit: 'log', finish: 'accept',
-};
+/** Заголовок попытки в файле лога (orchestrator STAGE_TITLES). */
+const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализация', finish: 'Завершение' };
+
+/** Стадия, на которой прогон сейчас (или итоговая — для завершённого). */
+function currentStage(run: RunFile): StageId {
+  if (run.status === 'finished') return 'gate2';
+  if (run.next === 'limit') {
+    const last = [...run.attempts].reverse().find((a) => a.stage === 'tests' || a.stage === 'review');
+    return last?.stage ?? 'tests';
+  }
+  return run.next;
+}
 
 const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 export function RunScreen({ runId }: { runId: string }) {
   const { state, loadRun } = useStore();
   const run = state.details[runId];
-  const [tab, setTab] = useState<Tab>('log');
-  const [selected, setSelected] = useState<StageId | null>(null);
+  const [view, setView] = useState<View>('stage');
+  const [stage, setStage] = useState<StageId>('plan');
+  /** Следить за текущей стадией: панель сама переключается, когда прогон идёт дальше. */
+  const [follow, setFollow] = useState(true);
+  /** Выбранная попытка стадии; null — последняя. */
+  const [attemptNo, setAttemptNo] = useState<number | null>(null);
   const [docs, setDocs] = useState<ChangeDocs | null>(null);
   const [diff, setDiff] = useState<DiffFile[] | null>(null);
   const [diffErr, setDiffErr] = useState<string | null>(null);
@@ -35,50 +50,81 @@ export function RunScreen({ runId }: { runId: string }) {
   const [lineComments, setLineComments] = useState<LineComment[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const lastNext = useRef<string>('');
 
   useEffect(() => {
     void loadRun(runId);
-    setTab('log');
-    setSelected(null);
+    setView('stage');
+    setFollow(true);
+    setAttemptNo(null);
     setDocs(null);
     setDiff(null);
     setComment('');
     setLineComments([]);
     setError(null);
-    lastNext.current = '';
   }, [runId, loadRun]);
 
-  // Вкладка следует за прогоном: гейт 1 → план, гейт 2 → приёмка.
+  const cur = run ? currentStage(run) : 'plan';
   useEffect(() => {
-    if (!run) return;
-    const key = `${run.next}:${run.status}`;
-    if (key === lastNext.current) return;
-    lastNext.current = key;
-    if (run.status === 'waiting' && run.next === 'gate1') setTab('plan');
-    else if (run.status === 'waiting' && run.next === 'gate2') setTab('accept');
-    else if (run.status === 'finished') setTab('accept');
-    else if (run.status === 'running') setTab('log');
-    setSelected(null);
-  }, [run]);
+    if (!run || !follow) return;
+    setStage(cur);
+    setView('stage');
+    setAttemptNo(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur, run?.status, follow]);
+
+  const shows = (s: StageId) => view === 'stage' && stage === s;
+  const showPlan = shows('plan') || shows('gate1');
+  const showDiff = shows('gate2') || shows('limit');
 
   const refreshDocs = () => window.psflow.core.getChangeDocs(runId).then(setDocs).catch(() => setDocs(null));
   const refreshDiff = () => {
     setDiffErr(null);
     return window.psflow.core.getDiff(runId).then(setDiff).catch((e) => setDiffErr(cleanErr(e)));
   };
-
   useEffect(() => {
-    if (tab === 'plan' || tab === 'review') void refreshDocs();
-    if (tab === 'accept') void refreshDiff();
+    if (showPlan) void refreshDocs();
+    if (showDiff) void refreshDiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, runId, run?.next, run?.status]);
+  }, [showPlan, showDiff, runId, run?.next, run?.status]);
 
   // После каждой стадии план мог поменяться (агент отмечает пункты tasks.md).
   useEffect(() => onCoreEvent((e) => {
-    if (e.type === 'stage.started' && e.runId === runId && tab === 'plan') void refreshDocs();
+    if (e.type === 'stage.started' && e.runId === runId && showPlan) void refreshDocs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [runId, tab]);
+  }), [runId, showPlan]);
+
+  const select = (s: StageId) => {
+    setStage(s);
+    setView('stage');
+    setAttemptNo(null);
+    setFollow(run ? s === currentStage(run) : true);
+  };
+
+  const tries = run ? run.attempts.filter((a) => a.stage === stage && !isGate(a.stage)) : [];
+  const attempt = tries.find((a) => a.attempt === attemptNo) ?? tries[tries.length - 1];
+  const attemptIdx = attempt ? tries.indexOf(attempt) : -1;
+
+  // ↑/↓ — стадии, ←/→ — попытки (когда фокус не в поле ввода).
+  useEffect(() => {
+    if (!run) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('input, textarea, [contenteditable], .monaco-editor') || e.metaKey || e.ctrlKey || e.altKey) return;
+      const order = STAGES.map((x) => x.id).filter((id) => run.attempts.some((a) => a.stage === id) || id === run.next);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const i = order.indexOf(view === 'stage' ? stage : cur);
+        const next = order[Math.min(order.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+        if (next) select(next);
+        e.preventDefault();
+      } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && view === 'stage' && tries.length > 1) {
+        const i = Math.min(tries.length - 1, Math.max(0, attemptIdx + (e.key === 'ArrowRight' ? 1 : -1)));
+        setAttemptNo(tries[i].attempt);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   if (!run) {
     return (
@@ -109,35 +155,23 @@ export function RunScreen({ runId }: { runId: string }) {
   const resumable = run.status === 'stopped';
   const gate = run.status === 'waiting' || (run.status === 'stopped' && (run.next === 'gate1' || run.next === 'gate2' || run.next === 'limit')) ? run.next : null;
   const lastReview = run.reviews[run.reviews.length - 1];
-  const lastTest = run.tests[run.tests.length - 1];
-  const hasCode = run.attempts.some((a) => a.stage === 'implement');
-  // План «прошёл», когда последняя попытка планировщика прошла openspec validate.
-  const lastPlan = [...run.attempts].reverse().find((a) => a.stage === 'plan');
-  const planState = lastPlan?.status === 'done' ? 'ok' : lastPlan?.status === 'failed' ? 'fail' : undefined;
-  // Какая вкладка соответствует стадии, которая идёт или ждёт решения прямо сейчас.
-  const activeTab: Tab | null = live
-    ? ({ plan: 'plan', gate1: 'plan', tests: 'tests', review: 'review', gate2: 'accept', limit: 'accept' } as Partial<Record<StageId, Tab>>)[run.next] ?? null
-    : null;
+  const stageDef = STAGES.find((x) => x.id === stage);
+  const isCurrent = stage === cur;
 
-  const select = (s: StageId) => {
-    setSelected(s);
-    setTab(TAB_FOR[s]);
-  };
+  // Результаты тестов и ревью копятся по порядку попыток.
+  const testIdx = Math.min(run.tests.length - 1, attemptIdx < 0 ? run.tests.length - 1 : attemptIdx);
+  const reviewIdx = Math.min(run.reviews.length - 1, attemptIdx < 0 ? run.reviews.length - 1 : attemptIdx);
 
-  const tabs: { id: Tab; label: string; badge?: string; tone?: string; disabled?: boolean }[] = [
-    { id: 'log', label: 'Лог' },
-    { id: 'plan', label: 'План', badge: planState, tone: planState === 'ok' ? 'mint' : planState === 'fail' ? 'coral' : undefined, disabled: !run.attempts.some((a) => a.stage === 'plan') },
-    { id: 'tests', label: 'Тесты', badge: lastTest ? (lastTest.passed ? 'ok' : 'fail') : undefined, tone: lastTest ? (lastTest.passed ? 'mint' : 'coral') : undefined, disabled: !run.tests.length },
-    { id: 'review', label: 'Ревью', badge: lastReview ? String(lastReview.blocking.length + lastReview.notes.length) : undefined, tone: lastReview?.blocking.length ? 'coral' : 'quiet', disabled: !run.reviews.length },
-    { id: 'accept', label: run.status === 'finished' ? 'Дифф' : 'Приёмка', disabled: !hasCode },
-  ];
+  const slice: LogSlice | undefined = attempt && LOG_TITLE[stage]
+    ? { title: LOG_TITLE[stage]!, attempt: attempt.attempt, stage, live: attempt.status === 'running' }
+    : undefined;
 
   return (
     <div className="screen run">
-      <div className={`run-grid ${tab === 'accept' ? 'is-wide' : ''}`}>
+      <div className={`run-grid ${showDiff ? 'is-wide' : ''}`}>
         <aside className="run-left">
-          <Metrics run={run} onOpenTimeline={() => setTab('timeline')} />
-          <StageRail run={run} selected={selected} onSelect={select} />
+          <Metrics run={run} />
+          <StageRail run={run} selected={view === 'stage' ? stage : null} onSelect={select} />
         </aside>
 
         <section className="run-main">
@@ -166,39 +200,57 @@ export function RunScreen({ runId }: { runId: string }) {
           </header>
 
           <div className="tab-groups">
-            <PillTabs<Tab>
+            <PillTabs<View>
               className="tabs"
-              value={tab}
-              onChange={setTab}
+              value={view === 'stage' ? null : view}
+              onChange={(v) => { setView(v); setFollow(false); }}
               items={[
                 { id: 'timeline', label: 'Таймлайн', disabled: !run.attempts.length },
                 { id: 'log', label: 'Лог' },
               ]}
             />
-            <PillTabs<Tab>
-              className="tabs"
-              value={tab}
-              onChange={setTab}
-              items={tabs.filter((t) => t.id !== 'log').map((t) => ({
-                id: t.id,
-                label: t.label,
-                disabled: t.disabled,
-                extra: activeTab === t.id
-                ? <span className="tab-live" title="Идёт сейчас" />
-                : t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
-              }))}
-            />
+            {view === 'stage' && stageDef && (
+              <div className="stage-head" key={stage}>
+                <span className="stage-head-icon">{STAGE_ICON[stage]}</span>
+                <strong>{stageDef.title}</strong>
+                {tries.length > 1 && (
+                  <PillTabs<string>
+                    className="tabs attempts"
+                    value={attempt ? String(attempt.attempt) : null}
+                    onChange={(v) => setAttemptNo(Number(v))}
+                    items={tries.map((a) => ({
+                      id: String(a.attempt),
+                      label: `#${a.attempt}`,
+                      extra: a.status === 'running' ? <span className="tab-live" /> : <i className={`attempt-dot d-${a.status}`} />,
+                    }))}
+                  />
+                )}
+              </div>
+            )}
+            <span className="grow" />
+            {!(view === 'stage' && isCurrent) && (
+              <Button tone="quiet" className="back-current" onClick={() => setFollow(true)} title="Показывать стадию, на которой сейчас прогон">
+                {live ? <span className="tab-live" /> : null}
+                Вернуться к текущей
+              </Button>
+            )}
           </div>
 
-          {!(tab === 'accept' && run.status === 'finished') && <Banner run={run} />}
+          {(run.status !== 'finished' || (view === 'stage' && isCurrent && !showDiff)) && <Banner run={run} />}
 
           <div className="tab-body">
-            <div className={`pane ${tab === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
-            {tab === 'timeline' && <div className="tab-enter" key="timeline"><TimelinePanel run={run} /></div>}
-            {tab === 'plan' && <div className="tab-enter" key="plan"><PlanView docs={docs} run={run} /></div>}
-            {tab === 'tests' && <div className="tab-enter" key="tests"><TestsView run={run} /></div>}
-            {tab === 'review' && <div className="tab-enter" key="review"><ReviewView run={run} /></div>}
-            {tab === 'accept' && (
+            <div className={`pane ${view === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
+            {view === 'timeline' && <div className="tab-enter" key="timeline"><TimelinePanel run={run} onSelect={select} /></div>}
+            {showPlan && <div className="tab-enter" key="plan"><PlanView docs={docs} run={run} /></div>}
+            {view === 'stage' && slice && (
+              <div className="tab-enter pane-log" key={`log-${stage}-${slice.attempt}`}><LiveLog runId={runId} slice={slice} /></div>
+            )}
+            {shows('tests') && !slice && <div className="tab-enter" key={`tests-${testIdx}`}><TestsView run={run} idx={testIdx} /></div>}
+            {shows('review') && !slice && <div className="tab-enter" key={`review-${reviewIdx}`}><ReviewView run={run} idx={reviewIdx} /></div>}
+            {view === 'stage' && !showPlan && !showDiff && !slice && !shows('tests') && !shows('review') && (
+              <Empty icon={<Sparkles />} title={`${stageDef?.title ?? 'Стадия'} ещё не начиналась`}>Она запустится, когда до неё дойдёт прогон.</Empty>
+            )}
+            {showDiff && (
               diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
               : !diff ? <div className="center"><span className="spinner big" /></div>
               : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
@@ -216,8 +268,8 @@ export function RunScreen({ runId }: { runId: string }) {
               onApprove={() => act('approve', () => dispatch({ type: 'gate.approve', runId, comment }))}
               onReject={() => act('reject', () => dispatch({ type: 'gate.reject', runId, comment, lineComments }))}
               onCancel={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}
-              onOpenAccept={() => setTab('accept')}
-              tab={tab}
+              onOpenAccept={() => select('gate2')}
+              diffShown={showDiff}
             />
           )}
           {!gate && error && <div className="gatebar"><span className="actionbar-error">{error}</span></div>}
@@ -266,41 +318,27 @@ function Banner({ run }: { run: RunFile }) {
   return null;
 }
 
-function Metrics({ run, onOpenTimeline }: { run: RunFile; onOpenTimeline: () => void }) {
-  const live = run.status === 'running' || run.status === 'waiting';
-  const clock = activeClock(run);
-  const isGate = (st: StageId) => st === 'gate1' || st === 'gate2' || st === 'limit';
+function Metrics({ run }: { run: RunFile }) {
+  const now = useNow(run);
+  const clock = activeClock(run, now);
   const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
-  const humanMs = run.attempts.filter((a) => isGate(a.stage)).reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : Date.now()) - Date.parse(a.startedAt)), 0);
-  const [, tick] = useState(0);
-  useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => tick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, [live]);
+  const humanMs = run.attempts.filter((a) => isGate(a.stage)).reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : now) - Date.parse(a.startedAt)), 0);
   const total = usageTotal(run.totals);
   const c = cost(run.totals);
   return (
-    <dl className="metrics">
-      <div className="stat stat-wide">
-        <button className="stat-expand" onClick={onOpenTimeline} title="Открыть таймлайн">
-          <Maximize2 size={14} />
-        </button>
-        <dt>Время</dt>
-        <dd title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}><Num animate={false} text={ms(clock.total)} /></dd>
-        <p className="stat-sum">
-          <span>ждали вас {ms(humanMs)}</span>
-          <span>запусков стадий: {runs}</span>
-          {clock.paused > 0 && <span>простой {ms(clock.paused)} не учтён</span>}
-        </p>
-        <button className="gantt-open" onClick={onOpenTimeline} aria-label="Открыть таймлайн">
-          <Timeline run={run} />
-        </button>
-      </div>
-      <div className="stat"><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><Num text={total ? tokens(total) : '—'} /></dd></div>
-      <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
-      <div className="stat"><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
-    </dl>
+    <div className="summary">
+      <dl className="summary-grid">
+        <div title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}><dt>Время</dt><dd><Num animate={false} text={ms(clock.total)} /></dd></div>
+        <div title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
+        <div><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
+        <div><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
+      </dl>
+      <p className="stat-sum">
+        <span>ждали вас {ms(humanMs)}</span>
+        <span>запусков стадий: {runs}</span>
+        {clock.paused > 0 && <span>простой {ms(clock.paused)} не учтён</span>}
+      </p>
+    </div>
   );
 }
 
@@ -322,7 +360,7 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
   const [specOpen, setSpecOpen] = useState<string | null>(null);
   if (!docs) return <div className="center"><span className="spinner big" /></div>;
   if (!docs.proposal && !docs.tasks) {
-    return <Empty icon={<Sparkles />} title="План ещё пишется">Планировщик создаёт изменение <code>{run.changeId}</code>. Ход работы — во вкладке «Лог».</Empty>;
+    return <Empty icon={<Sparkles />} title="План ещё пишется">Планировщик создаёт изменение <code>{run.changeId}</code>. Ход работы — в логе этой попытки ниже, когда она закончится, здесь появятся файлы.</Empty>;
   }
   const done = (docs.tasks.match(/- \[x\]/gi) ?? []).length;
   const all = (docs.tasks.match(/- \[[ x]\]/gi) ?? []).length;
@@ -367,21 +405,12 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
   );
 }
 
-function TestsView({ run }: { run: RunFile }) {
-  const [idx, setIdx] = useState(run.tests.length - 1);
-  useEffect(() => setIdx(run.tests.length - 1), [run.tests.length]);
+function TestsView({ run, idx }: { run: RunFile; idx: number }) {
   const t = run.tests[idx];
   if (!t) return <Empty icon={<Sparkles />} title="Тесты ещё не запускались" />;
   return (
     <div className="scroll">
       <div className="tests">
-        <div className="tests-runs">
-          {run.tests.map((x, i) => (
-            <button key={i} className={`trun ${x.passed ? 'is-ok' : 'is-bad'} ${i === idx ? 'is-on' : ''}`} onClick={() => setIdx(i)}>
-              <span>{x.passed ? '✓' : '✗'}</span> Попытка {i + 1}
-            </button>
-          ))}
-        </div>
         <div className={`tests-head ${t.passed ? 'is-ok' : 'is-bad'}`}>
           <strong>{t.passed ? 'Зелёные' : 'Красные'}</strong>
           <span className="mono">{t.command || 'команда не задана'}</span>
@@ -393,22 +422,13 @@ function TestsView({ run }: { run: RunFile }) {
   );
 }
 
-function ReviewView({ run }: { run: RunFile }) {
-  const [idx, setIdx] = useState(run.reviews.length - 1);
-  useEffect(() => setIdx(run.reviews.length - 1), [run.reviews.length]);
+function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
   const r = run.reviews[idx];
   const items = useMemo(() => r ? [...r.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...r.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [], [r]);
   if (!r) return <Empty icon={<Sparkles />} title="Ревью ещё не было" />;
   return (
     <div className="scroll">
       <div className="review">
-        <div className="tests-runs">
-          {run.reviews.map((x, i) => (
-            <button key={i} className={`trun ${x.blocking.length ? 'is-bad' : 'is-ok'} ${i === idx ? 'is-on' : ''}`} onClick={() => setIdx(i)}>
-              <span>{x.blocking.length ? '✗' : '✓'}</span> Ревью {i + 1}
-            </button>
-          ))}
-        </div>
         <div className={`verdict bezel ${r.blocking.length ? 'is-bad' : 'is-ok'}`}>
           <span className="verdict-mark">{r.blocking.length ? r.blocking.length : <CircleCheck size={22} />}</span>
           <div>
@@ -432,7 +452,7 @@ function ReviewView({ run }: { run: RunFile }) {
 
 function GateBar(props: {
   gate: StageId; comment: string; setComment: (s: string) => void; lineCount: number; busy: string | null; error: string | null;
-  onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; tab: Tab;
+  onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; diffShown: boolean;
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
   const [open, setOpen] = useState(false);
@@ -444,8 +464,8 @@ function GateBar(props: {
       <div className="gate-text">
         <strong>{title}</strong>
         <span>
-          {gate === 'gate1' && 'Проверьте proposal и tasks слева во вкладке «План».'}
-          {gate === 'gate2' && (props.tab === 'accept' ? `Замечаний на строках: ${lineCount}. Они уйдут исполнителю при возврате.` : 'Посмотрите дифф и замечания ревьюера.')}
+          {gate === 'gate1' && 'Проверьте proposal и tasks выше.'}
+          {gate === 'gate2' && (props.diffShown ? `Замечаний на строках: ${lineCount}. Они уйдут исполнителю при возврате.` : 'Посмотрите дифф и замечания ревьюера.')}
           {gate === 'limit' && 'Можно дать исполнителю ещё одну попытку с вашим комментарием.'}
         </span>
       </div>
@@ -461,7 +481,7 @@ function GateBar(props: {
       )}
       <div className="gate-actions">
         {error && <span className="actionbar-error">{error}</span>}
-        {gate === 'gate2' && props.tab !== 'accept' && <Button tone="quiet" onClick={props.onOpenAccept}>Открыть дифф</Button>}
+        {gate === 'gate2' && !props.diffShown && <Button tone="quiet" onClick={props.onOpenAccept}>Открыть дифф</Button>}
         {gate === 'gate1' && <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Отменить задачу</Button>}
         {gate === 'limit' ? (
           <>

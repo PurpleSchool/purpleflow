@@ -764,3 +764,49 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .composer-actions { gap: 4px; }
 .composer-actions .btn { height: 32px; padding: 0 var(--s-4); font-size: var(--fs-12); }
 .composer-actions .btn-primary:disabled { background: var(--bg-5); color: var(--text-3); opacity: 1; }
+
+/* ——— Вариант А + Б: стадии — навигация и гант одновременно ——— */
+
+/* Сводка: одна карточка с четырьмя цифрами */
+.summary { padding: var(--s-5); border-radius: var(--r-card); background: var(--bg-3); flex: none; animation: cardIn 0.55s var(--ease) both; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-5) var(--s-4); margin: 0; }
+.summary-grid dt { font-size: var(--fs-12); color: var(--text-3); }
+.summary-grid dd { margin: var(--s-2) 0 0; font-size: 26px; font-weight: 300; letter-spacing: -0.035em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.summary-grid dd small { font-size: 12.5px; letter-spacing: 0; color: var(--text-3); font-weight: 400; margin: 0 2px; }
+.summary .stat-sum { margin-top: var(--s-4); padding-top: var(--s-4); border-top: 1px solid var(--line); }
+
+/* Строка ганта внутри карточки стадии */
+.station-hit { align-items: flex-start; }
+.station-hit:disabled { cursor: default; }
+.station-hit:disabled:hover { background: transparent; }
+.station-track { position: relative; display: block; height: 6px; margin-top: var(--s-3); border-radius: 3px; background: rgba(255, 255, 255, 0.035); }
+.station-track .gantt-bar { border-radius: 3px; }
+.station.st-idle .station-track { background: rgba(255, 255, 255, 0.02); }
+.station-summary, .station-stats { display: none !important; }
+.station.is-selected .station-hit { background: var(--bg-4); box-shadow: inset 0 0 0 1px var(--line-3); }
+.station.is-selected .station-title { color: var(--text-1); }
+
+/* Шапка выбранной стадии с попытками */
+.tab-groups { justify-content: flex-start; }
+.stage-head { display: flex; align-items: center; gap: var(--s-3); padding-left: var(--s-4); margin-left: var(--s-2); border-left: 1px solid var(--line-2); animation: tabIn 0.35s var(--ease) both; }
+.stage-head strong { font-weight: 500; font-size: var(--fs-14); }
+.stage-head-icon { display: grid; color: var(--text-3); }
+.tabs.attempts .tab { height: 28px; padding: 0 var(--s-3); font-size: var(--fs-12); font-family: var(--font-code); gap: 6px; }
+.tabs.attempts .tab-live { width: 10px; height: 10px; }
+.attempt-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-4); }
+.attempt-dot.d-done { background: var(--ok); }
+.attempt-dot.d-failed { background: var(--err); }
+.attempt-dot.d-stopped { background: var(--wait); }
+.back-current { height: 32px; font-size: var(--fs-12); gap: 8px; }
+.back-current .tab-live { width: 10px; height: 10px; }
+
+/* Лог одной попытки */
+.tab-body > .pane-log { position: absolute; inset: 0; padding: 0 var(--s-4) var(--s-4); display: flex; }
+
+/* Подпись стадии в большом ганте — кнопка перехода */
+.gantt.is-large .gantt-label { text-align: left; transition: color 0.25s var(--ease); }
+.gantt.is-large .gantt-label:hover:not(:disabled) { color: var(--text-1); }
+.gantt-row button.gantt-label { font: inherit; }
+.run-grid.is-wide .summary, .run-grid.is-wide .station-track { display: none; }
+.stat-sum { gap: 4px 16px; }
+.stat-sum span + span::before { display: none; }

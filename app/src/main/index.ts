@@ -107,6 +107,8 @@ function createWindow() {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Фоновое окно скриншотов не должно притормаживать отрисовку.
+      backgroundThrottling: !process.env.PSFLOW_CAPTURE,
     },
   });
   nativeTheme.themeSource = 'dark';

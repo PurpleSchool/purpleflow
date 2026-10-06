@@ -19,8 +19,27 @@ const THEME = {
   white: '#c9cad0', brightWhite: '#ffffff',
 };
 
-/** Живой лог прогона: история из файла лога + поток agent.output. */
-export function LiveLog({ runId }: { runId: string }) {
+/** Часть лога: одна попытка одной стадии (по заголовку «━━ Стадия · попытка N»). */
+export interface LogSlice {
+  title: string;
+  attempt: number;
+  /** Стадия в событиях agent.output — чтобы дописывать идущую попытку вживую. */
+  stage: string;
+  live: boolean;
+}
+
+function cut(text: string, slice: LogSlice): string {
+  const head = `━━ ${slice.title} · попытка ${slice.attempt}`;
+  const at = text.indexOf(head);
+  if (at < 0) return '';
+  const lineStart = text.lastIndexOf('\n', at) + 1;
+  const next = text.indexOf('━━ ', at + head.length);
+  const end = next < 0 ? text.length : text.lastIndexOf('\n', next) + 1;
+  return text.slice(lineStart, end);
+}
+
+/** Живой лог прогона: история из файла лога + поток agent.output. С slice — только одна попытка. */
+export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,12 +64,14 @@ export function LiveLog({ runId }: { runId: string }) {
 
     const off = onCoreEvent((e) => {
       if (e.type !== 'agent.output' || e.runId !== runId) return;
+      if (slice && (!slice.live || e.stage !== slice.stage)) return;
       if (loaded) term.write(e.text);
       else queue.push(e.text);
     });
 
-    void window.psflow.core.getLog(runId).then((text) => {
+    void window.psflow.core.getLog(runId).then((full) => {
       if (!alive) return;
+      const text = slice ? cut(full, slice) : full;
       term.write(text);
       // События, пришедшие во время загрузки, уже есть в файле лога, кроме самых свежих — дописываем хвост без повторов.
       const tail = queue.join('');
@@ -71,7 +92,7 @@ export function LiveLog({ runId }: { runId: string }) {
       ro.disconnect();
       term.dispose();
     };
-  }, [runId]);
+  }, [runId, slice?.title, slice?.attempt, slice?.live]);
 
   // Отступы — у внешней обёртки: FitAddon меряет ширину родителя без учёта его padding.
   return (
