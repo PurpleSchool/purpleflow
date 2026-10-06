@@ -641,3 +641,38 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .switch.is-on:active i::after { transform: translateX(14px); }
 .role .input { margin-top: auto; }
 .role p { min-height: 0; }
+
+/* ——— Узлы стадий: своя иконка + значок статуса ——— */
+.station-node .node-core { border-radius: 11px; }
+.station-node.is-gate-node .node-core { border-radius: 50%; }
+.st-waiting .node-core { background: var(--wait-wash); color: var(--wait); box-shadow: inset 0 0 0 1px rgba(214, 173, 102, 0.45); }
+.st-done .node-core { background: var(--bg-5); color: var(--text-2); }
+.node-badge {
+  position: absolute; right: -3px; bottom: -3px; width: 15px; height: 15px; border-radius: 50%;
+  display: grid; place-items: center; box-shadow: 0 0 0 2.5px var(--bg-3);
+  animation: badgeIn 0.45s var(--ease) both;
+}
+.node-badge.b-done { background: #d9dade; color: #0c0d0f; }
+.node-badge.b-failed { background: var(--err); color: #1a0c0f; }
+.node-badge.b-stopped { background: var(--wait); color: #1a1408; }
+.node-badge svg.lucide { stroke-width: 3; }
+@keyframes badgeIn { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ——— Гант в карточке «Время» ——— */
+.metrics { grid-template-columns: repeat(3, 1fr); }
+.stat-wide { grid-column: 1 / -1; }
+.metrics .stat:not(.stat-wide) dd { font-size: 24px; }
+.metrics .stat:not(.stat-wide) { padding: var(--s-4); }
+.gantt { margin-top: var(--s-5); display: flex; flex-direction: column; gap: 5px; }
+.gantt-row { display: grid; grid-template-columns: 92px 1fr; gap: var(--s-3); align-items: center; }
+.gantt-label { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gantt-track { position: relative; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.03); }
+.gantt-bar { position: absolute; top: 0; bottom: 0; min-width: 3px; border-radius: 4px; transition: width 0.8s var(--ease), left 0.8s var(--ease); }
+.g-done { background: #6f7178; }
+.g-live { background: var(--accent-hi); box-shadow: 0 0 10px rgba(138, 116, 238, 0.5); }
+.g-fail { background: var(--err); opacity: 0.85; }
+.g-stop { background: var(--text-4); }
+.g-wait, .g-wait-live { background: repeating-linear-gradient(135deg, rgba(214, 173, 102, 0.75) 0 3px, rgba(214, 173, 102, 0.25) 3px 6px); }
+.g-wait-live { animation: breathe 2s var(--ease-soft) infinite; }
+.gantt-axis { display: flex; justify-content: space-between; margin: 4px 0 0 104px; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.gate-sign { display: grid; place-items: center; color: var(--wait); border-radius: 50%; }

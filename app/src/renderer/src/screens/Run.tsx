@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CircleAlert, CircleCheck, CircleStop, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, X,
+  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { StageRail } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
+import { Timeline } from '../components/Timeline';
 import { LiveLog } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
@@ -255,7 +256,11 @@ function Metrics({ run }: { run: RunFile }) {
   const c = cost(run.totals);
   return (
     <dl className="metrics">
-      <div className="stat"><dt>Время</dt><dd><Num animate={false} text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd></div>
+      <div className="stat stat-wide">
+        <dt>Время</dt>
+        <dd><Num animate={false} text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd>
+        <Timeline run={run} />
+      </div>
       <div className="stat"><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><Num text={total ? tokens(total) : '—'} /></dd></div>
       <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
       <div className="stat"><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
@@ -399,7 +404,7 @@ function GateBar(props: {
   const needsComment = gate !== 'limit';
   return (
     <div className="gatebar is-gate">
-      <div className="gate-sign" aria-hidden><i /><i /></div>
+      <div className="gate-sign" aria-hidden>{gate === 'gate2' ? <ClipboardCheck size={17} /> : <UserRoundCheck size={17} />}</div>
       <div className="gate-text">
         <strong>{title}</strong>
         <span>

@@ -570,7 +570,16 @@ export class Orchestrator {
     run.finishedAt = new Date().toISOString();
     run.next = 'finish';
     this.save(run);
-    const sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\nOpenSpec change: ${run.changeId}\nPS Flow run: ${run.id}`);
+    let sha: string;
+    try {
+      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\nOpenSpec change: ${run.changeId}\nPS Flow run: ${run.id}`);
+    } catch (e) {
+      // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
+      run.status = 'running';
+      run.finishedAt = undefined;
+      Object.assign(attempt, { status: 'running', endedAt: undefined, summary: undefined });
+      throw e;
+    }
     this.log(run, c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
     this.emit({ type: 'run.updated', run });
     this.emit({ type: 'run.finished', runId: run.id, status: 'finished' });

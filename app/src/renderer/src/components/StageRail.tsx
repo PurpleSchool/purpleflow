@@ -1,15 +1,25 @@
-import { Archive, Bot, Check, FlaskConical, Hammer, Map as MapIcon, Pause, ScanEye, X } from 'lucide-react';
+import { Archive, Check, ClipboardCheck, FlaskConical, Hammer, Map as MapIcon, Pause, ScanEye, UserRoundCheck, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { RunFile, StageId } from '@psflow/core';
 import { STAGES, attemptsOf, lastAttempt, nodeState, type NodeState } from '../lib/stages';
 import { duration, tokens, usageTotal } from '../lib/format';
 
-const ICON: Partial<Record<StageId, ReactNode>> = {
+/** У каждой стадии всегда своя иконка; статус — цветом узла и значком в углу. */
+const ICON: Record<StageId, ReactNode> = {
   plan: <MapIcon size={16} />,
+  gate1: <UserRoundCheck size={16} />,
   implement: <Hammer size={16} />,
   tests: <FlaskConical size={16} />,
   review: <ScanEye size={16} />,
+  gate2: <ClipboardCheck size={16} />,
+  limit: <UserRoundCheck size={16} />,
   finish: <Archive size={16} />,
+};
+
+const BADGE: Partial<Record<NodeState, ReactNode>> = {
+  done: <Check size={9} strokeWidth={3} />,
+  failed: <X size={9} strokeWidth={3} />,
+  stopped: <Pause size={8} strokeWidth={3} />,
 };
 
 const STATE_WORD: Record<NodeState, string> = {
@@ -38,12 +48,9 @@ export function StageRail({ run, selected, onSelect }: { run: RunFile; selected:
             className={`station st-${st} ${s.gate ? 'is-gate' : ''} ${selected === s.id ? 'is-selected' : ''} ${flowing ? 'is-flowing' : ''}`}
           >
             <button className="station-hit" onClick={() => onSelect(s.id)} aria-current={run.next === s.id ? 'step' : undefined}>
-              <span className="station-node" aria-hidden>
-                {s.gate ? <Lock open={st === 'done'} state={st} /> : (
-                  <span className="node-core">
-                    {st === 'done' ? <Check size={15} strokeWidth={2.6} /> : st === 'failed' ? <X size={15} strokeWidth={2.6} /> : st === 'stopped' ? <Pause size={14} /> : ICON[s.id] ?? <Bot size={16} />}
-                  </span>
-                )}
+              <span className={`station-node ${s.gate ? 'is-gate-node' : ''}`} aria-hidden>
+                <span className="node-core">{ICON[s.id]}</span>
+                {BADGE[st] && <span className={`node-badge b-${st}`}>{BADGE[st]}</span>}
               </span>
               <span className="station-body">
                 <span className="station-title">
@@ -75,16 +82,6 @@ export function StageRail({ run, selected, onSelect }: { run: RunFile; selected:
         );
       })}
     </ol>
-  );
-}
-
-/** Ворота шлюза: две створки, которые расходятся, когда человек принял решение. */
-function Lock({ open, state }: { open: boolean; state: NodeState }) {
-  return (
-    <span className={`lock ${open ? 'is-open' : ''} lock-${state}`}>
-      <i className="leaf leaf-l" />
-      <i className="leaf leaf-r" />
-    </span>
   );
 }
 
