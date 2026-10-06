@@ -21,13 +21,18 @@ export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt'>): 
   return args;
 }
 
-export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy'>): NodeJS.ProcessEnv {
+export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth'>): NodeJS.ProcessEnv {
   const env = cleanEnv(o.env);
   if (o.proxy?.baseUrl) {
     env.ANTHROPIC_BASE_URL = o.proxy.baseUrl;
     env.ANTHROPIC_AUTH_TOKEN = o.proxy.apiKey;
     delete env.ANTHROPIC_API_KEY;
     env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  } else if ((o.claudeAuth ?? 'login') === 'login') {
+    // Без прокси — собственный вход Claude Code; ключ из окружения перекрыл бы его.
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    delete env.ANTHROPIC_BASE_URL;
   }
   return env;
 }
@@ -112,7 +117,8 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   if (r.spawnError) return { ok: false, text: '', usage, error: `claude не запустился: ${r.spawnError}` };
   if (resultError || r.code !== 0 || !gotResult) {
     const raw = [resultError, r.stderr, gotResult ? '' : r.stdout.slice(-2000)].filter(Boolean).join('\n');
-    return { ok: false, text: finalText, usage, error: explainError('claude', raw || `код выхода ${r.code}`) };
+    const auth = o.proxy?.baseUrl ? 'proxy' : (o.claudeAuth ?? 'login');
+    return { ok: false, text: finalText, usage, error: explainError('claude', raw || `код выхода ${r.code}`, auth) };
   }
   return { ok: true, text: finalText, usage };
 }

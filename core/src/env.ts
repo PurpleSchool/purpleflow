@@ -13,27 +13,53 @@ const MARK = '__PSFLOW_ENV__';
  * Берём окружение login+interactive шелла пользователя — так же, как это делают shell-env/fix-path.
  */
 export function loadLoginShellEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  if (isWin) return { ...base };
+  if (isWin) return stripSessionEnv({ ...base });
   const shell = base.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+  // Шелл стартует с минимальным окружением — как при запуске из Finder. Иначе приложение,
+  // запущенное из чужого терминала (например, из сессии Claude Code), унаследует её ключи и токены.
+  const clean: NodeJS.ProcessEnv = {};
+  for (const k of ['HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING']) {
+    if (base[k]) clean[k] = base[k];
+  }
+  clean.PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+  clean.TERM = 'xterm-256color';
   try {
     const r = spawnSync(shell, ['-ilc', `printf '${MARK}'; env; printf '${MARK}'`], {
       encoding: 'utf8',
       timeout: 8000,
-      env: { ...base, DISABLE_AUTO_UPDATE: 'true', ZSH_TMUX_AUTOSTARTED: 'true' },
+      env: { ...clean, DISABLE_AUTO_UPDATE: 'true', ZSH_TMUX_AUTOSTARTED: 'true' },
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const out = r.stdout ?? '';
     const parts = out.split(MARK);
-    if (parts.length < 3) return withExtraPath({ ...base });
-    const env: NodeJS.ProcessEnv = { ...base };
+    if (parts.length < 3) return withExtraPath(stripSessionEnv({ ...base }));
+    const env: NodeJS.ProcessEnv = { ...clean };
     for (const line of parts[1].split('\n')) {
       const i = line.indexOf('=');
       if (i > 0) env[line.slice(0, i)] = line.slice(i + 1);
     }
     return withExtraPath(env);
   } catch {
-    return withExtraPath({ ...base });
+    return withExtraPath(stripSessionEnv({ ...base }));
   }
+}
+
+/**
+ * Запасной путь, если шелл не отработал: убрать переменные родительской сессии Claude Code
+ * (её ключ и адрес работают только внутри той сессии и быстро протухают).
+ */
+export function stripSessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const inSession = Boolean(env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT || env.CLAUDE_CODE_SESSION_ID);
+  for (const k of Object.keys(env)) {
+    if (k === 'CLAUDECODE' || k === 'CLAUDE_AGENT_SDK_VERSION' || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || k.startsWith('CLAUDE_PREVIEW_')) delete env[k];
+    else if (k.startsWith('CLAUDE_CODE_') && !/^CLAUDE_CODE_USE_/.test(k)) delete env[k];
+  }
+  if (inSession) {
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    delete env.ANTHROPIC_BASE_URL;
+  }
+  return env;
 }
 
 /** Типичные места установки CLI, если их нет в PATH. */

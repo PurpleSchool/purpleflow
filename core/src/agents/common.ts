@@ -11,6 +11,7 @@ export interface AgentRunOptions {
   group: string;
   onOutput: (text: string) => void;
   proxy?: { baseUrl: string; apiKey: string; codexBaseUrl?: string };
+  claudeAuth?: 'login' | 'env';
 }
 
 export interface AgentResult {
@@ -63,10 +64,12 @@ export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /** Понятное сообщение для типовых сбоев агента. */
-export function explainError(agent: string, raw: string): string {
+export function explainError(agent: string, raw: string, auth: 'proxy' | 'login' | 'env' = 'proxy'): string {
   const t = raw.toLowerCase();
   if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
-    return `${agent}: прокси отклонил ключ или агент не авторизован. Проверьте base URL и ключ в настройках.`;
+    if (auth === 'env') return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
+    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо задайте прокси в настройках.`;
+    return `${agent}: прокси отклонил ключ. Проверьте base URL и ключ в настройках.`;
   }
   if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
     return `${agent}: закончились токены или кредиты на балансе прокси.`;

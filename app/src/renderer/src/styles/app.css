@@ -554,3 +554,17 @@ html[data-material='vibrancy'], html[data-material='acrylic'] {
   --bg-4: rgba(26, 27, 31, 0.7);
   --bg-5: rgba(255, 255, 255, 0.08);
 }
+
+/* Терминал: xterm меряет родителя без padding — отступы у внешней обёртки */
+.term { display: flex; overflow: hidden; }
+.term-host { flex: 1; min-width: 0; min-height: 0; position: relative; }
+.term-host .xterm { height: 100%; }
+
+/* Выбор авторизации claude */
+.auth-choice { display: flex; gap: var(--s-6); align-items: center; justify-content: space-between; padding: var(--s-4) var(--s-5); border-radius: var(--r-l); background: var(--bg-2); }
+.auth-choice strong { font-weight: 500; font-size: var(--fs-13); }
+.auth-choice p { margin: 4px 0 0; color: var(--text-3); font-size: var(--fs-12); max-width: 52ch; line-height: 1.55; }
+.segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: var(--r-pill); background: var(--bg-1); flex: none; }
+.segmented button { height: 32px; padding: 0 var(--s-4); border-radius: var(--r-pill); color: var(--text-3); font-size: var(--fs-12); font-weight: 500; transition: background 0.3s var(--ease), color 0.3s var(--ease); }
+.segmented button:hover { color: var(--text-1); }
+.segmented button.is-on { background: var(--bg-5); color: var(--text-1); }

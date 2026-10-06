@@ -11,6 +11,7 @@ export interface PublicSettings {
   testTimeoutMin: number;
   onboarded: boolean;
   windowGlass: boolean;
+  claudeAuth: 'login' | 'env';
 }
 
 export interface SettingsPatch {
@@ -21,6 +22,7 @@ export interface SettingsPatch {
   testTimeoutMin?: number;
   onboarded?: boolean;
   windowGlass?: boolean;
+  claudeAuth?: 'login' | 'env';
 }
 
 export interface ChangeDocs {

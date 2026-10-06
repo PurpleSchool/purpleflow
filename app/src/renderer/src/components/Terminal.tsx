@@ -73,5 +73,10 @@ export function LiveLog({ runId }: { runId: string }) {
     };
   }, [runId]);
 
-  return <div className="term" ref={host} />;
+  // Отступы — у внешней обёртки: FitAddon меряет ширину родителя без учёта его padding.
+  return (
+    <div className="term">
+      <div className="term-host" ref={host} />
+    </div>
+  );
 }

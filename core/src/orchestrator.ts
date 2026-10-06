@@ -188,7 +188,7 @@ export class Orchestrator {
     const one = async (agent: 'claude' | 'codex'): Promise<ConnectionCheck> => {
       const t0 = Date.now();
       const model = agent === 'claude' ? s.models.planner : s.models.reviewer;
-      const base = { bin: tools[agent], cwd: dir, env: this.opts.env, prompt, model, timeoutMs: 120_000, group: `check-${agent}`, onOutput: () => {}, proxy };
+      const base = { bin: tools[agent], cwd: dir, env: this.opts.env, prompt, model, timeoutMs: 120_000, group: `check-${agent}`, onOutput: () => {}, proxy, claudeAuth: s.claudeAuth };
       const r = agent === 'claude' ? await runClaude(base) : await runCodex({ ...base, sandbox: 'read-only' });
       return { agent, ok: r.ok, model: model || 'по умолчанию', durationMs: Date.now() - t0, reply: r.text.trim().slice(0, 200), error: r.error };
     };
@@ -679,6 +679,7 @@ export class Orchestrator {
       group: run.id,
       onOutput: (text: string) => this.log(run, text, false),
       proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      claudeAuth: s.claudeAuth,
     };
   }
 

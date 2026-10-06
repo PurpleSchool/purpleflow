@@ -187,6 +187,22 @@ export function SettingsScreen() {
                 />
               </Field>
             </div>
+            {!baseUrl.trim() && (
+              <div className="auth-choice">
+                <div>
+                  <strong>Без прокси claude входит</strong>
+                  <p>Ключ ANTHROPIC_API_KEY из файлов шелла перекрывает вход в аккаунт Claude Code. Выберите, что использовать.</p>
+                </div>
+                <div className="segmented" role="radiogroup">
+                  <button role="radio" aria-checked={s.claudeAuth === 'login'} className={s.claudeAuth === 'login' ? 'is-on' : ''} onClick={() => void saveSettings({ claudeAuth: 'login' })}>
+                    Через вход Claude Code
+                  </button>
+                  <button role="radio" aria-checked={s.claudeAuth === 'env'} className={s.claudeAuth === 'env' ? 'is-on' : ''} onClick={() => void saveSettings({ claudeAuth: 'env' })}>
+                    По ключу из окружения
+                  </button>
+                </div>
+              </div>
+            )}
             <button className="disclosure" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
               {advanced ? 'Скрыть' : 'Отдельный адрес для codex'}
             </button>

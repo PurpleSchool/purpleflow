@@ -22,6 +22,11 @@ export interface CoreSettings {
     apiKey: string;
   };
   models: Record<Role, string>;
+  /**
+   * Как claude авторизуется без прокси: 'login' — собственный вход Claude Code
+   * (ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL из окружения игнорируются), 'env' — ключ из окружения.
+   */
+  claudeAuth?: 'login' | 'env';
   /** Таймаут одной стадии агента, минуты. */
   agentTimeoutMin: number;
   /** Таймаут команды тестов, минуты. */

@@ -12,6 +12,7 @@ interface StoredSettings {
   testTimeoutMin: number;
   onboarded: boolean;
   windowGlass: boolean;
+  claudeAuth: 'login' | 'env';
 }
 
 const DEFAULTS: StoredSettings = {
@@ -22,6 +23,7 @@ const DEFAULTS: StoredSettings = {
   testTimeoutMin: 10,
   onboarded: false,
   windowGlass: true,
+  claudeAuth: 'login',
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
@@ -71,6 +73,7 @@ export function publicSettings(): PublicSettings {
     testTimeoutMin: s.testTimeoutMin,
     onboarded: s.onboarded,
     windowGlass: s.windowGlass,
+    claudeAuth: s.claudeAuth,
   };
 }
 
@@ -80,6 +83,7 @@ export function coreSettings(): CoreSettings {
     toolPaths: s.toolPaths,
     proxy: { baseUrl: s.proxy.baseUrl.trim(), codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey: decryptKey(s.proxy.apiKeyEnc) },
     models: s.models,
+    claudeAuth: s.claudeAuth,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
   };
@@ -104,6 +108,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
   if (patch.onboarded !== undefined) s.onboarded = patch.onboarded;
   if (patch.windowGlass !== undefined) s.windowGlass = patch.windowGlass;
+  if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
   persist(s);
   return publicSettings();
 }
