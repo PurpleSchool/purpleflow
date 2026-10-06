@@ -58,7 +58,7 @@ body::after {
   transition: background 0.3s var(--ease), color 0.3s var(--ease);
 }
 .navpill:hover:not(:disabled) { color: var(--text-1); }
-.navpill.is-on { background: var(--bg-5); color: var(--text-1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.navpill.is-on { background: var(--bg-5); color: var(--text-1); }
 .navpill:disabled { opacity: 0.35; }
 .navdot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hi); }
 .navdot.running { animation: breathe 1.6s var(--ease-soft) infinite; }
@@ -92,12 +92,12 @@ body::after {
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.35; }
 .btn:has(> svg:only-child), .btn:has(> .spinner:only-child) { width: 38px; padding: 0; }
-.btn-primary { color: #fff; background: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18); padding: 0 var(--s-6); }
+.btn-primary { color: #fff; background: var(--accent); padding: 0 var(--s-6); }
 .btn-primary:hover:not(:disabled) { background: #9683f3; }
-.btn-approve { color: #0c0d0f; background: #ececee; box-shadow: inset 0 1px 0 #fff; padding: 0 var(--s-6); }
+.btn-approve { color: #0c0d0f; background: #ececee; padding: 0 var(--s-6); }
 .btn-approve:hover:not(:disabled) { background: #fff; }
 .btn-approve svg { color: #2f8a62; }
-.btn-ghost { background: var(--bg-5); color: var(--text-1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+.btn-ghost { background: var(--bg-5); color: var(--text-1); }
 .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
 .btn-quiet { color: var(--text-2); }
 .btn-quiet:hover:not(:disabled) { background: var(--bg-4); color: var(--text-1); }
@@ -255,7 +255,7 @@ input[type='number'].input { font-variant-numeric: tabular-nums; }
 }
 .station-hit:hover { background: var(--bg-4); }
 .station.st-idle .station-hit, .station.st-stale .station-hit { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
-.station.st-active .station-hit, .station.st-waiting .station-hit { background: linear-gradient(180deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.045)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.11), inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+.station.st-active .station-hit, .station.st-waiting .station-hit { background: var(--bg-4); box-shadow: inset 0 0 0 1px var(--line-2); }
 .station.is-selected .station-hit { box-shadow: inset 0 0 0 1px var(--line-3); }
 
 .station-node { position: relative; flex: none; width: 34px; height: 34px; display: grid; place-items: center; }
@@ -313,7 +313,7 @@ input[type='number'].input { font-variant-numeric: tabular-nums; }
 .tab { display: inline-flex; align-items: center; gap: var(--s-2); height: 32px; padding: 0 var(--s-4); border-radius: var(--r-pill); color: var(--text-3); font-weight: 500; font-size: var(--fs-13); transition: background 0.3s var(--ease), color 0.3s var(--ease); }
 .tab:hover:not(:disabled) { color: var(--text-1); }
 .tab:disabled { opacity: 0.3; }
-.tab.is-on { color: var(--text-1); background: var(--bg-5); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.tab.is-on { color: var(--text-1); background: var(--bg-5); }
 .tab-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); display: grid; place-items: center; font-size: 10.5px; font-weight: 600; background: var(--bg-4); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .b-mint.tab-badge { color: var(--ok); }
 .b-coral.tab-badge { color: var(--err); }
@@ -409,7 +409,7 @@ button.note-loc:hover { color: var(--text-1); }
 .gatebar {
   flex: none; display: flex; align-items: center; gap: var(--s-5); flex-wrap: wrap;
   margin: 0 var(--s-4) var(--s-4); padding: var(--s-4) var(--s-4) var(--s-4) var(--s-5); border-radius: 20px;
-  background: var(--bg-5); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -20px 40px -20px rgba(0, 0, 0, 0.6);
+  background: var(--bg-4); box-shadow: inset 0 0 0 1px var(--line);
 }
 .gatebar.is-gate { animation: rise 0.5s var(--ease); }
 .gate-sign { position: relative; width: 36px; height: 36px; border-radius: 12px; background: var(--wait-wash); box-shadow: inset 0 0 0 1px rgba(214, 173, 102, 0.35); flex: none; }
@@ -514,76 +514,8 @@ button.note-loc:hover { color: var(--text-1); }
 .station.st-active .station-summary, .station.is-selected .station-summary { -webkit-line-clamp: 2; }
 
 
-/* ——— Стекло ———
-   Фоновое освещение неподвижно и лежит под всем интерфейсом;
-   карточки размывают его, поэтому глубина видна без рамок. */
-.app { position: relative; isolation: isolate; }
-.app::before {
-  content: ''; position: fixed; inset: -10%; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(38% 42% at 82% 4%, rgba(138, 116, 238, 0.20), transparent 70%),
-    radial-gradient(30% 36% at 58% 52%, rgba(120, 104, 210, 0.07), transparent 70%),
-    radial-gradient(42% 48% at 6% 96%, rgba(96, 128, 168, 0.13), transparent 70%),
-    radial-gradient(26% 30% at 30% 18%, rgba(255, 255, 255, 0.025), transparent 70%);
-  filter: blur(10px);
-}
-
-.navpills, .stat, .station-hit, .run-main, .panel, .project, .bezel, .newtask-aside,
-.newtask-main > .grid-2, .gatebar, .side-run {
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-}
-.run-main, .panel, .newtask-aside { box-shadow: var(--glass-edge), var(--glass-shadow); }
-.station.st-idle .station-hit, .station.st-stale .station-hit { backdrop-filter: none; -webkit-backdrop-filter: none; }
-
-/* Плавающий гейт — самое «толстое» стекло */
-.gatebar {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.06));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 48px -16px rgba(0, 0, 0, 0.7);
-  -webkit-backdrop-filter: blur(36px) saturate(170%);
-  backdrop-filter: blur(36px) saturate(170%);
-}
-.gate-comment { background: rgba(0, 0, 0, 0.3); }
-
-/* Активная пилюля и кнопки — стеклянные капли */
-.navpill.is-on, .tab.is-on {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.07));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
-}
-.btn-ghost {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.055));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), inset 0 0 0 1px rgba(255, 255, 255, 0.045);
-}
-.btn-primary {
-  background: linear-gradient(180deg, #9a86f4, var(--accent));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 8px 22px -8px rgba(138, 116, 238, 0.55);
-}
-.btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, #a593f6, #9481f2); }
-.btn-approve { box-shadow: inset 0 1px 0 #fff, 0 8px 22px -10px rgba(255, 255, 255, 0.35); }
-
-/* Внутренние зоны — тёмное утопленное стекло */
-.term, .output { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.03); }
-.diff-main, .doc, .doc.bezel, .verdict, .verdict.bezel { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035); }
-.input { background: var(--bg-1); }
-
-/* Свет ярче и с разных сторон — стекло ловит его по-разному */
-.app::before {
-  background:
-    radial-gradient(40% 46% at 84% 0%, rgba(138, 116, 238, 0.30), transparent 70%),
-    radial-gradient(28% 40% at 8% 46%, rgba(138, 116, 238, 0.12), transparent 72%),
-    radial-gradient(34% 34% at 58% 60%, rgba(110, 98, 200, 0.08), transparent 70%),
-    radial-gradient(44% 50% at 0% 100%, rgba(90, 130, 175, 0.18), transparent 70%),
-    radial-gradient(30% 34% at 100% 100%, rgba(255, 255, 255, 0.035), transparent 70%);
-}
-
-/* Верхний блик на стекле */
-.stat, .run-main, .panel, .project, .bezel, .newtask-aside, .newtask-main > .grid-2, .navpills,
-.station:not(.st-idle):not(.st-stale) .station-hit {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 46%);
-}
-.stat:hover, .project:hover, .station-hit:hover { background-color: var(--bg-4); }
-
 .newtask-aside { position: static; }
+.input { background: var(--bg-1); }
 
 /* ——— Инструменты: чистый список с разделителями ——— */
 .tools.bezel { background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; gap: 0; }
@@ -609,38 +541,16 @@ button.note-loc:hover { color: var(--text-1); }
 .switch.is-on i::after { transform: translateX(18px); background: #fff; }
 .switch.is-on { color: var(--text-1); }
 
-/* ——— Нативное стекло окна ———
-   Фон окна прозрачный, ОС размывает рабочий стол; сверху тёмная тонировка,
-   чтобы контраст не зависел от обоев. */
+/* ——— Прозрачное окно ———
+   Фон окна даёт ОС (vibrancy / acrylic), поверх — тёмная тонировка.
+   Плашки те же тёмные и плоские, только полупрозрачные. */
 html[data-material='vibrancy'] body, html[data-material='acrylic'] body { background: transparent; }
-html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.62); }
-html[data-material='vibrancy'] .app::before, html[data-material='acrylic'] .app::before { opacity: 0.75; }
-html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.55); }
-.tool-id span { color: var(--text-3); }
-.tool-path { color: var(--text-2); }
-html[data-material='vibrancy'] .app { background: rgba(9, 10, 12, 0.5); }
-html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.48); }
-
-/* ——— Прозрачное окно: стекло даёт ОС, плашки — плоские ———
-   Ровная полупрозрачная заливка без блюра, бликов, граней и теней. */
+html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.5); }
 html[data-material='vibrancy'], html[data-material='acrylic'] {
-  --highlight: none;
-  --glass-edge: none;
-  --bg-3: rgba(255, 255, 255, 0.045);
-  --bg-4: rgba(255, 255, 255, 0.07);
-  --bg-5: rgba(255, 255, 255, 0.1);
-  --bg-2: rgba(0, 0, 0, 0.2);
-  --bg-1: rgba(0, 0, 0, 0.22);
-  --bg-0: rgba(0, 0, 0, 0.32);
+  --bg-0: rgba(0, 0, 0, 0.42);
+  --bg-1: rgba(0, 0, 0, 0.3);
+  --bg-2: rgba(0, 0, 0, 0.26);
+  --bg-3: rgba(10, 11, 13, 0.62);
+  --bg-4: rgba(26, 27, 31, 0.7);
+  --bg-5: rgba(255, 255, 255, 0.08);
 }
-html[data-material='vibrancy'] .app::before, html[data-material='acrylic'] .app::before { display: none; }
-html[data-material='vibrancy'] :is(.navpills, .stat, .station-hit, .run-main, .panel, .project, .bezel, .newtask-aside, .newtask-main > .grid-2, .gatebar, .navpill.is-on, .tab.is-on, .btn-ghost, .btn-primary, .btn-approve, .term, .output, .diff-main, .doc, .verdict),
-html[data-material='acrylic'] :is(.navpills, .stat, .station-hit, .run-main, .panel, .project, .bezel, .newtask-aside, .newtask-main > .grid-2, .gatebar, .navpill.is-on, .tab.is-on, .btn-ghost, .btn-primary, .btn-approve, .term, .output, .diff-main, .doc, .verdict) {
-  -webkit-backdrop-filter: none; backdrop-filter: none; background-image: none; box-shadow: none;
-}
-html[data-material='vibrancy'] :is(.navpill.is-on, .tab.is-on, .btn-ghost), html[data-material='acrylic'] :is(.navpill.is-on, .tab.is-on, .btn-ghost) { background-color: var(--bg-5); }
-html[data-material='vibrancy'] .gatebar, html[data-material='acrylic'] .gatebar { background-color: rgba(255, 255, 255, 0.08); }
-html[data-material='vibrancy'] .btn-primary, html[data-material='acrylic'] .btn-primary { background-color: var(--accent); }
-html[data-material='vibrancy'] .station.st-active .station-hit, html[data-material='vibrancy'] .station.st-waiting .station-hit,
-html[data-material='acrylic'] .station.st-active .station-hit, html[data-material='acrylic'] .station.st-waiting .station-hit { background: var(--bg-5); }
-html[data-material='vibrancy'] .station.is-selected .station-hit, html[data-material='acrylic'] .station.is-selected .station-hit { box-shadow: inset 0 0 0 1px var(--line-2); }
