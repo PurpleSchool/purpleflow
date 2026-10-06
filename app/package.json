@@ -17,8 +17,8 @@
     "dist:dir": "electron-vite build && electron-builder --dir"
   },
   "devDependencies": {
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource-variable/onest": "^5.3.1",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@monaco-editor/react": "^4.7.0",
     "@psflow/core": "*",
     "@types/dompurify": "^3.0.5",

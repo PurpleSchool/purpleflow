@@ -4,19 +4,19 @@ import { FitAddon } from '@xterm/addon-fit';
 import { onCoreEvent } from '../lib/store';
 
 const THEME = {
-  background: '#0c0a16',
-  foreground: '#d9d4f2',
-  cursor: '#8d6bff',
-  cursorAccent: '#0c0a16',
-  selectionBackground: 'rgba(141,107,255,0.35)',
-  black: '#1e1935', brightBlack: '#5f5884',
-  red: '#ff7390', brightRed: '#ff9bb0',
-  green: '#55e2b4', brightGreen: '#8af0cd',
-  yellow: '#ffc163', brightYellow: '#ffd796',
-  blue: '#78cbff', brightBlue: '#a6dcff',
-  magenta: '#b8a3ff', brightMagenta: '#d4c8ff',
-  cyan: '#6fe3e9', brightCyan: '#a3f0f3',
-  white: '#d9d4f2', brightWhite: '#ffffff',
+  background: '#0a0b0d',
+  foreground: '#c9cad0',
+  cursor: '#8a74ee',
+  cursorAccent: '#0a0b0d',
+  selectionBackground: 'rgba(138,116,238,0.3)',
+  black: '#1d1e23', brightBlack: '#4d4f57',
+  red: '#df7e8d', brightRed: '#ec9eaa',
+  green: '#74c4a0', brightGreen: '#99d7ba',
+  yellow: '#d6ad66', brightYellow: '#e4c58e',
+  blue: '#84b4d6', brightBlue: '#a7cae3',
+  magenta: '#b2a5f5', brightMagenta: '#cbc2f8',
+  cyan: '#86c3c6', brightCyan: '#a9d6d8',
+  white: '#c9cad0', brightWhite: '#ffffff',
 };
 
 /** Живой лог прогона: история из файла лога + поток agent.output. */
@@ -26,9 +26,9 @@ export function LiveLog({ runId }: { runId: string }) {
   useEffect(() => {
     const term = new XTerm({
       theme: THEME,
-      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, monospace",
+      fontFamily: "'Geist Mono Variable', 'Geist Mono', ui-monospace, Menlo, monospace",
       fontSize: 12.5,
-      lineHeight: 1.45,
+      lineHeight: 1.6,
       convertEol: false,
       cursorBlink: false,
       disableStdin: true,

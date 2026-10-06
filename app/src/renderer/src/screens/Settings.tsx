@@ -120,7 +120,7 @@ export function SettingsScreen() {
                 Проверить снова
               </Button>
             </header>
-            <div className="tools">
+            <div className="tools bezel">
               {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
                 const info = tools?.[t];
                 const ok = info?.path && !info.error;
@@ -206,7 +206,7 @@ export function SettingsScreen() {
             </header>
             <div className="roles">
               {ROLES.map((r) => (
-                <div key={r.id} className={`role role-${r.agent}`}>
+                <div key={r.id} className={`role bezel role-${r.agent}`}>
                   <div className="role-head">
                     <strong>{r.title}</strong>
                     <span className="role-agent">{r.agent}</span>

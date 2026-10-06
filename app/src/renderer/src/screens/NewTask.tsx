@@ -86,7 +86,7 @@ export function NewTaskScreen() {
               <p className="inline-error"><TriangleAlert size={14} /> Это не git-репозиторий. Выполните git init и первый коммит.</p>
             )}
 
-            <div className="task-sheet">
+            <div className="task-sheet bezel">
               <label htmlFor="task" className="task-label">Что сделать</label>
               <textarea
                 id="task"

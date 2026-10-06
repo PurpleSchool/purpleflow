@@ -38,11 +38,11 @@ export function addUsage(a: TokenUsage, b: Partial<TokenUsage>): TokenUsage {
 export const c = {
   dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
   bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
-  violet: (s: string) => `\x1b[38;2;167;139;250m${s}\x1b[39m`,
-  sky: (s: string) => `\x1b[38;2;125;211;252m${s}\x1b[39m`,
-  mint: (s: string) => `\x1b[38;2;94;234;179m${s}\x1b[39m`,
-  amber: (s: string) => `\x1b[38;2;251;191;95m${s}\x1b[39m`,
-  coral: (s: string) => `\x1b[38;2;255;122;144m${s}\x1b[39m`,
+  violet: (s: string) => `\x1b[38;2;178;165;245m${s}\x1b[39m`,
+  sky: (s: string) => `\x1b[38;2;132;180;214m${s}\x1b[39m`,
+  mint: (s: string) => `\x1b[38;2;116;196;160m${s}\x1b[39m`,
+  amber: (s: string) => `\x1b[38;2;214;173;102m${s}\x1b[39m`,
+  coral: (s: string) => `\x1b[38;2;223;126;141m${s}\x1b[39m`,
 };
 
 /** xterm требует \r\n. */

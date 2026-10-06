@@ -269,11 +269,11 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
   return (
     <div className="scroll">
       <div className="plan">
-        <article className="doc">
+        <article className="doc bezel">
           <header className="doc-head"><span>proposal.md</span><span className="mono muted">{run.changeId}</span></header>
           <Markdown source={docs.proposal} />
         </article>
-        <article className="doc">
+        <article className="doc bezel">
           <header className="doc-head">
             <span>tasks.md</span>
             {all > 0 && (
@@ -286,10 +286,10 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
           <Markdown source={docs.tasks} className="tasks" />
         </article>
         {docs.design && (
-          <article className="doc"><header className="doc-head"><span>design.md</span></header><Markdown source={docs.design} /></article>
+          <article className="doc bezel"><header className="doc-head"><span>design.md</span></header><Markdown source={docs.design} /></article>
         )}
         {docs.specs.length > 0 && (
-          <article className="doc">
+          <article className="doc bezel">
             <header className="doc-head"><span>Дельты спецификаций</span><span className="muted">{docs.specs.length}</span></header>
             {docs.specs.map((s) => (
               <div key={s.path} className="spec">
@@ -349,7 +349,7 @@ function ReviewView({ run }: { run: RunFile }) {
             </button>
           ))}
         </div>
-        <div className={`verdict ${r.blocking.length ? 'is-bad' : 'is-ok'}`}>
+        <div className={`verdict bezel ${r.blocking.length ? 'is-bad' : 'is-ok'}`}>
           <span className="verdict-mark">{r.blocking.length ? r.blocking.length : <CircleCheck size={22} />}</span>
           <div>
             <strong>{r.blocking.length ? `Блокирующих замечаний: ${r.blocking.length}` : 'Блокирующих замечаний нет'}</strong>

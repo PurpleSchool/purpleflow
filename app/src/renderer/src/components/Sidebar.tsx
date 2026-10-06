@@ -77,16 +77,10 @@ export function Sidebar() {
 export function Mark({ size = 30 }: { size?: number }) {
   return (
     <svg className="mark" width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-      <defs>
-        <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#b8a3ff" />
-          <stop offset="1" stopColor="#6c4bf0" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="9" fill="#1e1935" stroke="rgba(184,163,255,.25)" />
-      <rect x="8" y="7" width="4" height="18" rx="2" fill="url(#mk)" />
-      <rect x="20" y="7" width="4" height="18" rx="2" fill="url(#mk)" />
-      <path d="M4 16h24" stroke="#78cbff" strokeWidth="2" strokeLinecap="round" strokeDasharray="2.5 3.5" />
+      <rect x="0.5" y="0.5" width="31" height="31" rx="9.5" fill="#1d1e23" stroke="rgba(255,255,255,.09)" />
+      <rect x="9" y="8" width="3" height="16" rx="1.5" fill="#ececef" />
+      <rect x="20" y="8" width="3" height="16" rx="1.5" fill="#ececef" />
+      <path d="M5.5 16h2M14.5 16h3M24.5 16h2" stroke="#8a74ee" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
