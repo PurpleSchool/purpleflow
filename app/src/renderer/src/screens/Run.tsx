@@ -124,38 +124,37 @@ export function RunScreen({ runId }: { runId: string }) {
 
   return (
     <div className="screen run">
-      <header className="topbar run-top">
-        <div className="topbar-title">
-          <h1 title={run.task}>{run.title}</h1>
-          <div className="topbar-sub">
-            <StatusPill status={run.status} />
-            <span className="chip mono"><GitBranch size={12} /> {run.branch}</span>
-            <span className="muted mono" title={run.projectPath}>{shortPath(run.projectPath)}</span>
-          </div>
-        </div>
-        <div className="topbar-actions">
-          <Button tone="quiet" icon={<FolderOpen size={15} />} title="Открыть worktree" onClick={() => void window.psflow.openPath(run.worktreePath)} />
-          {resumable && !gate && (
-            <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
-              Продолжить
-            </Button>
-          )}
-          {live && (
-            <Button tone="danger" icon={<CircleStop size={15} />} busy={busy === 'stop'} onClick={() => act('stop', () => dispatch({ type: 'run.stop', runId }))}>
-              Стоп
-            </Button>
-          )}
-        </div>
-      </header>
-
-      <div className={`run-body ${tab === 'accept' ? 'is-wide' : ''}`}>
-        <div className="run-left">
-          <StageRail run={run} selected={selected} onSelect={select} />
+      <div className={`run-grid ${tab === 'accept' ? 'is-wide' : ''}`}>
+        <aside className="run-left">
           <Metrics run={run} />
-        </div>
+          <StageRail run={run} selected={selected} onSelect={select} />
+        </aside>
 
         <section className="run-main">
-          <Banner run={run} />
+          <header className="run-head">
+            <div className="run-title">
+              <h1 title={run.task}>{run.title}</h1>
+              <div className="run-meta">
+                <StatusPill status={run.status} />
+                <span className="chip mono" title={run.branch}><GitBranch size={12} /> {run.branch}</span>
+                <span className="muted mono path" title={run.projectPath}>{shortPath(run.projectPath)}</span>
+              </div>
+            </div>
+            <div className="run-actions">
+              <Button tone="quiet" icon={<FolderOpen size={16} />} title="Открыть worktree" onClick={() => void window.psflow.openPath(run.worktreePath)} />
+              {resumable && !gate && (
+                <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
+                  Продолжить
+                </Button>
+              )}
+              {live && (
+                <Button tone="danger" icon={<CircleStop size={15} />} busy={busy === 'stop'} onClick={() => act('stop', () => dispatch({ type: 'run.stop', runId }))}>
+                  Стоп
+                </Button>
+              )}
+            </div>
+          </header>
+
           <nav className="tabs" role="tablist">
             {tabs.map((t) => (
               <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'is-on' : ''}`} disabled={t.disabled} onClick={() => setTab(t.id)}>
@@ -164,6 +163,8 @@ export function RunScreen({ runId }: { runId: string }) {
               </button>
             ))}
           </nav>
+
+          {!(tab === 'accept' && run.status === 'finished') && <Banner run={run} />}
 
           <div className="tab-body">
             <div className={`pane ${tab === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
@@ -250,11 +251,21 @@ function Metrics({ run }: { run: RunFile }) {
   const c = cost(run.totals);
   return (
     <dl className="metrics">
-      <div><dt>Время</dt><dd>{duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))}</dd></div>
-      <div><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}>{total ? tokens(total) : '—'}</dd></div>
-      <div><dt>Стоимость</dt><dd>{c ?? '—'}</dd></div>
-      <div><dt>Попытки</dt><dd>{run.implAttemptsUsed} / {run.implAttemptsLimit}</dd></div>
+      <div className="stat"><dt>Время</dt><dd><Num text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd></div>
+      <div className="stat"><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><Num text={total ? tokens(total) : '—'} /></dd></div>
+      <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
+      <div className="stat"><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
     </dl>
+  );
+}
+
+/** Крупное число тонким начертанием, единицы — мелко и серым: «18 мин 54 с», «93 тыс.». */
+function Num({ text }: { text: string }) {
+  const parts = text.split(/(\d+(?:[.,]\d+)?|\$)/).filter(Boolean);
+  return (
+    <>
+      {parts.map((p, i) => (/^[\d$]/.test(p) ? <span key={i}>{p}</span> : <small key={i}>{p}</small>))}
+    </>
   );
 }
 

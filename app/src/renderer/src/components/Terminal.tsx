@@ -4,10 +4,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { onCoreEvent } from '../lib/store';
 
 const THEME = {
-  background: '#0a0b0d',
+  background: '#08090a',
   foreground: '#c9cad0',
   cursor: '#8a74ee',
-  cursorAccent: '#0a0b0d',
+  cursorAccent: '#08090a',
   selectionBackground: 'rgba(138,116,238,0.3)',
   black: '#1d1e23', brightBlack: '#4d4f57',
   red: '#df7e8d', brightRed: '#ec9eaa',

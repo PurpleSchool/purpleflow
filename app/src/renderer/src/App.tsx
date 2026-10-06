@@ -1,4 +1,4 @@
-import { Sidebar } from './components/Sidebar';
+import { AppBar } from './components/Sidebar';
 import { useStore } from './lib/store';
 import { HistoryScreen } from './screens/History';
 import { NewTaskScreen } from './screens/NewTask';
@@ -10,7 +10,7 @@ export function App() {
   const v = state.view;
   return (
     <div className={`app os-${window.psflow.platform}`}>
-      <Sidebar />
+      <AppBar />
       <main className="main">
         {v.name === 'new' && <NewTaskScreen />}
         {v.name === 'run' && <RunScreen runId={v.runId} />}

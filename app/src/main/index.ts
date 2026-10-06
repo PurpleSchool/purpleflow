@@ -66,10 +66,10 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 680,
     show: false,
-    backgroundColor: '#0e0f12',
+    backgroundColor: '#0b0c0e',
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 20, y: 20 },
-    titleBarOverlay: isMac ? undefined : { color: '#0e0f12', symbolColor: '#a7a9b1', height: 44 },
+    trafficLightPosition: { x: 20, y: 22 },
+    titleBarOverlay: isMac ? undefined : { color: '#0b0c0e', symbolColor: '#a7a9b1', height: 60 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
