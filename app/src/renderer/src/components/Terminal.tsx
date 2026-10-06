@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { onCoreEvent } from '../lib/store';
 
 const THEME = {
-  background: '#08090a',
+  background: 'rgba(0,0,0,0)',
   foreground: '#c9cad0',
   cursor: '#8a74ee',
   cursorAccent: '#08090a',
@@ -32,6 +32,7 @@ export function LiveLog({ runId }: { runId: string }) {
       convertEol: false,
       cursorBlink: false,
       disableStdin: true,
+      allowTransparency: true,
       scrollback: 20000,
       allowProposedApi: false,
     });
