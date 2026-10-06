@@ -100,6 +100,9 @@ export class Orchestrator {
       case 'run.stop':
         await this.stop(cmd.runId);
         return { runId: cmd.runId };
+      case 'run.merge':
+        await this.merge(cmd.runId, cmd.target);
+        return { runId: cmd.runId };
     }
   }
 
@@ -147,6 +150,27 @@ export class Orchestrator {
     const tools = await this.tools(['git']);
     const git = new Git(tools.git, this.opts.env);
     return git.diff(r.worktreePath, r.baseCommit, (p) => p.startsWith('openspec/changes/') && p.endsWith('/run.json'));
+  }
+
+  /** Ветки репозитория пользователя для слияния результата. */
+  async listBranches(id: string): Promise<{ branches: string[]; current: string | null }> {
+    const r = this.mustLoad(id);
+    const tools = await this.tools(['git']);
+    const b = await new Git(tools.git, this.opts.env).branches(r.projectPath);
+    return { branches: b.branches.filter((x) => x !== r.branch && !x.startsWith('psflow/')), current: b.current };
+  }
+
+  /** Влить ветку прогона в выбранную ветку репозитория пользователя (решение человека). */
+  private async merge(id: string, target: string) {
+    const r = this.mustLoad(id);
+    if (r.status !== 'finished') throw new Error('Влить можно только завершённый прогон');
+    if (!target.trim()) throw new Error('Выберите ветку');
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+    const sha = await git.merge(r.projectPath, r.branch, target, `Merge ${r.branch}: ${r.title}`, this.store.worktreesDir());
+    r.merged = { into: target, commit: sha, at: new Date().toISOString() };
+    this.save(r);
+    this.log(r, c.mint(`✓ ${r.branch} влита в ${target} (${sha.slice(0, 8)})`) + '\n');
   }
 
   /** proposal.md, tasks.md и дельты спецификаций — для гейта 1 и ревью. */

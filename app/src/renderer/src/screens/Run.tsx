@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  ChevronDown, CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
@@ -14,7 +14,7 @@ import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
 import { Button, Empty, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
-import { cost, duration, shortPath, tokens, usageTotal } from '../lib/format';
+import { cost, duration, shortPath, tokens, usageTotal, when } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 
 type View = 'timeline' | 'log';
@@ -68,6 +68,7 @@ export function RunScreen({ runId }: { runId: string }) {
     if (key === gateKey.current) return;
     gateKey.current = key;
     if (run.status === 'waiting') {
+      setView('timeline');
       setDrawer(run.next === 'limit' ? 'gate2' : run.next);
       setAttemptNo(null);
     }
@@ -93,6 +94,7 @@ export function RunScreen({ runId }: { runId: string }) {
   }), [runId, showPlan]);
 
   const open = (s: StageId) => {
+    setView('timeline');
     setDrawer(s);
     setAttemptNo(null);
   };
@@ -108,6 +110,7 @@ export function RunScreen({ runId }: { runId: string }) {
       const el = e.target as HTMLElement;
       if (el.closest('input, textarea, [contenteditable], .monaco-editor') || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape' && drawer) {
+        e.preventDefault();
         setDrawer(null);
         return;
       }
@@ -213,95 +216,82 @@ export function RunScreen({ runId }: { runId: string }) {
           <PillTabs<View>
             className="tabs"
             value={view}
-            onChange={setView}
+            onChange={(v) => { setView(v); if (v === 'log') setDrawer(null); }}
             items={[
               { id: 'timeline', label: 'Таймлайн' },
               { id: 'log', label: 'Лог' },
             ]}
           />
           <span className="grow" />
-          {view === 'timeline' && (
+          {view === 'timeline' && !drawer && (
             <span className="tab-hint"><MousePointerClick size={14} /> Нажмите на стадию — откроются её детали</span>
           )}
         </div>
 
-        <Banner run={run} />
+        <Banner run={run} runId={runId} />
 
         <div className="tab-body">
           <div className={`pane ${view === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
           {view === 'timeline' && (
-            <div className="tab-enter" key="timeline">
-              <div className="scroll">
+            <div className={`split ${drawer ? 'is-open' : ''} ${showDiff ? 'is-wide' : ''}`}>
+              <div className="split-left scroll">
                 <div className="timeline-panel">
-                  <Timeline run={run} selected={drawer} current={live ? currentStage(run) : null} onSelect={open} />
+                  <Timeline run={run} selected={drawer} current={live ? currentStage(run) : null} onSelect={open} compact={Boolean(drawer)} />
                 </div>
+              </div>
+              <div className="split-right">
+                {drawer && stageDef && (
+                  <div className="details" key={drawer}>
+                    <header className="drawer-head">
+                      <span className={`drawer-icon st-${nodeState(run, drawer)}`}>{STAGE_ICON[drawer]}</span>
+                      <div className="drawer-title">
+                        <strong>{stageDef.title}</strong>
+                        <span>{stageDef.actor}{stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
+                      </div>
+                      {tries.length > 1 && (
+                        <PillTabs<string>
+                          className="tabs attempts"
+                          value={attempt ? String(attempt.attempt) : null}
+                          onChange={(v) => setAttemptNo(Number(v))}
+                          items={tries.map((a) => ({
+                            id: String(a.attempt),
+                            label: `#${a.attempt}`,
+                            extra: a.status === 'running' ? <span className="tab-live" /> : <i className={`attempt-dot d-${a.status}`} />,
+                          }))}
+                        />
+                      )}
+                      <Button tone="quiet" icon={<X size={18} />} title="Свернуть детали (Esc)" onClick={() => setDrawer(null)} />
+                    </header>
+                    <div className="drawer-body">
+                      {showPlan && <PlanView docs={docs} run={run} />}
+                      {slice && <div className="pane-log"><LiveLog key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} /></div>}
+                      {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
+                      {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
+                      {showDiff && (
+                        diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
+                        : !diff ? <div className="center"><span className="spinner big" /></div>
+                        : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
+                      )}
+                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && (
+                        <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {!drawer && gateBar}
+        {gateBar}
         {!gate && error && <div className="gatebar"><span className="actionbar-error">{error}</span></div>}
       </section>
-
-      {drawer && stageDef && (
-        <>
-          <div className="drawer-scrim" onMouseDown={() => setDrawer(null)} />
-          <aside className={`drawer ${showDiff ? 'is-wide' : ''}`} role="dialog" aria-label={`Детали стадии «${stageDef.title}»`} key={drawer}>
-            <header className="drawer-head">
-              <span className={`drawer-icon st-${nodeState(run, drawer)}`}>{STAGE_ICON[drawer]}</span>
-              <div className="drawer-title">
-                <strong>{stageDef.title}</strong>
-                <span>{stageDef.actor}{stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
-              </div>
-              {tries.length > 1 && (
-                <PillTabs<string>
-                  className="tabs attempts"
-                  value={attempt ? String(attempt.attempt) : null}
-                  onChange={(v) => setAttemptNo(Number(v))}
-                  items={tries.map((a) => ({
-                    id: String(a.attempt),
-                    label: `#${a.attempt}`,
-                    extra: a.status === 'running' ? <span className="tab-live" /> : <i className={`attempt-dot d-${a.status}`} />,
-                  }))}
-                />
-              )}
-              <Button tone="quiet" icon={<X size={18} />} title="Закрыть (Esc)" onClick={() => setDrawer(null)} />
-            </header>
-            <div className="drawer-body">
-              {showPlan && <PlanView docs={docs} run={run} />}
-              {slice && <div className="pane-log"><LiveLog key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} /></div>}
-              {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
-              {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
-              {showDiff && (
-                diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
-                : !diff ? <div className="center"><span className="spinner big" /></div>
-                : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
-              )}
-              {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && (
-                <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
-              )}
-            </div>
-            {gateBar}
-          </aside>
-        </>
-      )}
     </div>
   );
 }
 
-function Banner({ run }: { run: RunFile }) {
-  if (run.status === 'finished') {
-    return (
-      <div className="banner b-mint">
-        <CircleCheck size={18} />
-        <div>
-          <strong>Готово: изменение заархивировано и закоммичено в {run.branch}</strong>
-          <p>Слейте ветку, когда будете готовы: <code>git merge {run.branch}</code></p>
-        </div>
-      </div>
-    );
-  }
+function Banner({ run, runId }: { run: RunFile; runId: string }) {
+  if (run.status === 'finished') return <MergeBanner run={run} runId={runId} />;
   if (run.status === 'cancelled') return <div className="banner b-quiet"><X size={18} /><div><strong>Прогон отменён</strong></div></div>;
   if (run.status === 'stopped' && run.message) {
     const failed = run.attempts.some((a) => a.status === 'failed' && a.error === run.message);
@@ -327,6 +317,67 @@ function Banner({ run }: { run: RunFile }) {
     );
   }
   return null;
+}
+
+/** Готовый прогон: влить ветку psflow/<id> в выбранную ветку репозитория. */
+function MergeBanner({ run, runId }: { run: RunFile; runId: string }) {
+  const [branches, setBranches] = useState<string[]>([]);
+  const [target, setTarget] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (run.merged) return;
+    void window.psflow.core.listBranches(runId).then((b) => {
+      setBranches(b.branches);
+      setTarget((t) => t || b.current || b.branches[0] || '');
+    }).catch((e) => setError(cleanErr(e)));
+  }, [runId, run.merged]);
+
+  const merge = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await window.psflow.core.dispatch({ type: 'run.merge', runId, target });
+    } catch (e) {
+      setError(cleanErr(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (run.merged) {
+    return (
+      <div className="banner b-mint">
+        <GitMerge size={18} />
+        <div>
+          <strong>Влито в {run.merged.into}</strong>
+          <p>Коммит слияния <code>{run.merged.commit.slice(0, 8)}</code> · {when(run.merged.at)}</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="banner b-mint merge-banner">
+      <CircleCheck size={18} />
+      <div className="grow">
+        <strong>Готово: изменение заархивировано и закоммичено в {run.branch}</strong>
+        {error && <p className="merge-error">{error}</p>}
+      </div>
+      <div className="merge-actions">
+        <label className="select">
+          <span>в ветку</span>
+          <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy || !branches.length}>
+            {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <ChevronDown size={14} />
+        </label>
+        <Button tone="approve" icon={<GitMerge size={15} />} busy={busy} disabled={!target} onClick={() => void merge()}>
+          Влить
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function Metrics({ run }: { run: RunFile }) {

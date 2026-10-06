@@ -44,6 +44,7 @@ export interface CoreApi {
   testConnection(): Promise<ConnectionCheck[]>;
   detectProject(dir: string): Promise<ProjectCommands & { isRepo: boolean; name: string }>;
   isDriving(id: string): Promise<boolean>;
+  listBranches(id: string): Promise<{ branches: string[]; current: string | null }>;
 }
 
 export type CoreMethod = keyof CoreApi;

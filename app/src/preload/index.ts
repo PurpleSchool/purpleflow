@@ -5,7 +5,7 @@ import type { CoreEvent } from '@psflow/core';
 const call = (method: CoreMethod) => (...args: unknown[]) => ipcRenderer.invoke('core:call', method, args);
 
 const methods: CoreMethod[] = [
-  'dispatch', 'listRuns', 'getRun', 'getLog', 'getDiff', 'getChangeDocs', 'detectTools', 'testConnection', 'detectProject', 'isDriving',
+  'dispatch', 'listRuns', 'getRun', 'getLog', 'getDiff', 'getChangeDocs', 'detectTools', 'testConnection', 'detectProject', 'isDriving', 'listBranches',
 ];
 
 const bridge: PsFlowBridge = {

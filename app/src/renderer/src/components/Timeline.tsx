@@ -33,8 +33,10 @@ const WORD: Record<string, string> = {
 /** Сколько символов влезает в полоску: ширина трека ~ 1100px, моноширинный 11px ≈ 7px на символ. */
 const fits = (widthPct: number, text: string) => (widthPct / 100) * 1100 > text.length * 7 + 18;
 
-export function Timeline({ run, onSelect, selected = null, current = null }: {
+export function Timeline({ run, onSelect, selected = null, current = null, compact = false }: {
   run: RunFile; onSelect?: (s: StageId) => void; selected?: StageId | null; current?: StageId | null;
+  /** Свёрнутый вид в левой колонке, пока справа открыты детали стадии. */
+  compact?: boolean;
 }) {
   const now = useNow(run);
   const clock = activeClock(run, now);
@@ -42,7 +44,7 @@ export function Timeline({ run, onSelect, selected = null, current = null }: {
   const ticks = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="gantt is-large" aria-label="Время по стадиям">
+    <div className={`gantt is-large ${compact ? 'is-compact' : ''}`} aria-label="Время по стадиям">
       <div className="gantt-grid" aria-hidden>
         {ticks.map((f) => <i key={f} style={{ left: `${f * 100}%` }} />)}
       </div>
@@ -79,7 +81,7 @@ export function Timeline({ run, onSelect, selected = null, current = null }: {
             <span className="gantt-track">
               {bars.map((b, i) => {
                 const full = `${bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}${b.took}`;
-                const label = fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
+                const label = compact ? '' : fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
                 return (
                   <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: `${b.left}%`, width: `${b.width}%` }} title={b.tip}>
                     {label && <b>{label}</b>}

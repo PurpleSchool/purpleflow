@@ -23,6 +23,7 @@ function api(c: Orchestrator): CoreApi {
     detectTools: () => c.detectTools(),
     testConnection: () => c.testConnection(),
     isDriving: async (id) => c.isDriving(id),
+    listBranches: (id) => c.listBranches(id),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
       const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);

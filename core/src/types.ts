@@ -142,6 +142,8 @@ export interface RunFile {
   /** Путь к run.json после `openspec archive` (папка изменения переезжает в archive/). */
   archivedPath?: string;
   commit?: string;
+  /** Ветка psflow/<id> влита человеком из приложения. */
+  merged?: { into: string; commit: string; at: string };
 }
 
 export interface RunSummary {
@@ -188,7 +190,8 @@ export type CoreCommand =
   | { type: 'gate.approve'; runId: string; comment?: string }
   | { type: 'gate.reject'; runId: string; comment: string; lineComments?: LineComment[] }
   | { type: 'gate.cancel'; runId: string }
-  | { type: 'run.stop'; runId: string };
+  | { type: 'run.stop'; runId: string }
+  | { type: 'run.merge'; runId: string; target: string };
 
 export interface DiffFile {
   path: string;

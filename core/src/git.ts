@@ -125,4 +125,58 @@ export class Git {
     await this.git(worktree, [...identity, 'commit', '-m', message, '--no-verify']);
     return this.head(worktree);
   }
+
+  /** Локальные ветки репозитория и та, что открыта в основной рабочей копии. */
+  async branches(repo: string): Promise<{ branches: string[]; current: string | null }> {
+    const out = await this.git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
+    const cur = (await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: repo, env: this.env })).stdout.trim();
+    return { branches: out.split('\n').map((x) => x.trim()).filter(Boolean), current: cur || null };
+  }
+
+  /** Где сейчас открыта ветка (основная копия или другая worktree), если открыта. */
+  private async checkedOutAt(repo: string, branch: string): Promise<string | null> {
+    const out = await this.git(repo, ['worktree', 'list', '--porcelain']);
+    let wt: string | null = null;
+    for (const line of out.split('\n')) {
+      if (line.startsWith('worktree ')) wt = line.slice(9);
+      else if (line === `branch refs/heads/${branch}` && wt) return wt;
+    }
+    return null;
+  }
+
+  /**
+   * Влить source в target с merge-коммитом.
+   * Если target открыта в рабочей копии — только при чистом дереве; иначе — во временной worktree,
+   * не трогая файлы пользователя. При конфликте слияние отменяется и ничего не меняется.
+   */
+  async merge(repo: string, source: string, target: string, message: string, tmpDir: string): Promise<string> {
+    const at = await this.checkedOutAt(repo, target);
+    let dir = at;
+    let temp = false;
+    if (at) {
+      const dirty = (await this.git(at, ['status', '--porcelain', '--untracked-files=no'])).trim();
+      if (dirty) {
+        throw new Error(`В ${at} есть незакоммиченные изменения в ветке ${target}. Закоммитьте или спрячьте их (git stash) и повторите.`);
+      }
+    } else {
+      dir = path.join(tmpDir, `merge-${Date.now()}`);
+      await this.git(repo, ['worktree', 'add', dir, target], 60_000);
+      temp = true;
+    }
+    try {
+      const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir!, env: this.env })).stdout.trim();
+      const identity = hasUser ? [] : ['-c', 'user.name=PS Flow', '-c', 'user.email=psflow@localhost'];
+      const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], { cwd: dir!, env: this.env, timeoutMs: 120_000 });
+      if (r.code !== 0) {
+        const conflicts = (await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir!, env: this.env })).stdout.trim();
+        await run(this.bin, ['merge', '--abort'], { cwd: dir!, env: this.env });
+        throw new Error(conflicts
+          ? `Конфликт при слиянии в ${target}, слияние отменено. Файлы:\n${conflicts}`
+          : `Слияние в ${target} не удалось: ${(r.stderr || r.stdout).trim().slice(-600)}`);
+      }
+      return (await this.git(dir!, ['rev-parse', 'HEAD'])).trim();
+    } finally {
+      if (temp) await run(this.bin, ['worktree', 'remove', '--force', dir!], { cwd: repo, env: this.env, timeoutMs: 60_000 });
+    }
+  }
 }

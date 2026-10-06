@@ -22,3 +22,47 @@ test('дифф для окна и коммит не конфликтуют за 
   assert.notEqual(sha, base);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('merge: чистая копия, грязная копия, ветка вне копии, конфликт', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-merge-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-merge-wt-'));
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  g('branch', 'dev');
+  g('checkout', '-q', '-b', 'psflow/x');
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
+  g('add', '-A'); g('commit', '-qm', 'feature');
+  g('checkout', '-q', 'main');
+  const git = new Git('git', process.env);
+
+  // 1. main открыта и чистая — вливаем прямо в неё.
+  const sha = await git.merge(dir, 'psflow/x', 'main', 'Merge psflow/x', tmp);
+  assert.equal(g('rev-parse', 'main').trim(), sha);
+  assert.ok(fs.existsSync(path.join(dir, 'b.txt')));
+
+  // 2. dev нигде не открыта — вливаем во временной worktree, рабочая копия не меняется.
+  const before = g('rev-parse', 'HEAD').trim();
+  await git.merge(dir, 'psflow/x', 'dev', 'Merge psflow/x', tmp);
+  assert.equal(g('rev-parse', 'HEAD').trim(), before);
+  assert.match(g('log', '--format=%s', '-1', 'dev'), /Merge psflow\/x/);
+  assert.equal(fs.readdirSync(tmp).length, 0);
+
+  // 3. Незакоммиченные изменения в открытой ветке — отказ без изменений.
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'dirty\n');
+  await assert.rejects(git.merge(dir, 'psflow/x', 'main', 'm', tmp), /незакоммиченные/);
+  g('checkout', '--', 'a.txt');
+
+  // 4. Конфликт — слияние отменено, дерево чистое.
+  g('checkout', '-q', '-b', 'psflow/y', 'main~1');
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'other\n');
+  g('add', '-A'); g('commit', '-qm', 'conflict');
+  g('checkout', '-q', 'main');
+  const headBefore = g('rev-parse', 'HEAD').trim();
+  await assert.rejects(git.merge(dir, 'psflow/y', 'main', 'm', tmp), /Конфликт[\s\S]*b\.txt/);
+  assert.equal(g('rev-parse', 'HEAD').trim(), headBefore);
+  assert.equal(g('status', '--porcelain').trim(), '');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

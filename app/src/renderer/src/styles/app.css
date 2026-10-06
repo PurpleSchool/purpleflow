@@ -919,3 +919,44 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 }
 .gantt-go { color: var(--text-3); }
 .gantt-go svg { width: 18px; height: 18px; }
+
+/* ——— Раскладка: гант сворачивается влево, детали открываются рядом ——— */
+.split {
+  flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 0fr; transition: grid-template-columns 0.55s var(--ease);
+}
+.split.is-open { grid-template-columns: 340px minmax(0, 1fr); }
+.split.is-open.is-wide { grid-template-columns: 86px minmax(0, 1fr); }
+.split-left { min-width: 0; overflow-y: auto; overflow-x: hidden; }
+.split-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+.details { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 0 var(--s-4) var(--s-2) 0; border-radius: 22px; background: var(--bg-2); animation: detailsIn 0.5s var(--ease) both; }
+@keyframes detailsIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+.details .drawer-head { padding: var(--s-5) var(--s-5) var(--s-4) var(--s-6); }
+.details .plan { grid-template-columns: 1fr; }
+.details .doc, .details .verdict { background: var(--bg-3); }
+.details .diff { padding-top: 0; }
+
+/* Компактный гант в левой колонке */
+.gantt.is-compact { gap: 4px; }
+.gantt.is-compact .gantt-row.is-click { grid-template-columns: 150px 1fr 18px; gap: var(--s-3); padding: 7px 8px; }
+.gantt.is-compact .gantt-name small { display: none; }
+.gantt.is-compact .gantt-name em { display: none; }
+.gantt.is-compact .gantt-track { height: 8px; border-radius: 4px; }
+.gantt.is-compact .gantt-bar { border-radius: 4px; }
+.gantt.is-compact .gantt-go span { display: none; }
+.gantt.is-compact .gantt-grid, .gantt.is-compact .gantt-gaps, .gantt.is-compact .gantt-axis, .gantt.is-compact .gantt-legend { display: none; }
+.split.is-open .timeline-panel { padding: var(--s-2) var(--s-3) var(--s-6) var(--s-6); }
+/* Совсем узко (дифф): только иконки */
+.split.is-wide .gantt.is-compact .gantt-row.is-click { grid-template-columns: 34px; padding: 6px; justify-content: center; }
+.split.is-wide .gantt.is-compact .gantt-name, .split.is-wide .gantt.is-compact .gantt-track, .split.is-wide .gantt.is-compact .gantt-go { display: none; }
+.split.is-wide .timeline-panel { padding: var(--s-2) var(--s-3); }
+
+/* Слияние в выбранную ветку */
+.merge-banner { align-items: center; }
+.merge-actions { display: flex; align-items: center; gap: var(--s-2); flex: none; }
+.merge-error { color: var(--err) !important; white-space: pre-wrap; }
+.select { position: relative; display: inline-flex; align-items: center; gap: var(--s-2); height: 38px; padding: 0 34px 0 var(--s-4); border-radius: var(--r-pill); background: var(--bg-4); color: var(--text-3); font-size: var(--fs-12); }
+.select select { appearance: none; border: 0; outline: 0; background: transparent; color: var(--text-1); font: 500 var(--fs-13) var(--font-code); cursor: pointer; max-width: 220px; }
+.select select option { background: #1b1c1f; color: var(--text-1); }
+.select svg { position: absolute; right: 12px; color: var(--text-3); pointer-events: none; }
+.select:focus-within { box-shadow: inset 0 0 0 1px var(--line-3); }
