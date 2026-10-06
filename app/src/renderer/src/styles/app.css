@@ -735,3 +735,32 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .timeline-sum dt { font-size: var(--fs-12); color: var(--text-3); }
 .timeline-sum dd { margin: var(--s-2) 0 0; font-size: 28px; font-weight: 300; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
 .gantt.is-large .g-wait b, .gantt.is-large .g-wait-live b { margin-left: 4px; padding: 3px 6px; border-radius: 5px; background: rgba(18, 14, 6, 0.82); color: var(--wait); }
+.stat-sum { margin: var(--s-3) 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-12); color: var(--text-3); }
+.stat-sum span + span::before { content: ''; display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); margin: 0 10px 2px -8px; vertical-align: middle; }
+
+/* Краткая сводка под временем */
+.stat-sum { margin: var(--s-3) 0 0; display: flex; flex-wrap: wrap; gap: 4px 0; font-size: var(--fs-12); color: var(--text-3); }
+.stat-sum span + span::before { content: ''; display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); margin: 0 9px 2px; vertical-align: middle; }
+
+/* Вкладка стадии, которая идёт сейчас: крутящийся жёлтый кружок */
+.tab-live {
+  width: 13px; height: 13px; border-radius: 50%; flex: none;
+  border: 1.75px solid rgba(214, 173, 102, 0.25); border-top-color: var(--wait); border-right-color: var(--wait);
+  animation: spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .tab-live { animation: none; border-color: var(--wait); } }
+
+/* ——— Окно замечания к строке и комментарий гейта: в общем стиле ——— */
+.composer { padding: var(--s-4); background: var(--bg-3); box-shadow: none; gap: var(--s-3); }
+.composer.is-open { background: var(--bg-4); box-shadow: none; animation: rise 0.35s var(--ease) both; }
+.composer-head { color: var(--text-2); font-size: var(--fs-12); }
+.composer-head svg { color: var(--text-3); }
+.composer .textarea, .gate-comment.textarea {
+  min-height: 84px; resize: none; font-size: var(--fs-13); line-height: 1.55;
+  background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line);
+}
+.composer .textarea:focus, .gate-comment.textarea:focus { box-shadow: inset 0 0 0 1px var(--line-3); }
+.composer .textarea::placeholder, .gate-comment.textarea::placeholder { color: var(--text-4); }
+.composer-actions { gap: 4px; }
+.composer-actions .btn { height: 32px; padding: 0 var(--s-4); font-size: var(--fs-12); }
+.composer-actions .btn-primary:disabled { background: var(--bg-5); color: var(--text-3); opacity: 1; }

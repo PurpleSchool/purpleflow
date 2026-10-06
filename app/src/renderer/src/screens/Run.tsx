@@ -111,6 +111,13 @@ export function RunScreen({ runId }: { runId: string }) {
   const lastReview = run.reviews[run.reviews.length - 1];
   const lastTest = run.tests[run.tests.length - 1];
   const hasCode = run.attempts.some((a) => a.stage === 'implement');
+  // План «прошёл», когда последняя попытка планировщика прошла openspec validate.
+  const lastPlan = [...run.attempts].reverse().find((a) => a.stage === 'plan');
+  const planState = lastPlan?.status === 'done' ? 'ok' : lastPlan?.status === 'failed' ? 'fail' : undefined;
+  // Какая вкладка соответствует стадии, которая идёт или ждёт решения прямо сейчас.
+  const activeTab: Tab | null = live
+    ? ({ plan: 'plan', gate1: 'plan', tests: 'tests', review: 'review', gate2: 'accept', limit: 'accept' } as Partial<Record<StageId, Tab>>)[run.next] ?? null
+    : null;
 
   const select = (s: StageId) => {
     setSelected(s);
@@ -119,7 +126,7 @@ export function RunScreen({ runId }: { runId: string }) {
 
   const tabs: { id: Tab; label: string; badge?: string; tone?: string; disabled?: boolean }[] = [
     { id: 'log', label: 'Лог' },
-    { id: 'plan', label: 'План', disabled: !run.attempts.some((a) => a.stage === 'plan') },
+    { id: 'plan', label: 'План', badge: planState, tone: planState === 'ok' ? 'mint' : planState === 'fail' ? 'coral' : undefined, disabled: !run.attempts.some((a) => a.stage === 'plan') },
     { id: 'tests', label: 'Тесты', badge: lastTest ? (lastTest.passed ? 'ok' : 'fail') : undefined, tone: lastTest ? (lastTest.passed ? 'mint' : 'coral') : undefined, disabled: !run.tests.length },
     { id: 'review', label: 'Ревью', badge: lastReview ? String(lastReview.blocking.length + lastReview.notes.length) : undefined, tone: lastReview?.blocking.length ? 'coral' : 'quiet', disabled: !run.reviews.length },
     { id: 'accept', label: run.status === 'finished' ? 'Дифф' : 'Приёмка', disabled: !hasCode },
@@ -176,7 +183,9 @@ export function RunScreen({ runId }: { runId: string }) {
                 id: t.id,
                 label: t.label,
                 disabled: t.disabled,
-                extra: t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
+                extra: activeTab === t.id
+                ? <span className="tab-live" title="Идёт сейчас" />
+                : t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
               }))}
             />
           </div>
@@ -260,6 +269,9 @@ function Banner({ run }: { run: RunFile }) {
 function Metrics({ run, onOpenTimeline }: { run: RunFile; onOpenTimeline: () => void }) {
   const live = run.status === 'running' || run.status === 'waiting';
   const clock = activeClock(run);
+  const isGate = (st: StageId) => st === 'gate1' || st === 'gate2' || st === 'limit';
+  const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
+  const humanMs = run.attempts.filter((a) => isGate(a.stage)).reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : Date.now()) - Date.parse(a.startedAt)), 0);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!live) return;
@@ -276,6 +288,11 @@ function Metrics({ run, onOpenTimeline }: { run: RunFile; onOpenTimeline: () => 
         </button>
         <dt>Время</dt>
         <dd title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}><Num animate={false} text={ms(clock.total)} /></dd>
+        <p className="stat-sum">
+          <span>ждали вас {ms(humanMs)}</span>
+          <span>запусков стадий: {runs}</span>
+          {clock.paused > 0 && <span>простой {ms(clock.paused)} не учтён</span>}
+        </p>
         <button className="gantt-open" onClick={onOpenTimeline} aria-label="Открыть таймлайн">
           <Timeline run={run} />
         </button>

@@ -110,7 +110,11 @@ function createWindow() {
     },
   });
   nativeTheme.themeSource = 'dark';
-  win.once('ready-to-show', () => win?.show());
+  win.once('ready-to-show', () => {
+    // Режим скриншотов не должен перехватывать фокус и клавиатуру у человека.
+    if (process.env.PSFLOW_CAPTURE) win?.showInactive();
+    else win?.show();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
@@ -182,6 +186,7 @@ app.on('before-quit', (e) => {
 });
 
 app.whenReady().then(() => {
+  if (process.env.PSFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
   void startHost();
   createWindow();
   app.on('activate', () => {
