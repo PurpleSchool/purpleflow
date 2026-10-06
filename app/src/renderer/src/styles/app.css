@@ -676,3 +676,62 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .g-wait-live { animation: breathe 2s var(--ease-soft) infinite; }
 .gantt-axis { display: flex; justify-content: space-between; margin: 4px 0 0 104px; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .gate-sign { display: grid; place-items: center; color: var(--wait); border-radius: 50%; }
+
+/* ——— Таймлайн на весь экран ——— */
+.stat-wide { position: relative; }
+.stat-expand { position: absolute; top: var(--s-4); right: var(--s-4); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--text-3); transition: background 0.3s var(--ease), color 0.3s var(--ease); }
+.stat-expand:hover { background: var(--bg-5); color: var(--text-1); }
+.gantt-open { display: block; width: 100%; text-align: left; cursor: zoom-in; border-radius: var(--r-m); }
+
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--s-10);
+  background: rgba(4, 5, 6, 0.62); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  animation: fadeIn 0.3s var(--ease) both;
+}
+.dialog {
+  width: min(1320px, 100%); max-height: 100%; overflow: auto; padding: var(--s-8) var(--s-10) var(--s-8);
+  border-radius: 26px; background: #131416; box-shadow: 0 0 0 1px var(--line-2), 0 40px 80px -30px rgba(0, 0, 0, 0.8);
+  animation: dialogIn 0.5s var(--ease) both;
+}
+.dialog-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s-6); margin-bottom: var(--s-8); }
+.dialog-head h2 { margin: 0; font-size: var(--fs-28); font-weight: 300; letter-spacing: -0.03em; }
+.dialog-head p { margin: var(--s-2) 0 0; color: var(--text-3); font-size: var(--fs-13); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialogIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+.gantt.is-large { position: relative; gap: 10px; margin-top: 0; }
+.gantt.is-large .gantt-row { grid-template-columns: 170px 1fr; gap: var(--s-5); }
+.gantt.is-large .gantt-label { font-size: var(--fs-13); color: var(--text-2); }
+.gantt.is-large .gantt-track { height: 26px; border-radius: 8px; }
+.gantt.is-large .gantt-bar { border-radius: 7px; display: flex; align-items: center; overflow: hidden; }
+.gantt.is-large .gantt-bar b { padding: 0 8px; font: 500 11px/1 var(--font-code); color: #0c0d0f; white-space: nowrap; }
+.gantt.is-large .g-wait b, .gantt.is-large .g-wait-live b { color: #1a1408; }
+.gantt.is-large .g-fail b { color: #1a0c0f; }
+.gantt.is-large .g-done { background: #8a8c93; }
+.gantt.is-large .gantt-axis { margin-left: 190px; font-size: 11.5px; margin-top: 8px; }
+.gantt-grid { position: absolute; left: 190px; right: 0; top: 0; bottom: 48px; pointer-events: none; }
+.gantt-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.gantt-legend { list-style: none; margin: var(--s-6) 0 0 190px; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-6); font-size: var(--fs-12); color: var(--text-3); }
+.gantt-legend li { display: flex; align-items: center; gap: var(--s-2); }
+.gantt-legend .gantt-bar { position: static; width: 22px; height: 10px; display: inline-block; }
+
+/* Вырезанные паузы на шкале */
+.gantt { position: relative; }
+.gantt-gaps { position: absolute; left: 104px; right: 0; top: -2px; bottom: 22px; pointer-events: none; }
+.gantt.is-large .gantt-gaps { left: 190px; bottom: 74px; }
+.gantt-gaps i {
+  position: absolute; top: 0; bottom: 0; width: 7px; margin-left: -3px; pointer-events: auto; cursor: help;
+  background: repeating-linear-gradient(180deg, var(--text-3) 0 3px, transparent 3px 7px) center / 1px 100% no-repeat;
+}
+.gantt-gap-sample { width: 10px; height: 14px; display: inline-block; background: repeating-linear-gradient(180deg, var(--text-3) 0 3px, transparent 3px 7px) center / 1px 100% no-repeat; }
+
+/* Две группы вкладок: ход прогона слева, результаты стадий справа */
+.tab-groups { display: flex; justify-content: space-between; align-items: center; gap: var(--s-4); margin: var(--s-6) var(--s-8) 0; flex: none; flex-wrap: wrap; }
+.tab-groups .tabs { margin: 0; }
+
+/* Вкладка «Таймлайн» */
+.timeline-panel { padding: var(--s-2) var(--s-8) var(--s-10); }
+.timeline-sum { display: flex; flex-wrap: wrap; gap: var(--s-10); margin: 0 0 var(--s-8); }
+.timeline-sum dt { font-size: var(--fs-12); color: var(--text-3); }
+.timeline-sum dd { margin: var(--s-2) 0 0; font-size: 28px; font-weight: 300; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
+.gantt.is-large .g-wait b, .gantt.is-large .g-wait-live b { margin-left: 4px; padding: 3px 6px; border-radius: 5px; background: rgba(18, 14, 6, 0.82); color: var(--wait); }

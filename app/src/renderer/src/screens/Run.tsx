@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  CircleAlert, CircleCheck, CircleStop, ClipboardCheck, Maximize2, FolderOpen, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { StageRail } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
-import { Timeline } from '../components/Timeline';
+import { Timeline, TimelinePanel } from '../components/Timeline';
+import { activeClock, ms } from '../lib/clock';
 import { LiveLog } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
@@ -14,7 +15,7 @@ import { onCoreEvent, useStore } from '../lib/store';
 import { cost, duration, shortPath, tokens, usageTotal } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 
-type Tab = 'log' | 'plan' | 'tests' | 'review' | 'accept';
+type Tab = 'timeline' | 'log' | 'plan' | 'tests' | 'review' | 'accept';
 
 const TAB_FOR: Record<StageId, Tab> = {
   plan: 'plan', gate1: 'plan', implement: 'log', tests: 'tests', review: 'review', gate2: 'accept', limit: 'log', finish: 'accept',
@@ -128,7 +129,7 @@ export function RunScreen({ runId }: { runId: string }) {
     <div className="screen run">
       <div className={`run-grid ${tab === 'accept' ? 'is-wide' : ''}`}>
         <aside className="run-left">
-          <Metrics run={run} />
+          <Metrics run={run} onOpenTimeline={() => setTab('timeline')} />
           <StageRail run={run} selected={selected} onSelect={select} />
         </aside>
 
@@ -157,22 +158,34 @@ export function RunScreen({ runId }: { runId: string }) {
             </div>
           </header>
 
-          <PillTabs<Tab>
-            className="tabs"
-            value={tab}
-            onChange={setTab}
-            items={tabs.map((t) => ({
-              id: t.id,
-              label: t.label,
-              disabled: t.disabled,
-              extra: t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
-            }))}
-          />
+          <div className="tab-groups">
+            <PillTabs<Tab>
+              className="tabs"
+              value={tab}
+              onChange={setTab}
+              items={[
+                { id: 'timeline', label: 'Таймлайн', disabled: !run.attempts.length },
+                { id: 'log', label: 'Лог' },
+              ]}
+            />
+            <PillTabs<Tab>
+              className="tabs"
+              value={tab}
+              onChange={setTab}
+              items={tabs.filter((t) => t.id !== 'log').map((t) => ({
+                id: t.id,
+                label: t.label,
+                disabled: t.disabled,
+                extra: t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
+              }))}
+            />
+          </div>
 
           {!(tab === 'accept' && run.status === 'finished') && <Banner run={run} />}
 
           <div className="tab-body">
             <div className={`pane ${tab === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
+            {tab === 'timeline' && <div className="tab-enter" key="timeline"><TimelinePanel run={run} /></div>}
             {tab === 'plan' && <div className="tab-enter" key="plan"><PlanView docs={docs} run={run} /></div>}
             {tab === 'tests' && <div className="tab-enter" key="tests"><TestsView run={run} /></div>}
             {tab === 'review' && <div className="tab-enter" key="review"><ReviewView run={run} /></div>}
@@ -244,8 +257,9 @@ function Banner({ run }: { run: RunFile }) {
   return null;
 }
 
-function Metrics({ run }: { run: RunFile }) {
+function Metrics({ run, onOpenTimeline }: { run: RunFile; onOpenTimeline: () => void }) {
   const live = run.status === 'running' || run.status === 'waiting';
+  const clock = activeClock(run);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!live) return;
@@ -257,9 +271,14 @@ function Metrics({ run }: { run: RunFile }) {
   return (
     <dl className="metrics">
       <div className="stat stat-wide">
+        <button className="stat-expand" onClick={onOpenTimeline} title="Открыть таймлайн">
+          <Maximize2 size={14} />
+        </button>
         <dt>Время</dt>
-        <dd><Num animate={false} text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd>
-        <Timeline run={run} />
+        <dd title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}><Num animate={false} text={ms(clock.total)} /></dd>
+        <button className="gantt-open" onClick={onOpenTimeline} aria-label="Открыть таймлайн">
+          <Timeline run={run} />
+        </button>
       </div>
       <div className="stat"><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><Num text={total ? tokens(total) : '—'} /></dd></div>
       <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
