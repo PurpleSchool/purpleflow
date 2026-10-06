@@ -1,0 +1,85 @@
+import type { TokenUsage } from '../types.js';
+
+export interface AgentRunOptions {
+  bin: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  prompt: string;
+  systemPrompt?: string;
+  model?: string;
+  timeoutMs: number;
+  group: string;
+  onOutput: (text: string) => void;
+  proxy?: { baseUrl: string; apiKey: string; codexBaseUrl?: string };
+}
+
+export interface AgentResult {
+  ok: boolean;
+  /** Последний ответ агента (финальное сообщение). */
+  text: string;
+  usage: TokenUsage;
+  error?: string;
+  stopped?: boolean;
+}
+
+export const emptyUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+export function addUsage(a: TokenUsage, b: Partial<TokenUsage>): TokenUsage {
+  return {
+    input: a.input + (b.input ?? 0),
+    output: a.output + (b.output ?? 0),
+    cacheRead: a.cacheRead + (b.cacheRead ?? 0),
+    cacheWrite: a.cacheWrite + (b.cacheWrite ?? 0),
+    costUsd: a.costUsd != null || b.costUsd != null ? (a.costUsd ?? 0) + (b.costUsd ?? 0) : undefined,
+  };
+}
+
+// ANSI для живого лога в xterm.
+export const c = {
+  dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
+  bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
+  violet: (s: string) => `\x1b[38;2;167;139;250m${s}\x1b[39m`,
+  sky: (s: string) => `\x1b[38;2;125;211;252m${s}\x1b[39m`,
+  mint: (s: string) => `\x1b[38;2;94;234;179m${s}\x1b[39m`,
+  amber: (s: string) => `\x1b[38;2;251;191;95m${s}\x1b[39m`,
+  coral: (s: string) => `\x1b[38;2;255;122;144m${s}\x1b[39m`,
+};
+
+/** xterm требует \r\n. */
+export const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
+
+export function clip(s: string, max = 600): string {
+  const t = s.trim();
+  return t.length > max ? t.slice(0, max) + c.dim(` … (+${t.length - max})`) : t;
+}
+
+/** Агентское окружение: без маркера родительской сессии Claude Code, из-за которого вложенный запуск ведёт себя иначе. */
+export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const e = { ...env };
+  delete e.CLAUDECODE;
+  delete e.ELECTRON_RUN_AS_NODE;
+  e.NO_COLOR = '1';
+  return e;
+}
+
+/** Понятное сообщение для типовых сбоев агента. */
+export function explainError(agent: string, raw: string): string {
+  const t = raw.toLowerCase();
+  if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
+    return `${agent}: прокси отклонил ключ или агент не авторизован. Проверьте base URL и ключ в настройках.`;
+  }
+  if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
+    return `${agent}: закончились токены или кредиты на балансе прокси.`;
+  }
+  if (/rate.?limit|429|overloaded|529/.test(t)) {
+    return `${agent}: превышен лимит запросов или модель перегружена. Повторите позже.`;
+  }
+  if (/model.*(not found|does not exist|not available|unsupported)|unknown model|invalid model/.test(t)) {
+    return `${agent}: модель недоступна. Проверьте имя модели для роли в настройках.`;
+  }
+  if (/enotfound|econnrefused|etimedout|network|fetch failed|connection error|getaddrinfo/.test(t)) {
+    return `${agent}: нет соединения с прокси. Проверьте base URL и сеть.`;
+  }
+  const line = raw.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400);
+  return `${agent}: ${line || 'завершился с ошибкой без сообщения'}`;
+}

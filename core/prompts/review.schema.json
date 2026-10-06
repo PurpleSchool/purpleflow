@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["blocking", "notes"],
+  "properties": {
+    "blocking": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "notes": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "message"],
+      "properties": {
+        "file": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

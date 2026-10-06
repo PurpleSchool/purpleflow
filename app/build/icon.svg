@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#241d44"/>
+      <stop offset="1" stop-color="#110e1e"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c9b8ff"/>
+      <stop offset="1" stop-color="#6c4bf0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#8d6bff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#8d6bff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="190" fill="url(#bg)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="189.5" fill="none" stroke="#b8a3ff" stroke-opacity="0.28" stroke-width="3"/>
+  <circle cx="512" cy="512" r="330" fill="url(#glow)"/>
+  <rect x="330" y="270" width="92" height="484" rx="46" fill="url(#leaf)"/>
+  <rect x="602" y="270" width="92" height="484" rx="46" fill="url(#leaf)"/>
+  <g stroke="#78cbff" stroke-width="40" stroke-linecap="round">
+    <line x1="210" y1="512" x2="250" y2="512"/>
+    <line x1="472" y1="512" x2="552" y2="512"/>
+    <line x1="774" y1="512" x2="814" y2="512"/>
+  </g>
+</svg>

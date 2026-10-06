@@ -1,0 +1,69 @@
+/*
+  PS Flow — «шлюзы»: задача идёт по каналу от станции к станции,
+  ворота открывает человек. Ночная фиолетовая палитра PurpleSchool,
+  свет — только у того, что сейчас происходит.
+*/
+:root {
+  color-scheme: dark;
+
+  /* Ночь канала */
+  --ink-0: #0c0a16;   /* терминал, колодцы */
+  --ink-1: #120f1f;   /* фон окна */
+  --ink-2: #171329;   /* сайдбар, панели */
+  --ink-3: #1e1935;   /* поверхности */
+  --ink-4: #272144;   /* приподнятые, ховер */
+  --ink-5: #332b58;   /* активные контролы */
+
+  --line: rgba(180, 163, 255, 0.085);
+  --line-2: rgba(180, 163, 255, 0.15);
+  --line-3: rgba(180, 163, 255, 0.26);
+
+  --text-1: #efecfb;
+  --text-2: #bdb6dc;
+  --text-3: #8780ad;
+  --text-4: #5f5884;
+
+  /* Фирменный фиолетовый — только для активного и главного действия */
+  --violet: #8d6bff;
+  --violet-hi: #b8a3ff;
+  --violet-lo: #5b40c9;
+  --violet-glow: rgba(141, 107, 255, 0.42);
+  --violet-wash: rgba(141, 107, 255, 0.12);
+
+  /* Сигналы стадий */
+  --sky: #78cbff;        /* агент работает */
+  --sky-wash: rgba(120, 203, 255, 0.12);
+  --amber: #ffc163;      /* ждём человека */
+  --amber-wash: rgba(255, 193, 99, 0.12);
+  --mint: #55e2b4;       /* зелёное */
+  --mint-wash: rgba(85, 226, 180, 0.11);
+  --coral: #ff7390;      /* красное, блокирующее */
+  --coral-wash: rgba(255, 115, 144, 0.12);
+
+  --font-ui: 'Onest Variable', 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-code: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Модульная шкала 1.2, база 14px — плотный инструмент, а не лендинг */
+  --fs-11: 11.5px;
+  --fs-12: 12.5px;
+  --fs-13: 13.5px;
+  --fs-14: 14px;
+  --fs-16: 16.5px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-34: 34px;
+
+  --r-xs: 6px;
+  --r-s: 9px;
+  --r-m: 13px;
+  --r-l: 18px;
+  --r-pill: 999px;
+
+  --sidebar-w: 236px;
+  --titlebar-h: 52px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --shadow-pop: 0 18px 50px -18px rgba(4, 2, 14, 0.85), 0 0 0 1px var(--line-2);
+}
