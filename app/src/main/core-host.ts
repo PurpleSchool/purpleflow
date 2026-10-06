@@ -58,7 +58,8 @@ port.on('message', async (e: { data: HostRequest }) => {
   if (msg.kind === 'call') {
     try {
       if (!methods) throw new Error('Ядро ещё не запущено');
-      const fn = methods[msg.method] as (...a: unknown[]) => Promise<unknown>;
+      const fn = methods[msg.method] as ((...a: unknown[]) => Promise<unknown>) | undefined;
+      if (typeof fn !== 'function') throw new Error('Эта функция появилась в новой версии — перезапустите приложение.');
       const result = await fn(...msg.args);
       send({ kind: 'reply', id: msg.id, ok: true, result });
     } catch (err) {

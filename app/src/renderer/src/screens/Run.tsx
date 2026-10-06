@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown, CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  ArrowRight, ChevronDown, CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
@@ -47,6 +47,18 @@ export function RunScreen({ runId }: { runId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const gateKey = useRef('');
+  /** Идёт обратная анимация: детали гаснут, гант разворачивается — потом панель размонтируется. */
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const close = () => {
+    if (!drawer || closing) return;
+    setClosing(true);
+    closeTimer.current = setTimeout(() => {
+      setDrawer(null);
+      setClosing(false);
+    }, 520);
+  };
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
 
   useEffect(() => {
     void loadRun(runId);
@@ -94,6 +106,8 @@ export function RunScreen({ runId }: { runId: string }) {
   }), [runId, showPlan]);
 
   const open = (s: StageId) => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setClosing(false);
     setView('timeline');
     setDrawer(s);
     setAttemptNo(null);
@@ -111,7 +125,7 @@ export function RunScreen({ runId }: { runId: string }) {
       if (el.closest('input, textarea, [contenteditable], .monaco-editor') || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'Escape' && drawer) {
         e.preventDefault();
-        setDrawer(null);
+        close();
         return;
       }
       if (!drawer) return;
@@ -191,6 +205,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <div className="run-meta">
             <StatusPill status={run.status} />
             <span className="chip mono" title={run.branch}><GitBranch size={12} /> {run.branch}</span>
+            {run.status === 'finished' && <MergeControl run={run} runId={runId} />}
             <span className="muted mono path" title={run.projectPath}>{shortPath(run.projectPath)}</span>
           </div>
         </div>
@@ -216,7 +231,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <PillTabs<View>
             className="tabs"
             value={view}
-            onChange={(v) => { setView(v); if (v === 'log') setDrawer(null); }}
+            onChange={(v) => { setView(v); if (v === 'log') { setDrawer(null); setClosing(false); } }}
             items={[
               { id: 'timeline', label: 'Таймлайн' },
               { id: 'log', label: 'Лог' },
@@ -233,15 +248,15 @@ export function RunScreen({ runId }: { runId: string }) {
         <div className="tab-body">
           <div className={`pane ${view === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
           {view === 'timeline' && (
-            <div className={`split ${drawer ? 'is-open' : ''} ${showDiff ? 'is-wide' : ''}`}>
+            <div className={`split ${drawer && !closing ? 'is-open' : ''} ${showDiff && !closing ? 'is-wide' : ''}`}>
               <div className="split-left scroll">
                 <div className="timeline-panel">
-                  <Timeline run={run} selected={drawer} current={live ? currentStage(run) : null} onSelect={open} compact={Boolean(drawer)} />
+                  <Timeline run={run} selected={drawer} current={live ? currentStage(run) : null} onSelect={open} compact={Boolean(drawer) && !closing} />
                 </div>
               </div>
               <div className="split-right">
                 {drawer && stageDef && (
-                  <div className="details" key={drawer}>
+                  <div className={`details ${closing ? 'is-closing' : ''}`} key={drawer}>
                     <header className="drawer-head">
                       <span className={`drawer-icon st-${nodeState(run, drawer)}`}>{STAGE_ICON[drawer]}</span>
                       <div className="drawer-title">
@@ -260,7 +275,7 @@ export function RunScreen({ runId }: { runId: string }) {
                           }))}
                         />
                       )}
-                      <Button tone="quiet" icon={<X size={18} />} title="Свернуть детали (Esc)" onClick={() => setDrawer(null)} />
+                      <Button tone="quiet" icon={<X size={18} />} title="Свернуть детали (Esc)" onClick={close} />
                     </header>
                     <div className="drawer-body">
                       {showPlan && <PlanView docs={docs} run={run} />}
@@ -291,7 +306,7 @@ export function RunScreen({ runId }: { runId: string }) {
 }
 
 function Banner({ run, runId }: { run: RunFile; runId: string }) {
-  if (run.status === 'finished') return <MergeBanner run={run} runId={runId} />;
+  if (run.status === 'finished') return null;
   if (run.status === 'cancelled') return <div className="banner b-quiet"><X size={18} /><div><strong>Прогон отменён</strong></div></div>;
   if (run.status === 'stopped' && run.message) {
     const failed = run.attempts.some((a) => a.status === 'failed' && a.error === run.message);
@@ -319,8 +334,8 @@ function Banner({ run, runId }: { run: RunFile; runId: string }) {
   return null;
 }
 
-/** Готовый прогон: влить ветку psflow/<id> в выбранную ветку репозитория. */
-function MergeBanner({ run, runId }: { run: RunFile; runId: string }) {
+/** Готовый прогон: влить ветку psflow/<id> в выбранную ветку — прямо в строке статуса. */
+function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   const [branches, setBranches] = useState<string[]>([]);
   const [target, setTarget] = useState('');
   const [busy, setBusy] = useState(false);
@@ -348,35 +363,27 @@ function MergeBanner({ run, runId }: { run: RunFile; runId: string }) {
 
   if (run.merged) {
     return (
-      <div className="banner b-mint">
-        <GitMerge size={18} />
-        <div>
-          <strong>Влито в {run.merged.into}</strong>
-          <p>Коммит слияния <code>{run.merged.commit.slice(0, 8)}</code> · {when(run.merged.at)}</p>
-        </div>
-      </div>
+      <span className="chip merged" title={`Коммит слияния ${run.merged.commit} · ${when(run.merged.at)}`}>
+        <GitMerge size={12} /> влито в {run.merged.into} · <span className="mono">{run.merged.commit.slice(0, 7)}</span>
+      </span>
     );
   }
   return (
-    <div className="banner b-mint merge-banner">
-      <CircleCheck size={18} />
-      <div className="grow">
-        <strong>Готово: изменение заархивировано и закоммичено в {run.branch}</strong>
-        {error && <p className="merge-error">{error}</p>}
-      </div>
-      <div className="merge-actions">
-        <label className="select">
-          <span>в ветку</span>
-          <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy || !branches.length}>
-            {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <ChevronDown size={14} />
-        </label>
-        <Button tone="approve" icon={<GitMerge size={15} />} busy={busy} disabled={!target} onClick={() => void merge()}>
-          Влить
-        </Button>
-      </div>
-    </div>
+    <span className="merge-inline">
+      <ArrowRight size={14} className="muted" />
+      <label className="select" title="Ветка, в которую влить результат">
+        <span>в</span>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy || !branches.length}>
+          {!branches.length && <option value="">ветки не найдены</option>}
+          {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <ChevronDown size={13} />
+      </label>
+      <Button tone="approve" className="merge-btn" icon={<GitMerge size={14} />} busy={busy} disabled={!target} onClick={() => void merge()}>
+        Влить
+      </Button>
+      {error && <span className="merge-error" title={error}>{error}</span>}
+    </span>
   );
 }
 
