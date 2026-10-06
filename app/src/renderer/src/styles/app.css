@@ -542,17 +542,17 @@ button.note-loc:hover { color: var(--text-1); }
 .switch.is-on { color: var(--text-1); }
 
 /* ——— Прозрачное окно ———
-   Фон окна даёт ОС (vibrancy / acrylic), поверх — тёмная тонировка.
-   Плашки те же тёмные и плоские, только полупрозрачные. */
+   Фон окна даёт ОС (vibrancy / acrylic). Тонировка лёгкая, плашки тёмные
+   и полупрозрачные — рабочий стол и окна позади заметно просвечивают. */
 html[data-material='vibrancy'] body, html[data-material='acrylic'] body { background: transparent; }
-html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.5); }
+html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(8, 9, 11, 0.16); }
 html[data-material='vibrancy'], html[data-material='acrylic'] {
-  --bg-0: rgba(0, 0, 0, 0.42);
-  --bg-1: rgba(0, 0, 0, 0.3);
-  --bg-2: rgba(0, 0, 0, 0.26);
-  --bg-3: rgba(10, 11, 13, 0.62);
-  --bg-4: rgba(26, 27, 31, 0.7);
-  --bg-5: rgba(255, 255, 255, 0.08);
+  --bg-0: rgba(0, 0, 0, 0.38);
+  --bg-1: rgba(0, 0, 0, 0.26);
+  --bg-2: rgba(0, 0, 0, 0.2);
+  --bg-3: rgba(8, 9, 11, 0.4);
+  --bg-4: rgba(20, 21, 25, 0.5);
+  --bg-5: rgba(255, 255, 255, 0.09);
 }
 
 /* Терминал: xterm меряет родителя без padding — отступы у внешней обёртки */
