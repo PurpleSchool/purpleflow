@@ -584,3 +584,63 @@ button.note-loc:hover { color: var(--text-1); }
 .stat:hover, .project:hover, .station-hit:hover { background-color: var(--bg-4); }
 
 .newtask-aside { position: static; }
+
+/* ——— Инструменты: чистый список с разделителями ——— */
+.tools.bezel { background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; gap: 0; }
+.tool { background: transparent; border-radius: 0; padding: var(--s-5) var(--s-1); grid-template-columns: 8px 180px minmax(0, 1fr) 280px; }
+.tool + .tool { border-top: 1px solid var(--line); }
+.tool-led { width: 6px; height: 6px; }
+.tool-id strong { font-size: var(--fs-14); }
+.tool-id span { color: var(--text-4); }
+.tool-path { color: var(--text-3); }
+.tool-manual .input { background: transparent; box-shadow: none; height: 34px; font-size: 12px; }
+.tool-manual .input:hover { box-shadow: inset 0 0 0 1px var(--line); }
+.tool-manual .input:focus, .tool-manual .input:not(:placeholder-shown) { background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-2); }
+.tool-manual .input::placeholder { color: transparent; }
+.tool:hover .tool-manual .input::placeholder, .tool-manual .input:focus::placeholder { color: var(--text-4); }
+.tool-manual .btn { color: var(--text-4); }
+.tool:hover .tool-manual .btn { color: var(--text-2); }
+
+/* ——— Переключатель ——— */
+.switch { display: inline-flex; align-items: center; gap: var(--s-3); height: 34px; padding: 0 var(--s-4) 0 4px; border-radius: var(--r-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--fs-13); font-weight: 500; flex: none; transition: background 0.3s var(--ease); }
+.switch i { position: relative; width: 44px; height: 26px; border-radius: var(--r-pill); background: var(--bg-5); box-shadow: inset 0 0 0 1px var(--line); transition: background 0.35s var(--ease); }
+.switch i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #d6d7dc; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); transition: transform 0.4s var(--ease), background 0.3s var(--ease); }
+.switch.is-on i { background: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.switch.is-on i::after { transform: translateX(18px); background: #fff; }
+.switch.is-on { color: var(--text-1); }
+
+/* ——— Нативное стекло окна ———
+   Фон окна прозрачный, ОС размывает рабочий стол; сверху тёмная тонировка,
+   чтобы контраст не зависел от обоев. */
+html[data-material='vibrancy'] body, html[data-material='acrylic'] body { background: transparent; }
+html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.62); }
+html[data-material='vibrancy'] .app::before, html[data-material='acrylic'] .app::before { opacity: 0.75; }
+html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.55); }
+.tool-id span { color: var(--text-3); }
+.tool-path { color: var(--text-2); }
+html[data-material='vibrancy'] .app { background: rgba(9, 10, 12, 0.5); }
+html[data-material='acrylic'] .app { background: rgba(9, 10, 12, 0.48); }
+
+/* ——— Прозрачное окно: стекло даёт ОС, плашки — плоские ———
+   Ровная полупрозрачная заливка без блюра, бликов, граней и теней. */
+html[data-material='vibrancy'], html[data-material='acrylic'] {
+  --highlight: none;
+  --glass-edge: none;
+  --bg-3: rgba(255, 255, 255, 0.045);
+  --bg-4: rgba(255, 255, 255, 0.07);
+  --bg-5: rgba(255, 255, 255, 0.1);
+  --bg-2: rgba(0, 0, 0, 0.2);
+  --bg-1: rgba(0, 0, 0, 0.22);
+  --bg-0: rgba(0, 0, 0, 0.32);
+}
+html[data-material='vibrancy'] .app::before, html[data-material='acrylic'] .app::before { display: none; }
+html[data-material='vibrancy'] :is(.navpills, .stat, .station-hit, .run-main, .panel, .project, .bezel, .newtask-aside, .newtask-main > .grid-2, .gatebar, .navpill.is-on, .tab.is-on, .btn-ghost, .btn-primary, .btn-approve, .term, .output, .diff-main, .doc, .verdict),
+html[data-material='acrylic'] :is(.navpills, .stat, .station-hit, .run-main, .panel, .project, .bezel, .newtask-aside, .newtask-main > .grid-2, .gatebar, .navpill.is-on, .tab.is-on, .btn-ghost, .btn-primary, .btn-approve, .term, .output, .diff-main, .doc, .verdict) {
+  -webkit-backdrop-filter: none; backdrop-filter: none; background-image: none; box-shadow: none;
+}
+html[data-material='vibrancy'] :is(.navpill.is-on, .tab.is-on, .btn-ghost), html[data-material='acrylic'] :is(.navpill.is-on, .tab.is-on, .btn-ghost) { background-color: var(--bg-5); }
+html[data-material='vibrancy'] .gatebar, html[data-material='acrylic'] .gatebar { background-color: rgba(255, 255, 255, 0.08); }
+html[data-material='vibrancy'] .btn-primary, html[data-material='acrylic'] .btn-primary { background-color: var(--accent); }
+html[data-material='vibrancy'] .station.st-active .station-hit, html[data-material='vibrancy'] .station.st-waiting .station-hit,
+html[data-material='acrylic'] .station.st-active .station-hit, html[data-material='acrylic'] .station.st-waiting .station-hit { background: var(--bg-5); }
+html[data-material='vibrancy'] .station.is-selected .station-hit, html[data-material='acrylic'] .station.is-selected .station-hit { box-shadow: inset 0 0 0 1px var(--line-2); }

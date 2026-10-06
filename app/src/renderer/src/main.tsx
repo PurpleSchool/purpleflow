@@ -7,6 +7,10 @@ import './styles/app.css';
 import { App } from './App';
 import { StoreProvider } from './lib/store';
 
+// Нативное стекло окна: CSS убирает непрозрачный фон и кладёт тонировку поверх обоев.
+document.documentElement.dataset.material = window.psflow.material;
+window.psflow.onMaterial((m) => (document.documentElement.dataset.material = m));
+
 createRoot(document.getElementById('root')!).render(
   <StoreProvider>
     <App />

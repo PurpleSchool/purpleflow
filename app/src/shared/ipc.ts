@@ -10,6 +10,7 @@ export interface PublicSettings {
   agentTimeoutMin: number;
   testTimeoutMin: number;
   onboarded: boolean;
+  windowGlass: boolean;
 }
 
 export interface SettingsPatch {
@@ -19,6 +20,7 @@ export interface SettingsPatch {
   agentTimeoutMin?: number;
   testTimeoutMin?: number;
   onboarded?: boolean;
+  windowGlass?: boolean;
 }
 
 export interface ChangeDocs {
@@ -56,6 +58,9 @@ export interface PsFlowBridge {
   pickFile(): Promise<string | null>;
   openPath(p: string): Promise<void>;
   platform: string;
+  /** Материал окна при запуске: нативное стекло ОС или непрозрачный фон. */
+  material: 'vibrancy' | 'acrylic' | 'none';
+  onMaterial(fn: (m: 'vibrancy' | 'acrylic' | 'none') => void): () => void;
 }
 
 // Сообщения main ↔ utilityProcess.

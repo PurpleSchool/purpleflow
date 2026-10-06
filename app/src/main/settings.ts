@@ -11,6 +11,7 @@ interface StoredSettings {
   agentTimeoutMin: number;
   testTimeoutMin: number;
   onboarded: boolean;
+  windowGlass: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -20,6 +21,7 @@ const DEFAULTS: StoredSettings = {
   agentTimeoutMin: 30,
   testTimeoutMin: 10,
   onboarded: false,
+  windowGlass: true,
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
@@ -68,6 +70,7 @@ export function publicSettings(): PublicSettings {
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
     onboarded: s.onboarded,
+    windowGlass: s.windowGlass,
   };
 }
 
@@ -100,6 +103,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.agentTimeoutMin !== undefined) s.agentTimeoutMin = patch.agentTimeoutMin;
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
   if (patch.onboarded !== undefined) s.onboarded = patch.onboarded;
+  if (patch.windowGlass !== undefined) s.windowGlass = patch.windowGlass;
   persist(s);
   return publicSettings();
 }

@@ -24,6 +24,12 @@ const bridge: PsFlowBridge = {
   pickFile: () => ipcRenderer.invoke('dialog:file'),
   openPath: (p) => ipcRenderer.invoke('shell:open', p),
   platform: process.platform,
+  material: ipcRenderer.sendSync('app:material:get'),
+  onMaterial(fn) {
+    const h = (_: unknown, m: 'vibrancy' | 'acrylic' | 'none') => fn(m);
+    ipcRenderer.on('app:material', h);
+    return () => ipcRenderer.removeListener('app:material', h);
+  },
 };
 
 contextBridge.exposeInMainWorld('psflow', bridge);

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { BrowserWindow, app, dialog, ipcMain, nativeTheme, safeStorage, shell, utilityProcess, type UtilityProcess } from 'electron';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
@@ -58,18 +59,49 @@ async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
   });
 }
 
+type Material = 'vibrancy' | 'acrylic' | 'none';
+
+/**
+ * Нативное стекло окна: macOS — vibrancy, Windows 11 22H2+ — acrylic.
+ * На Windows 10 и Linux размытия под окном нет — остаётся непрозрачный фон.
+ */
+function materialFor(enabled: boolean): Material {
+  if (!enabled) return 'none';
+  if (process.platform === 'darwin') return 'vibrancy';
+  if (process.platform === 'win32') {
+    const build = Number(os.release().split('.')[2] ?? 0);
+    if (build >= 22621) return 'acrylic';
+  }
+  return 'none';
+}
+
+let material: Material = 'none';
+const OPAQUE_BG = '#0a0b0d';
+
+function applyMaterial(w: BrowserWindow, m: Material) {
+  material = m;
+  if (process.platform === 'darwin') w.setVibrancy(m === 'vibrancy' ? 'under-window' : null);
+  if (process.platform === 'win32' && materialFor(true) === 'acrylic') w.setBackgroundMaterial(m === 'acrylic' ? 'acrylic' : 'none');
+  w.setBackgroundColor(m === 'none' ? OPAQUE_BG : '#00000000');
+  w.webContents.send('app:material', m);
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin';
+  material = materialFor(publicSettings().windowGlass);
   win = new BrowserWindow({
     width: 1440,
     height: 920,
     minWidth: 1080,
     minHeight: 680,
     show: false,
-    backgroundColor: '#0b0c0e',
+    backgroundColor: material === 'none' ? OPAQUE_BG : '#00000000',
+    vibrancy: material === 'vibrancy' ? 'under-window' : undefined,
+    visualEffectState: 'active',
+    backgroundMaterial: material === 'acrylic' ? 'acrylic' : undefined,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 20, y: 22 },
-    titleBarOverlay: isMac ? undefined : { color: '#0b0c0e', symbolColor: '#a7a9b1', height: 60 },
+    titleBarOverlay: isMac ? undefined : { color: '#00000000', symbolColor: '#a7a9b1', height: 60 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
@@ -113,8 +145,12 @@ function setupCapture(w: BrowserWindow) {
 
 ipcMain.handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
 ipcMain.handle('settings:get', () => publicSettings());
+ipcMain.on('app:material:get', (e) => {
+  e.returnValue = material;
+});
 ipcMain.handle('settings:set', (_e, patch: SettingsPatch) => {
   const s = updateSettings(patch);
+  if (patch.windowGlass !== undefined && win) applyMaterial(win, materialFor(s.windowGlass));
   host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
   return s;
 });

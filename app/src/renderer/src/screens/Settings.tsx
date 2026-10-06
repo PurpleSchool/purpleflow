@@ -229,6 +229,24 @@ export function SettingsScreen() {
           <section className="panel">
             <header className="panel-head">
               <div>
+                <h2>Окно</h2>
+                <p>Прозрачный фон: сквозь окно размыто виден рабочий стол. Работает на macOS и Windows 11, на Windows 10 и Linux окно остаётся непрозрачным.</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={s.windowGlass}
+                className={`switch ${s.windowGlass ? 'is-on' : ''}`}
+                onClick={() => void saveSettings({ windowGlass: !s.windowGlass })}
+              >
+                <i />
+                <span>{s.windowGlass ? 'Прозрачное' : 'Непрозрачное'}</span>
+              </button>
+            </header>
+          </section>
+
+          <section className="panel">
+            <header className="panel-head">
+              <div>
                 <h2>Подключение</h2>
                 <p>Короткий тестовый запрос каждым агентом с текущими настройками.</p>
               </div>
