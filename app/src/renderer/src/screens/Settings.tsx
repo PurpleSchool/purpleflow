@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, XCircle } from 'lucide-react';
 import type { ConnectionCheck, Role, ToolName } from '@psflow/core';
 import { Button, Field, Input, Topbar } from '../components/ui';
+import { PillTabs } from '../components/PillTabs';
+
+type SettingsTab = 'tools' | 'access' | 'models' | 'window';
 import { useStore } from '../lib/store';
 import { Mark } from '../components/Sidebar';
 import { shortPath } from '../lib/format';
@@ -35,6 +38,7 @@ export function SettingsScreen() {
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
+  const [tab, setTab] = useState<SettingsTab>('tools');
 
   useEffect(() => {
     if (!s) return;
@@ -105,11 +109,26 @@ export function SettingsScreen() {
           </div>
         </div>
       ) : (
-        <Topbar title="Настройки" sub="Инструменты, прокси и модели по ролям" />
+        <Topbar title="Настройки" sub="Инструменты, доступ к моделям и вид окна" />
       )}
 
+      <div className="settings-tabs">
+        <PillTabs<SettingsTab>
+          className="tabs"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: 'tools', label: 'Инструменты', extra: tools && !allFound ? <span className="tab-badge b-coral">!</span> : undefined },
+            { id: 'access', label: 'Доступ' },
+            { id: 'models', label: 'Модели' },
+            { id: 'window', label: 'Окно' },
+          ]}
+        />
+      </div>
+
       <div className="scroll">
-        <div className="settings">
+        <div className="settings tab-enter" key={tab}>
+          {tab === 'tools' && (
           <section className="panel">
             <header className="panel-head">
               <div>
@@ -162,7 +181,8 @@ export function SettingsScreen() {
               })}
             </div>
           </section>
-
+          )}
+          {tab === 'access' && (
           <section className="panel">
             <header className="panel-head">
               <div>
@@ -212,7 +232,8 @@ export function SettingsScreen() {
               </Field>
             )}
           </section>
-
+          )}
+          {tab === 'models' && (
           <section className="panel">
             <header className="panel-head">
               <div>
@@ -241,7 +262,8 @@ export function SettingsScreen() {
               </Field>
             </div>
           </section>
-
+          )}
+          {tab === 'window' && (
           <section className="panel">
             <header className="panel-head">
               <div>
@@ -259,7 +281,8 @@ export function SettingsScreen() {
               </button>
             </header>
           </section>
-
+          )}
+          {tab === 'access' && (
           <section className="panel">
             <header className="panel-head">
               <div>
@@ -284,6 +307,7 @@ export function SettingsScreen() {
               </div>
             )}
           </section>
+          )}
         </div>
       </div>
 

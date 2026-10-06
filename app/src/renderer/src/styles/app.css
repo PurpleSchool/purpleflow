@@ -568,3 +568,76 @@ html[data-material='vibrancy'], html[data-material='acrylic'] {
 .segmented button { height: 32px; padding: 0 var(--s-4); border-radius: var(--r-pill); color: var(--text-3); font-size: var(--fs-12); font-weight: 500; transition: background 0.3s var(--ease), color 0.3s var(--ease); }
 .segmented button:hover { color: var(--text-1); }
 .segmented button.is-on { background: var(--bg-5); color: var(--text-1); }
+
+/* ——— Анимации ———
+   Движение отвечает на действие: переключение раздела, открытие прогона,
+   смена стадии. Без бесконечных декоративных эффектов. */
+
+/* Пилюли: подсветка переезжает к выбранной */
+.pilltabs { position: relative; display: inline-flex; isolation: isolate; }
+.pill-indicator {
+  position: absolute; top: 4px; bottom: 4px; left: 0; z-index: -1; border-radius: var(--r-pill);
+  background: var(--bg-5); pointer-events: none;
+}
+.pill-indicator.is-ready { transition: transform 0.5s var(--ease), width 0.5s var(--ease), opacity 0.3s var(--ease); }
+.navpill.is-on, .tab.is-on,
+html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background: transparent !important; box-shadow: none !important; }
+.settings-tabs { padding: 0 var(--page-x) var(--s-6); flex: none; }
+.settings-tabs .tabs { margin: 0; }
+.settings { padding-top: 0; }
+
+/* Смена экрана и вкладки */
+.screen-enter { height: 100%; animation: screenIn 0.5s var(--ease) both; }
+.tab-enter { animation: tabIn 0.42s var(--ease) both; }
+.tab-body > .tab-enter { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tab-body > .tab-enter > .scroll, .tab-body > .tab-enter > .empty, .tab-body > .tab-enter > .center { flex: 1; }
+@keyframes screenIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Открытие прогона: метрики и стадии появляются по очереди */
+.run-left .stat, .run-left .station { animation: cardIn 0.55s var(--ease) both; }
+.run-left .stat:nth-child(1) { animation-delay: 0.02s; }
+.run-left .stat:nth-child(2) { animation-delay: 0.06s; }
+.run-left .stat:nth-child(3) { animation-delay: 0.1s; }
+.run-left .stat:nth-child(4) { animation-delay: 0.14s; }
+.run-left .station:nth-child(1) { animation-delay: 0.18s; }
+.run-left .station:nth-child(2) { animation-delay: 0.22s; }
+.run-left .station:nth-child(3) { animation-delay: 0.26s; }
+.run-left .station:nth-child(4) { animation-delay: 0.3s; }
+.run-left .station:nth-child(5) { animation-delay: 0.34s; }
+.run-left .station:nth-child(6) { animation-delay: 0.38s; }
+.run-left .station:nth-child(7) { animation-delay: 0.42s; }
+.run-main { animation: cardIn 0.6s var(--ease) 0.08s both; }
+.history tbody tr { animation: cardIn 0.5s var(--ease) both; }
+.history tbody tr:nth-child(2) { animation-delay: 0.04s; }
+.history tbody tr:nth-child(3) { animation-delay: 0.08s; }
+.history tbody tr:nth-child(4) { animation-delay: 0.12s; }
+.history tbody tr:nth-child(n + 5) { animation-delay: 0.16s; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+/* Стадия стала текущей — короткая вспышка, чтобы глаз нашёл её */
+.station.st-active .station-hit, .station.st-waiting .station-hit { animation: stageOn 1s var(--ease); }
+@keyframes stageOn {
+  0% { box-shadow: inset 0 0 0 1px rgba(178, 165, 245, 0.7), 0 0 0 0 rgba(138, 116, 238, 0.35); }
+  100% { box-shadow: inset 0 0 0 1px var(--line-2), 0 0 0 10px rgba(138, 116, 238, 0); }
+}
+.station.st-waiting .station-hit { animation-name: gateOn; }
+@keyframes gateOn {
+  0% { box-shadow: inset 0 0 0 1px rgba(214, 173, 102, 0.75), 0 0 0 0 rgba(214, 173, 102, 0.3); }
+  100% { box-shadow: inset 0 0 0 1px var(--line-2), 0 0 0 10px rgba(214, 173, 102, 0); }
+}
+
+/* Обновившееся число въезжает снизу */
+.num-in { display: inline-block; animation: numIn 0.45s var(--ease) both; }
+@keyframes numIn { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
+
+/* Подсказки и баннеры — мягкое появление, кнопки — отклик на нажатие */
+.composer.is-open, .check, .banner, .gate-comment { animation: rise 0.4s var(--ease) both; }
+.btn { transition: background 0.3s var(--ease), color 0.3s var(--ease), transform 0.25s var(--ease), opacity 0.3s var(--ease), box-shadow 0.3s var(--ease); }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.97); transition-duration: 0.08s; }
+.switch i::after { transition: transform 0.45s var(--ease), background 0.3s var(--ease), width 0.2s var(--ease); }
+.switch:active i::after { width: 24px; }
+.switch.is-on:active i::after { transform: translateX(14px); }
+.role .input { margin-top: auto; }
+.role p { min-height: 0; }

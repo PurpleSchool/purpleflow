@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { StageRail } from '../components/StageRail';
+import { PillTabs } from '../components/PillTabs';
 import { LiveLog } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
@@ -155,22 +156,25 @@ export function RunScreen({ runId }: { runId: string }) {
             </div>
           </header>
 
-          <nav className="tabs" role="tablist">
-            {tabs.map((t) => (
-              <button key={t.id} role="tab" aria-selected={tab === t.id} className={`tab ${tab === t.id ? 'is-on' : ''}`} disabled={t.disabled} onClick={() => setTab(t.id)}>
-                {t.label}
-                {t.badge && <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span>}
-              </button>
-            ))}
-          </nav>
+          <PillTabs<Tab>
+            className="tabs"
+            value={tab}
+            onChange={setTab}
+            items={tabs.map((t) => ({
+              id: t.id,
+              label: t.label,
+              disabled: t.disabled,
+              extra: t.badge ? <span className={`tab-badge b-${t.tone}`}>{t.badge === 'ok' ? '✓' : t.badge === 'fail' ? '✗' : t.badge}</span> : undefined,
+            }))}
+          />
 
           {!(tab === 'accept' && run.status === 'finished') && <Banner run={run} />}
 
           <div className="tab-body">
             <div className={`pane ${tab === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
-            {tab === 'plan' && <PlanView docs={docs} run={run} />}
-            {tab === 'tests' && <TestsView run={run} />}
-            {tab === 'review' && <ReviewView run={run} />}
+            {tab === 'plan' && <div className="tab-enter" key="plan"><PlanView docs={docs} run={run} /></div>}
+            {tab === 'tests' && <div className="tab-enter" key="tests"><TestsView run={run} /></div>}
+            {tab === 'review' && <div className="tab-enter" key="review"><ReviewView run={run} /></div>}
             {tab === 'accept' && (
               diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
               : !diff ? <div className="center"><span className="spinner big" /></div>
@@ -251,7 +255,7 @@ function Metrics({ run }: { run: RunFile }) {
   const c = cost(run.totals);
   return (
     <dl className="metrics">
-      <div className="stat"><dt>Время</dt><dd><Num text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd></div>
+      <div className="stat"><dt>Время</dt><dd><Num animate={false} text={duration(run.createdAt, run.finishedAt ?? (run.status === 'running' || run.status === 'waiting' ? undefined : run.updatedAt))} /></dd></div>
       <div className="stat"><dt>Токены</dt><dd title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><Num text={total ? tokens(total) : '—'} /></dd></div>
       <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
       <div className="stat"><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
@@ -260,11 +264,15 @@ function Metrics({ run }: { run: RunFile }) {
 }
 
 /** Крупное число тонким начертанием, единицы — мелко и серым: «18 мин 54 с», «93 тыс.». */
-function Num({ text }: { text: string }) {
+function Num({ text, animate = true }: { text: string; animate?: boolean }) {
   const parts = text.split(/(\d+(?:[.,]\d+)?|\$)/).filter(Boolean);
   return (
     <>
-      {parts.map((p, i) => (/^[\d$]/.test(p) ? <span key={i}>{p}</span> : <small key={i}>{p}</small>))}
+      {parts.map((p, i) =>
+        /^[\d$]/.test(p)
+          ? <span key={animate ? `${i}:${p}` : i} className={animate ? 'num-in' : undefined}>{p}</span>
+          : <small key={i}>{p}</small>,
+      )}
     </>
   );
 }

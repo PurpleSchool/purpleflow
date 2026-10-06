@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
 import type { ToolName } from '@psflow/core';
 import { useStore, type View } from '../lib/store';
+import { PillTabs } from './PillTabs';
 
 const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
 
@@ -12,12 +12,12 @@ export function AppBar() {
   const active = state.runs.find((r) => r.status === 'running' || r.status === 'waiting');
   const current = active ?? last;
 
-  const pill = (name: View['name'], label: string, onClick: () => void, extra?: ReactNode, disabled?: boolean) => (
-    <button className={`navpill ${v === name ? 'is-on' : ''}`} onClick={onClick} disabled={disabled}>
-      {extra}
-      {label}
-    </button>
-  );
+  const liveDot = current && (current.status === 'running' || current.status === 'waiting') ? <i className={`navdot ${current.status}`} /> : null;
+  const go2 = (name: View['name']) => {
+    if (name === 'run') {
+      if (current) go({ name: 'run', runId: current.id });
+    } else go({ name } as View);
+  };
 
   return (
     <header className="appbar drag">
@@ -26,16 +26,20 @@ export function AppBar() {
         <span>PS Flow</span>
       </div>
 
-      <nav className="navpills" aria-label="Разделы">
-        {pill('new', 'Новая задача', () => go({ name: 'new' }))}
-        {pill(
-          'run', 'Прогон',
-          () => current && go({ name: 'run', runId: current.id }),
-          current && (current.status === 'running' || current.status === 'waiting') ? <i className={`navdot ${current.status}`} /> : null,
-          !current,
-        )}
-        {pill('history', 'История', () => go({ name: 'history' }))}
-        {pill('settings', 'Настройки', () => go({ name: 'settings' }))}
+      <nav aria-label="Разделы">
+        <PillTabs<View['name']>
+          className="navpills"
+          itemClassName="navpill"
+          role="navigation"
+          value={v}
+          onChange={go2}
+          items={[
+            { id: 'new', label: 'Новая задача' },
+            { id: 'run', label: <>{liveDot}Прогон</>, disabled: !current },
+            { id: 'history', label: 'История' },
+            { id: 'settings', label: 'Настройки' },
+          ]}
+        />
       </nav>
 
       <span className="grow" />

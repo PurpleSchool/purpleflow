@@ -8,14 +8,17 @@ import { SettingsScreen } from './screens/Settings';
 export function App() {
   const { state } = useStore();
   const v = state.view;
+  const viewKey = v.name === 'run' ? `run:${v.runId}` : v.name;
   return (
     <div className={`app os-${window.psflow.platform}`}>
       <AppBar />
       <main className="main">
-        {v.name === 'new' && <NewTaskScreen />}
-        {v.name === 'run' && <RunScreen runId={v.runId} />}
-        {v.name === 'history' && <HistoryScreen />}
-        {v.name === 'settings' && <SettingsScreen />}
+        <div className="screen-enter" key={viewKey}>
+          {v.name === 'new' && <NewTaskScreen />}
+          {v.name === 'run' && <RunScreen runId={v.runId} />}
+          {v.name === 'history' && <HistoryScreen />}
+          {v.name === 'settings' && <SettingsScreen />}
+        </div>
       </main>
     </div>
   );
