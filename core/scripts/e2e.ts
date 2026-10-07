@@ -86,7 +86,7 @@ if (resumeRun) {
 } else {
   const image = arg('image');
   const attachments = image ? [{ name: path.basename(image), data: new Uint8Array(fs.readFileSync(image)) }] : undefined;
-  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', lintCommand: arg('lint'), attachments } }));
+  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', lintCommand: arg('lint'), attachments, mode: (arg('mode') as never) ?? 'task', visual: Boolean(arg('run')), runCommand: arg('run'), appUrl: arg('url') } }));
 }
 console.log(t(), 'run', runId);
 if (stopAfter) {
@@ -100,5 +100,6 @@ await new Promise((r) => setTimeout(r, 500));
 const run = core.getRun(runId)!;
 console.log(t(), 'status', run.status, '| attempts', run.attempts.map((a) => `${a.stage}#${a.attempt}:${a.status}`).join(' '));
 console.log(t(), 'title', JSON.stringify(run.title), 'fromPlan', run.titleFromPlan, 'attachments', run.attachments);
+console.log(t(), 'mode', run.mode, 'phases', run.phases, 'repro', run.repro && { passed: run.repro.passed }, 'visuals', JSON.stringify(run.visuals?.map((v) => ({ blocking: v.blocking.length, notes: v.notes.length, shots: v.shots.map((x) => x.caption) }))));
 console.log(t(), 'tokens', JSON.stringify(run.totals), '| live processes', liveCount());
 console.log(t(), 'run.json', run.archivedPath ?? path.join(run.worktreePath, 'openspec/changes', run.changeId, 'run.json'));

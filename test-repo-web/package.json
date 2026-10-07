@@ -1,0 +1,11 @@
+{
+  "name": "psflow-sample-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Маленькое веб-приложение для проверки визуальной стадии PS Flow: без зависимостей.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

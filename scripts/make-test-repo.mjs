@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Создаёт git-репозиторий из шаблона test-repo/ в указанной папке (по умолчанию ~/psflow-sample).
+// Создаёт git-репозиторий из шаблона в указанной папке (по умолчанию ~/psflow-sample).
+// --web — веб-приложение для визуальной проверки (шаблон test-repo-web/).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,12 +8,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const target = path.resolve(process.argv[2] ?? path.join(os.homedir(), 'psflow-sample'));
+const args = process.argv.slice(2);
+const web = args.includes('--web');
+const target = path.resolve(args.find((a) => !a.startsWith('--')) ?? path.join(os.homedir(), web ? 'psflow-sample-web' : 'psflow-sample'));
 if (fs.existsSync(target) && fs.readdirSync(target).length) {
   console.error(`Папка ${target} не пуста`);
   process.exit(1);
 }
-fs.cpSync(path.join(root, 'test-repo'), target, { recursive: true });
+fs.cpSync(path.join(root, web ? 'test-repo-web' : 'test-repo'), target, { recursive: true });
 fs.renameSync(path.join(target, 'gitignore.txt'), path.join(target, '.gitignore'));
 const git = (...args) => execFileSync('git', args, { cwd: target, stdio: 'inherit' });
 git('init', '-q', '-b', 'main');

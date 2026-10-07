@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Inbox } from 'lucide-react';
 import { Button, Empty, StatusPill, Topbar } from '../components/ui';
 import { useStore } from '../lib/store';
-import { STAGES } from '../lib/stages';
+import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { cost, shortPath, tokens, usageTotal, when } from '../lib/format';
 
 export function HistoryScreen() {
@@ -45,7 +45,7 @@ export function HistoryScreen() {
                     <div className="h-sub mono">{r.missing ? shortPath(r.runJsonPath) : `${shortPath(r.projectPath)} · ${r.branch}`}</div>
                   </td>
                   <td><StatusPill status={r.status} /></td>
-                  <td className="muted">{r.status === 'finished' ? '—' : r.next === 'limit' ? 'Нужно решение' : STAGES.find((s) => s.id === r.next)?.title}</td>
+                  <td className="muted">{r.status === 'finished' ? '—' : r.next === 'limit' ? 'Нужно решение' : stagesFor((r.mode ?? 'task') as Mode, true).find((s) => s.id === r.next)?.title}</td>
                   <td className="num">{r.implAttemptsUsed}</td>
                   <td className="num">{usageTotal(r.totals) ? tokens(usageTotal(r.totals)) : '—'}{cost(r.totals) && <small className="muted"> {cost(r.totals)}</small>}</td>
                   <td className="muted">{when(r.createdAt)}</td>

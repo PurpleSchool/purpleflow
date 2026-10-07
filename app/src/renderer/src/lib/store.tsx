@@ -26,7 +26,7 @@ type Action =
 function summarize(r: RunFile, runJsonPath = ''): RunSummary {
   return {
     id: r.id, title: r.title, changeId: r.changeId, projectPath: r.projectPath, branch: r.branch, status: r.status,
-    next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt, runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals,
+    next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt, runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals, mode: r.mode,
   };
 }
 

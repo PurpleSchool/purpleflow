@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { RunFile, StageId } from '@psflow/core';
-import { STAGES, nodeState } from '../lib/stages';
+import { nodeState, runStages } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
 import { activeClock, ms } from '../lib/clock';
 import { isGate, stageBars, type BarKind } from '../lib/bars';
@@ -55,7 +55,7 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
           ))}
         </div>
       )}
-      {STAGES.map((st) => {
+      {runStages(run).map((st) => {
         const bars = stageBars(run, clock, st.id, now, 0.4);
         const state = nodeState(run, st.id);
         const reachable = bars.length > 0 || st.id === run.next;

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { runClaude } from './agents/claude.js';
@@ -12,8 +13,9 @@ import { OpenSpec } from './openspec.js';
 import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
 import { Prompts } from './prompts.js';
 import { RunStore } from './store.js';
+import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import type {
-  AiCommands, CheckResult, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AiCommands, CheckResult, ModeSuggestion, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -36,6 +38,8 @@ export const STAGE_TITLES: Record<StageId, string> = {
   gate1: 'Утверждение плана',
   implement: 'Реализация',
   tests: 'Проверки',
+  baseline: 'Базовые проверки',
+  visual: 'Визуальная проверка',
   review: 'Ревью',
   gate2: 'Приёмка',
   limit: 'Нужно решение',
@@ -110,10 +114,11 @@ export class Orchestrator {
   async recover(): Promise<void> {
     for (const s of this.store.list()) {
       // Агенты и тесты, пережившие аварийный выход приложения, не должны писать в worktree параллельно с повтором стадии.
-      const orphans = this.store.readPids(s.id);
+      const orphans = [...this.store.readPids(s.id), ...this.store.readPids(`${s.id}:server`)];
       if (orphans.length) {
         await Promise.all(orphans.map(killPid));
         this.store.writePids(s.id, []);
+        this.store.writePids(`${s.id}:server`, []);
       }
       if (s.status !== 'running' || s.missing) continue;
       const r = this.store.load(s.id);
@@ -241,8 +246,12 @@ export class Orchestrator {
     const worktreePath = path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
     await git.addWorktree(repo, worktreePath, branch, base);
 
-    const openspec = new OpenSpec(tools.openspec, this.opts.env);
-    await openspec.ensureInit(worktreePath, 'init');
+    const mode = input.mode ?? 'task';
+    if (mode !== 'quick') {
+      const openspec = new OpenSpec(tools.openspec, this.opts.env);
+      await openspec.ensureInit(worktreePath, 'init');
+    }
+    const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim());
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
@@ -260,14 +269,18 @@ export class Orchestrator {
       testCommand: input.testCommand.trim(),
       setupCommand: input.setupCommand?.trim() || undefined,
       lintCommand: input.lintCommand?.trim() || undefined,
+      mode,
+      visual: visual || undefined,
+      runCommand: visual ? input.runCommand!.trim() : undefined,
+      appUrl: visual ? input.appUrl!.trim() : undefined,
       prepared: !input.setupCommand?.trim(),
       models: { ...s.models },
       status: 'running',
-      next: 'plan',
+      next: MODE_FIRST[mode],
       attempts: [],
       planRetries: 0,
       implAttemptsUsed: 0,
-      implAttemptsLimit: IMPL_LIMIT,
+      implAttemptsLimit: MODE_LIMIT[mode] ?? IMPL_LIMIT,
       tests: [],
       reviews: [],
       gates: [],
@@ -297,6 +310,7 @@ export class Orchestrator {
   private async stop(id: string) {
     const r = this.store.load(id);
     if (!r) return;
+    await killGroup(`${id}:server`);
     if (this.driving.has(id)) {
       this.stopping.add(id);
       await killGroup(id);
@@ -342,6 +356,7 @@ export class Orchestrator {
       if (decision === 'approve') {
         r.next = 'implement';
         r.feedback = undefined;
+        if (modeOf(r) === 'epic') r.phase = 1;
       } else {
         r.next = 'plan';
         r.planRetries = 0;
@@ -381,6 +396,8 @@ export class Orchestrator {
           break;
         }
         switch (run.next) {
+          case 'baseline': await this.stageBaseline(run); break;
+          case 'visual': await this.stageVisual(run); break;
           case 'plan': await this.stagePlan(run); break;
           case 'implement': await this.stageImplement(run); break;
           case 'tests': await this.stageTests(run); break;
@@ -424,14 +441,42 @@ export class Orchestrator {
     const res = await runClaude({
       ...this.agentBase(run, tools.claude, tools.openspec),
       prompt,
-      systemPrompt: this.prompts.raw('planner.system.md'),
+      systemPrompt: this.prompts.raw('planner.system.md') + this.modeRules('planner', run),
       model: run.models.planner,
     });
     this.afterAgent(run, attempt, res);
 
+    const mode = modeOf(run);
+    const changeDir = path.join(run.worktreePath, 'openspec', 'changes', run.changeId);
+    if (mode === 'refactor' && fs.existsSync(changeDir)) {
+      // Рефакторинг не меняет поведение: изменение без дельт спецификаций.
+      fs.writeFileSync(path.join(changeDir, '.openspec.yaml'), 'schema: spec-driven\nskip_specs: true\n');
+    }
     const openspec = new OpenSpec(tools.openspec, this.opts.env);
     const v = await openspec.validate(run.worktreePath, run.changeId, run.id);
     this.checkStop(run);
+    if (v.valid && mode === 'epic' && !fs.existsSync(path.join(changeDir, 'design.md'))) {
+      v.valid = false;
+      v.issues.push({ level: 'ERROR', message: 'Для большой задачи нужен design.md: варианты решения, выбранный подход и разбиение на этапы.' });
+    }
+    if (v.valid && mode === 'epic') {
+      run.phases = Math.max(1, Math.min(8, countPhases(this.getChangeDocs(run.id).tasks)));
+    }
+    if (v.valid && mode === 'bug') {
+      // Воспроизведение засчитано, только если проверки на текущем коде красные.
+      this.log(run, c.dim('Проверяем, что баг воспроизведён: проверки должны упасть…') + '\n');
+      const { result } = await this.runChecks(run);
+      run.repro = result;
+      if (!result.checks?.length) {
+        v.valid = false;
+        v.issues.push({ level: 'ERROR', message: 'Не заданы команды тестов — воспроизвести баг тестом нельзя. Укажите команду тестов в командах проекта.' });
+      } else if (result.passed) {
+        v.valid = false;
+        v.issues.push({ level: 'ERROR', message: 'Тест воспроизведения не падает: все проверки зелёные на текущем коде. Напиши тест, который падает именно из-за бага.' });
+      } else {
+        this.log(run, c.mint('✓ баг воспроизведён: проверки красные, как и ожидалось') + '\n');
+      }
+    }
     if (v.valid) {
       this.log(run, c.mint('✓ openspec validate: изменение валидно') + '\n');
       const title = planTitle(this.getChangeDocs(run.id).proposal);
@@ -464,21 +509,21 @@ export class Orchestrator {
     const tools = await this.tools(['claude', 'openspec']);
     run.implAttemptsUsed++;
     const attempt = this.begin(run, 'implement', run.models.executor);
-    const prompt = this.prompts.render('implement.md', {
+    const prompt = this.prompts.render(this.tpl('implement', run), {
       changeId: run.changeId,
       task: run.task,
       attachments: this.attachmentsBlock(run),
       testCommand: run.testCommand || 'не задана',
       attempt: run.implAttemptsUsed,
       limit: run.implAttemptsLimit,
-      feedback: this.feedbackBlock(run.feedback),
+      feedback: this.phaseBlock(run) + this.feedbackBlock(run.feedback),
     });
     let res: AgentResult;
     try {
       res = await runClaude({
         ...this.agentBase(run, tools.claude, tools.openspec),
         prompt,
-        systemPrompt: this.prompts.raw('executor.system.md'),
+        systemPrompt: this.prompts.raw('executor.system.md') + this.modeRules('executor', run),
         model: run.models.executor,
       });
       this.afterAgent(run, attempt, res);
@@ -487,22 +532,28 @@ export class Orchestrator {
       run.implAttemptsUsed--;
       throw e;
     }
-    this.end(run, attempt, 'done', firstLine(res.text) || 'Реализация выполнена');
+    if (modeOf(run) === 'quick' && !run.titleFromPlan) {
+      // Плана нет — короткое название пишет исполнитель последней строкой «НАЗВАНИЕ: …».
+      const m = res.text.match(/НАЗВАНИЕ:\s*(.+)\s*$/m);
+      if (m) {
+        run.title = m[1].replace(/[`*]/g, '').trim().slice(0, 72);
+        run.titleFromPlan = true;
+      }
+    }
+    this.end(run, attempt, 'done', firstLine(res.text.replace(/^НАЗВАНИЕ:.*$/m, '')) || 'Реализация выполнена');
     run.next = 'tests';
     this.save(run);
   }
 
-  private async stageTests(run: RunFile) {
+  /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
+  private async runChecks(run: RunFile): Promise<{ result: TestResult; failed: CheckResult[] }> {
     const s = this.opts.getSettings();
-    const attempt = this.begin(run, 'tests');
     const plan: { kind: CheckResult['kind']; command: string }[] = [];
     if (run.lintCommand) plan.push({ kind: 'lint', command: run.lintCommand });
     if (run.testCommand) plan.push({ kind: 'test', command: run.testCommand });
-    const name = { lint: 'линтер', test: 'тесты' };
-
     const checks: CheckResult[] = [];
     for (const p of plan) {
-      this.log(run, c.sky(`$ ${p.command}`) + c.dim(`  # ${name[p.kind]}`) + '\n');
+      this.log(run, c.sky(`$ ${p.command}`) + c.dim(`  # ${CHECK_NAME[p.kind]}`) + '\n');
       const r = await this.shell(run, p.command, s.testTimeoutMin);
       this.checkStop(run);
       const output = (r.stdout + (r.stderr ? '\n' + r.stderr : '')).trim();
@@ -516,9 +567,8 @@ export class Orchestrator {
         timedOut: r.timedOut || undefined,
       };
       checks.push(check);
-      this.log(run, (check.passed ? c.mint(`✓ ${name[p.kind]}: ok`) : c.coral(`✗ ${name[p.kind]}: код ${check.exitCode}${check.timedOut ? ', таймаут' : ''}`)) + '\n');
+      this.log(run, (check.passed ? c.mint(`✓ ${CHECK_NAME[p.kind]}: ok`) : c.coral(`✗ ${CHECK_NAME[p.kind]}: код ${check.exitCode}${check.timedOut ? ', таймаут' : ''}`)) + '\n');
     }
-
     const failed = checks.filter((x) => !x.passed);
     const result: TestResult = checks.length
       ? {
@@ -533,24 +583,98 @@ export class Orchestrator {
         }
       : { at: new Date().toISOString(), command: '', passed: true, exitCode: 0, durationMs: 0, output: 'Команды линтера и тестов не заданы — проверки пропущены.', checks: [] };
     if (!checks.length) this.log(run, c.amber(result.output) + '\n');
+    return { result, failed };
+  }
 
+  private checksFeedback(failed: CheckResult[]): string {
+    return failed.map((x) => `${x.kind === 'lint' ? 'Линтер' : 'Тесты'} не прошли. Команда: \`${x.command}\`, код выхода ${x.exitCode}${x.timedOut ? ' (таймаут)' : ''}.\n\nВывод:\n\`\`\`\n${x.output}\n\`\`\``).join('\n\n');
+  }
+
+  private async stageTests(run: RunFile) {
+    const attempt = this.begin(run, 'tests');
+
+    // Рефакторинг: тесты — эталон поведения, менять их нельзя.
+    if (modeOf(run) === 'refactor') {
+      const tools = await this.tools(['git']);
+      const changed = await new Git(tools.git, this.opts.env).changedFiles(run.worktreePath, run.baseCommit);
+      const touched = changed.filter((f) => TEST_FILE.test(f) && !f.startsWith('openspec/'));
+      if (touched.length) {
+        this.log(run, c.coral(`✗ рефакторинг изменил тесты: ${touched.join(', ')}`) + '\n');
+        this.end(run, attempt, 'failed', 'Изменены тесты');
+        run.feedback = { source: 'tests', text: `Это рефакторинг: поведение и тесты менять нельзя. Верни эти файлы тестов к исходному виду (git checkout ${run.baseCommit.slice(0, 8)} -- <файл>) и добейся зелёных проверок без их правки:\n${touched.map((f) => `- ${f}`).join('\n')}` };
+        this.nextImplementOrLimit(run, 'Рефакторинг снова и снова меняет тесты.');
+        return;
+      }
+    }
+
+    const { result, failed } = await this.runChecks(run);
     run.tests.push(result);
     this.emit({ type: 'tests.result', runId: run.id, result });
+    const checks = result.checks ?? [];
     const summary = !checks.length ? 'Пропущены'
-      : failed.length ? `Красные: ${failed.map((x) => name[x.kind]).join(' и ')}`
-      : checks.map((x) => name[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
+      : failed.length ? `Красные: ${failed.map((x) => CHECK_NAME[x.kind]).join(' и ')}`
+      : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
     this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
 
     if (result.passed) {
-      run.next = 'review';
+      run.feedback = undefined;
+      // Большая задача: следующий этап реализации со свежим запасом попыток.
+      if (modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases) {
+        run.phase = (run.phase ?? 1) + 1;
+        run.implAttemptsUsed = 0;
+        run.implAttemptsLimit = MODE_LIMIT.epic;
+        this.log(run, c.violet(`→ этап ${run.phase} из ${run.phases}`) + '\n');
+        run.next = 'implement';
+        this.save(run);
+        return;
+      }
+      run.next = run.visual ? 'visual' : await this.reviewOrAccept(run);
       this.save(run);
       return;
     }
-    run.feedback = {
-      source: 'tests',
-      text: failed.map((x) => `${x.kind === 'lint' ? 'Линтер' : 'Тесты'} не прошли. Команда: \`${x.command}\`, код выхода ${x.exitCode}${x.timedOut ? ' (таймаут)' : ''}.\n\nВывод:\n\`\`\`\n${x.output}\n\`\`\``).join('\n\n'),
-    };
+    run.feedback = { source: 'tests', text: this.checksFeedback(failed) };
     this.nextImplementOrLimit(run, `Проверки красные после ${run.implAttemptsUsed} попыток реализации.`);
+  }
+
+  /** Рефакторинг начинается с зелёных проверок: иначе нечем доказать, что поведение не изменилось. */
+  private async stageBaseline(run: RunFile) {
+    const s = this.opts.getSettings();
+    const attempt = this.begin(run, 'baseline');
+    if (!run.prepared && run.setupCommand) {
+      this.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
+      const r = await this.shell(run, run.setupCommand, s.testTimeoutMin);
+      this.checkStop(run);
+      if (r.code !== 0) throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
+      run.prepared = true;
+    }
+    const { result } = await this.runChecks(run);
+    run.repro = result;
+    if (!result.checks?.length) {
+      this.end(run, attempt, 'failed', 'Нет проверок');
+      this.markStopped(run, 'Для рефакторинга нужны команды линтера или тестов — без них нельзя доказать, что поведение не изменилось. Задайте их в командах проекта.');
+      return;
+    }
+    if (!result.passed) {
+      this.end(run, attempt, 'failed', 'Красные до начала');
+      this.markStopped(run, 'Проверки красные ещё до рефакторинга. Почините их отдельной задачей (режим «Баг»), затем повторите рефакторинг.');
+      return;
+    }
+    this.end(run, attempt, 'done', 'Зелёные — эталон зафиксирован');
+    run.next = 'plan';
+    this.save(run);
+  }
+
+  /** Быстрая правка с маленьким диффом идёт на приёмку без ревью. */
+  private async reviewOrAccept(run: RunFile): Promise<StageId> {
+    if (modeOf(run) !== 'quick') return 'review';
+    const tools = await this.tools(['git']);
+    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB]);
+    const lines = diff.split('\n').filter((l) => /^[+-][^+-]/.test(l)).length;
+    if (lines <= QUICK_REVIEW_LINES) {
+      this.log(run, c.dim(`Дифф ${lines} строк — ревью пропущено (быстрая правка).`) + '\n');
+      return 'gate2';
+    }
+    return 'review';
   }
 
   /** Сохранённые команды проекта (null — ещё не настраивали). */
@@ -563,6 +687,8 @@ export class Orchestrator {
       setupCommand: cfg.setupCommand.trim(),
       lintCommand: cfg.lintCommand.trim(),
       testCommand: cfg.testCommand.trim(),
+      runCommand: cfg.runCommand?.trim() || undefined,
+      appUrl: cfg.appUrl?.trim() || undefined,
       notes: cfg.notes,
       updatedAt: new Date().toISOString(),
     };
@@ -600,11 +726,160 @@ export class Orchestrator {
         setupCommand: str(j.setup),
         lintCommand: str(j.lint),
         testCommand: str(j.test),
-        notes: { setup: str(j.notes?.setup), lint: str(j.notes?.lint), test: str(j.notes?.test) },
+        runCommand: str(j.run),
+        appUrl: str(j.url),
+        notes: { setup: str(j.notes?.setup), lint: str(j.notes?.lint), test: str(j.notes?.test), run: str(j.notes?.run) },
       };
     } catch {
       throw new Error(`Нейросеть ответила не в формате JSON: ${res.text.slice(0, 300)}`);
     }
+  }
+
+  /** Режим по тексту задачи — подсказка человеку, решение за ним. */
+  async suggestMode(task: string): Promise<ModeSuggestion> {
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude']);
+    const res = await runClaude({
+      bin: tools.claude,
+      cwd: os.tmpdir(),
+      env: this.opts.env,
+      prompt: this.prompts.render('suggest-mode.md', { task }),
+      model: s.models.executor || undefined,
+      timeoutMs: 90_000,
+      group: `mode-${Date.now()}`,
+      onOutput: () => {},
+      proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      claudeAuth: s.claudeAuth,
+      tools: [],
+    });
+    if (!res.ok) throw new Error(res.error ?? 'Не удалось определить режим');
+    try {
+      const j = JSON.parse(res.text.slice(res.text.indexOf('{'), res.text.lastIndexOf('}') + 1));
+      const modes: RunMode[] = ['quick', 'bug', 'task', 'epic', 'refactor'];
+      return { mode: modes.includes(j.mode) ? j.mode : 'task', reason: String(j.reason ?? '').trim() };
+    } catch {
+      throw new Error(`Нейросеть ответила не в формате JSON: ${res.text.slice(0, 200)}`);
+    }
+  }
+
+  private visualDir(run: RunFile, attempt: number): string {
+    return path.join(this.opts.dataDir, 'visual', run.id, String(attempt));
+  }
+
+  /**
+   * Визуальная проверка: поднять приложение в worktree на свободном порту, дать агенту
+   * браузер (Playwright CLI через обёртку pw — служебные файлы остаются вне репозитория),
+   * собрать скриншоты и вердикт { blocking, notes, shots }.
+   */
+  private async stageVisual(run: RunFile) {
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude']);
+    const attempt = this.begin(run, 'visual', run.models.executor);
+    const dir = this.visualDir(run, attempt.attempt);
+    fs.mkdirSync(dir, { recursive: true });
+    const port = await freePort();
+    const url = run.appUrl!.replaceAll('{port}', String(port));
+    const command = run.runCommand!.replaceAll('{port}', String(port));
+    const serverGroup = `${run.id}:server`;
+
+    this.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
+    let exited: number | null | undefined;
+    const server = runProc(command, [], {
+      cwd: run.worktreePath,
+      env: { ...this.opts.env, PORT: String(port), BROWSER: 'none', CI: '1' },
+      shell: true,
+      group: serverGroup,
+      onStdout: (t) => this.log(run, c.dim(crlf(t)), false),
+      onStderr: (t) => this.log(run, c.dim(crlf(t)), false),
+    });
+    void server.then((r) => { exited = r.code; });
+
+    try {
+      const ready = await waitForUrl(url, 120_000, () => exited !== undefined || this.stopping.has(run.id));
+      this.checkStop(run);
+      if (!ready) {
+        throw new Error(exited !== undefined
+          ? `Приложение завершилось с кодом ${exited}, не открыв ${url}. Проверьте команду запуска в командах проекта.`
+          : `За 2 минуты приложение не ответило на ${url}. Проверьте команду запуска и адрес ({port} подставляется автоматически).`);
+      }
+      this.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
+
+      // pw: обёртка над Playwright CLI с отдельной сессией и рабочей папкой для скриншотов.
+      const session = `psflow-${run.id.slice(0, 8)}`;
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        fs.writeFileSync(path.join(dir, 'pw.cmd'), `@echo off\r\ncd /d "${dir}"\r\nnpx -y @playwright/cli@latest -s=${session} %*\r\n`);
+      } else {
+        fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
+      }
+      const docs = this.getChangeDocs(run.id);
+      const tg = await this.tools(['git']);
+      const changed = await new Git(tg.git, this.opts.env).changedFiles(run.worktreePath, run.baseCommit);
+      const prompt = this.prompts.render('visual.md', {
+        url,
+        dir,
+        task: run.task,
+        attachments: this.attachmentsBlock(run),
+        proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
+        specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
+        files: changed.filter((f) => !f.startsWith('openspec/')).map((f) => `- ${f}`).join('\n') || '(нет)',
+      });
+      const res = await runClaude({
+        ...this.agentBase(run, tools.claude),
+        env: prependPath(this.opts.env, dir),
+        prompt,
+        systemPrompt: this.prompts.raw('visual.system.md') + this.modeRules('visual', run),
+        model: run.models.executor,
+        addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
+        // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
+        tools: ['Bash', 'Read', 'Glob', 'Grep'],
+      });
+      this.afterAgent(run, attempt, res);
+
+      const parsed = parseReview(res.text);
+      if (!parsed) throw new Error(`Визуальная проверка вернула ответ не в формате JSON:\n${res.text.slice(0, 400)}`);
+      const shotsRaw = parseShots(res.text);
+      const shots = shotsRaw
+        .map((x) => ({ file: path.isAbsolute(x.file) ? x.file : path.join(dir, x.file), caption: x.caption }))
+        .filter((x) => x.file.startsWith(dir) && fs.existsSync(x.file));
+      // Скриншоты, которые агент снял, но не перечислил, тоже показываем.
+      for (const f of fs.readdirSync(dir).filter((n) => /\.(png|jpe?g|webp)$/i.test(n)).sort()) {
+        const full = path.join(dir, f);
+        if (!shots.some((x) => x.file === full)) shots.push({ file: full, caption: f });
+      }
+      const result: VisualResult = { at: new Date().toISOString(), url, blocking: parsed.blocking, notes: parsed.notes, shots };
+      run.visuals = [...(run.visuals ?? []), result];
+      const fmt = (i: ReviewItem) => `${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`;
+      if (result.blocking.length) this.log(run, c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) + result.blocking.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
+      this.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
+      this.end(run, attempt, result.blocking.length ? 'failed' : 'done',
+        result.blocking.length ? `Проблем: ${result.blocking.length}, скриншотов: ${shots.length}` : `Выглядит верно, скриншотов: ${shots.length}`);
+
+      if (!result.blocking.length) {
+        run.next = await this.reviewOrAccept(run);
+        this.save(run);
+        return;
+      }
+      run.feedback = {
+        source: 'review',
+        text: 'Визуальная проверка в браузере нашла проблемы. Исправь каждую; скриншоты можно открыть инструментом Read:\n'
+          + result.blocking.map((i) => `- ${fmt(i)}`).join('\n')
+          + (shots.length ? '\n\nСкриншоты:\n' + shots.map((x) => `- ${x.file} — ${x.caption}`).join('\n') : ''),
+      };
+      this.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
+    } finally {
+      await runProc('npx', ['-y', '@playwright/cli@latest', `-s=psflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: this.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+      await killGroup(serverGroup);
+    }
+  }
+
+  /** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
+  getVisualShot(id: string, file: string): string | null {
+    const root = path.join(this.opts.dataDir, 'visual', id);
+    const full = path.resolve(file);
+    if (!full.startsWith(root + path.sep) || !fs.existsSync(full)) return null;
+    const ext = path.extname(full).slice(1).toLowerCase();
+    return `data:image/${ext === 'jpg' ? 'jpeg' : ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`;
   }
 
   private async stageReview(run: RunFile) {
@@ -623,7 +898,10 @@ export class Orchestrator {
       tests: lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
       base: run.baseCommit.slice(0, 8),
       diff: diff || '(пусто)',
-      attachments: run.attachments?.length ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
+      attachments: [
+        run.attachments?.length ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
+        run.visuals?.length ? 'Также прикреплены скриншоты приложения после изменений (визуальная проверка). Учитывай видимый результат.' : '',
+      ].filter(Boolean).join('\n'),
     });
 
     const res = await runCodex({
@@ -631,7 +909,7 @@ export class Orchestrator {
       prompt,
       model: run.models.reviewer,
       sandbox: 'read-only',
-      images: run.attachments,
+      images: [...(run.attachments ?? []), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
       outputSchema: this.prompts.json<object>('review.schema.json'),
     });
     this.afterAgent(run, attempt, res);
@@ -669,7 +947,7 @@ export class Orchestrator {
     const git = new Git(tools.git, this.opts.env);
 
     // Повтор после сбоя на коммите: архив уже сделан — второй раз openspec archive не запускаем.
-    if (!run.archivedPath || !fs.existsSync(path.dirname(run.archivedPath))) {
+    if (modeOf(run) !== 'quick' && (!run.archivedPath || !fs.existsSync(path.dirname(run.archivedPath)))) {
       this.log(run, c.sky(`$ openspec archive ${run.changeId} -y`) + '\n');
       const archivedDir = await openspec.archive(run.worktreePath, run.changeId, run.id);
       run.archivedPath = path.join(archivedDir, 'run.json');
@@ -684,7 +962,9 @@ export class Orchestrator {
     this.save(run);
     let sha: string;
     try {
-      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\nOpenSpec change: ${run.changeId}\nPS Flow run: ${run.id}`);
+      // Быстрая правка идёт без OpenSpec: run.json остаётся в данных прогона, но не в коммите проекта.
+      const exclude = modeOf(run) === 'quick' ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : [];
+      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PS Flow run: ${run.id}`, exclude);
     } catch (e) {
       // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
       run.status = 'running';
@@ -712,6 +992,8 @@ export class Orchestrator {
 
   private gateMessage(run: RunFile): string | undefined {
     if (run.next === 'limit') return run.message ?? 'Попытки реализации исчерпаны. Дать ещё одну попытку?';
+    if (run.next === 'gate1' && modeOf(run) === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
+    if (run.next === 'gate1' && modeOf(run) === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
     if (run.next === 'gate1') return 'Проверьте proposal и tasks. Принять, вернуть с комментарием или отменить?';
     if (run.next === 'gate2') return 'Посмотрите дифф и замечания ревью. Принять или вернуть на доработку?';
     return undefined;
@@ -777,6 +1059,32 @@ export class Orchestrator {
     this.log(run, c.coral(`✗ ${error}`) + '\n');
     this.emit({ type: 'stage.failed', runId: run.id, stage, error });
     this.emit({ type: 'run.finished', runId: run.id, status: 'stopped', message: error });
+  }
+
+  /** Правила режима — дополнение к системному промпту роли (prompts/<role>.<mode>.md). */
+  private modeRules(role: 'planner' | 'executor' | 'review' | 'visual', run: RunFile): string {
+    const file = `${role}.${modeOf(run)}.md`;
+    try {
+      return '\n\n' + this.prompts.raw(file);
+    } catch {
+      return '';
+    }
+  }
+
+  /** Шаблон промпта режима, если есть (implement.quick.md), иначе общий. */
+  private tpl(base: string, run: RunFile): string {
+    const name = `${base}.${modeOf(run)}.md`;
+    try {
+      this.prompts.raw(name);
+      return name;
+    } catch {
+      return `${base}.md`;
+    }
+  }
+
+  private phaseBlock(run: RunFile): string {
+    if (modeOf(run) !== 'epic' || !run.phases) return '';
+    return `\n## Этап ${run.phase ?? 1} из ${run.phases}\n\nВыполни только пункты раздела «## ${run.phase ?? 1}.» в tasks.md. Следующие этапы не трогай — они будут отдельными шагами после проверок.\n`;
   }
 
   private feedbackBlock(f?: Feedback): string {
@@ -888,6 +1196,55 @@ export function planTitle(proposal: string): string | null {
   if (!m || /^(why|what changes|impact)$/i.test(m[1])) return null;
   const t = m[1].replace(/^(change|изменение)\s*:\s*/i, '').replace(/[`*]/g, '').trim();
   return t ? (t.length > 72 ? t.slice(0, 70) + '…' : t) : null;
+}
+
+const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
+
+/** Свободный TCP-порт на localhost. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as net.AddressInfo).port;
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+/** Ждём, пока адрес начнёт отвечать (любой HTTP-ответ), или пока процесс не умрёт. */
+async function waitForUrl(url: string, timeoutMs: number, abort: () => boolean): Promise<boolean> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    if (abort()) return false;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      await fetch(url, { signal: ctrl.signal, redirect: 'manual' });
+      clearTimeout(timer);
+      return true;
+    } catch { /* ещё не поднялось */ }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
+}
+
+/** «shots» из JSON-ответа визуальной проверки. */
+export function parseShots(text: string): { file: string; caption: string }[] {
+  try {
+    const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+    return Array.isArray(j.shots)
+      ? j.shots.filter((x: { file?: unknown }) => typeof x?.file === 'string').map((x: { file: string; caption?: unknown }) => ({ file: x.file, caption: String(x.caption ?? '') }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Число этапов большой задачи — разделы «## N.» в tasks.md. */
+export function countPhases(tasks: string): number {
+  return (tasks.match(/^##\s+\d+\./gm) ?? []).length;
 }
 
 function firstLine(s: string): string {

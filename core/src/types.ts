@@ -33,7 +33,24 @@ export interface CoreSettings {
   testTimeoutMin: number;
 }
 
-export type StageId = 'plan' | 'gate1' | 'implement' | 'tests' | 'review' | 'gate2' | 'limit' | 'finish';
+export type StageId = 'baseline' | 'plan' | 'gate1' | 'implement' | 'tests' | 'visual' | 'review' | 'gate2' | 'limit' | 'finish';
+
+/** Режим работы: какие стадии и правила применяются к задаче. */
+export type RunMode = 'quick' | 'bug' | 'task' | 'epic' | 'refactor';
+
+export interface VisualShot {
+  /** Абсолютный путь к скриншоту в каталоге данных приложения. */
+  file: string;
+  caption: string;
+}
+
+export interface VisualResult {
+  at: string;
+  url: string;
+  blocking: ReviewItem[];
+  notes: ReviewItem[];
+  shots: VisualShot[];
+}
 
 export type GateId = 'gate1' | 'gate2' | 'limit';
 
@@ -132,6 +149,17 @@ export interface RunFile {
   testCommand: string;
   setupCommand?: string;
   lintCommand?: string;
+  /** Режим (у старых прогонов отсутствует — считается «задачей»). */
+  mode?: RunMode;
+  visual?: boolean;
+  runCommand?: string;
+  appUrl?: string;
+  /** Большая задача: текущий этап реализации и их число (разделы tasks.md). */
+  phase?: number;
+  phases?: number;
+  /** Баг: прогон проверок после воспроизведения — должен быть красным. */
+  repro?: TestResult;
+  visuals?: VisualResult[];
   /** Команда подготовки (установка зависимостей) уже выполнена в worktree. */
   prepared?: boolean;
   models: Record<Role, string>;
@@ -176,6 +204,7 @@ export interface RunSummary {
   runJsonPath: string;
   implAttemptsUsed: number;
   totals: TokenUsage;
+  mode?: RunMode;
   missing?: boolean;
 }
 
@@ -200,6 +229,11 @@ export interface StartRunInput {
   testCommand: string;
   setupCommand?: string;
   lintCommand?: string;
+  mode?: RunMode;
+  /** Визуальная проверка: команда запуска приложения ({port} — свободный порт) и адрес. */
+  runCommand?: string;
+  appUrl?: string;
+  visual?: boolean;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
 }
@@ -242,7 +276,9 @@ export interface ProjectConfig {
   setupCommand: string;
   lintCommand: string;
   testCommand: string;
-  notes: { setup: string; lint: string; test: string };
+  runCommand?: string;
+  appUrl?: string;
+  notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
 }
 
@@ -251,5 +287,12 @@ export interface AiCommands {
   setupCommand: string;
   lintCommand: string;
   testCommand: string;
-  notes: { setup: string; lint: string; test: string };
+  runCommand: string;
+  appUrl: string;
+  notes: { setup: string; lint: string; test: string; run: string };
+}
+
+export interface ModeSuggestion {
+  mode: RunMode;
+  reason: string;
 }

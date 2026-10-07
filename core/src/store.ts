@@ -87,7 +87,7 @@ export class RunStore {
       return {
         id: r.id, title: r.title, changeId: r.changeId, projectPath: r.projectPath, branch: r.branch,
         status: r.status, next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt,
-        runJsonPath: e.runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals,
+        runJsonPath: e.runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals, mode: r.mode,
       };
     });
   }

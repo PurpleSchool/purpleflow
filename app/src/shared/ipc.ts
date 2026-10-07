@@ -1,5 +1,5 @@
 import type {
-  AiCommands, ConnectionCheck, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AiCommands, ConnectionCheck, ModeSuggestion, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -48,6 +48,8 @@ export interface CoreApi {
   getAttachment(id: string, index: number): Promise<string | null>;
   detectCommandsAI(dir: string): Promise<AiCommands>;
   getProjectConfig(dir: string): Promise<ProjectConfig | null>;
+  suggestMode(task: string): Promise<ModeSuggestion>;
+  getVisualShot(id: string, file: string): Promise<string | null>;
   saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
 }
 

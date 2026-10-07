@@ -7,7 +7,8 @@ import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline, useNow } from '../components/Timeline';
 import { isGate } from '../lib/bars';
-import { STAGES, nodeState } from '../lib/stages';
+import { MODES, nodeState, runStages, type Mode } from '../lib/stages';
+import { MODE_ICON } from '../components/ModeIcon';
 import { activeClock, ms } from '../lib/clock';
 import { LiveLog, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
@@ -130,7 +131,7 @@ export function RunScreen({ runId }: { runId: string }) {
         return;
       }
       if (!drawer) return;
-      const order = STAGES.map((x) => x.id).filter((id) => run.attempts.some((a) => a.stage === id) || id === run.next);
+      const order = runStages(run).map((x) => x.id).filter((id) => run.attempts.some((a) => a.stage === id) || id === run.next);
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         const i = order.indexOf(drawer);
         const next = order[Math.min(order.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
@@ -175,7 +176,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const resumable = run.status === 'stopped';
   const gate = run.status === 'waiting' || (run.status === 'stopped' && (run.next === 'gate1' || run.next === 'gate2' || run.next === 'limit')) ? run.next : null;
   const lastReview = run.reviews[run.reviews.length - 1];
-  const stageDef = drawer ? STAGES.find((x) => x.id === drawer) : undefined;
+  const stageDef = drawer ? runStages(run).find((x) => x.id === drawer) : undefined;
   const testIdx = Math.min(run.tests.length - 1, attemptIdx < 0 ? run.tests.length - 1 : attemptIdx);
   const reviewIdx = Math.min(run.reviews.length - 1, attemptIdx < 0 ? run.reviews.length - 1 : attemptIdx);
   const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer]
@@ -220,6 +221,7 @@ export function RunScreen({ runId }: { runId: string }) {
           </div>
           <div className="run-meta">
             <StatusPill status={run.status} />
+            <span className="chip mode-chip">{MODE_ICON[(run.mode ?? 'task') as Mode]} {MODES.find((m) => m.id === (run.mode ?? 'task'))?.title}{run.mode === 'epic' && run.phases ? ` · этап ${Math.min(run.phase ?? 1, run.phases)}/${run.phases}` : ''}</span>
             <span className="chip mono" title={run.branch}><GitBranch size={12} /> {run.branch}</span>
             {run.status === 'finished' && <MergeControl run={run} runId={runId} />}
             <span className="muted mono path" title={run.projectPath}>{shortPath(run.projectPath)}</span>
@@ -294,16 +296,19 @@ export function RunScreen({ runId }: { runId: string }) {
                       <Button tone="quiet" icon={<X size={18} />} title="Свернуть детали (Esc)" onClick={close} />
                     </header>
                     <div className="drawer-body">
+                      {showPlan && run.mode === 'bug' && run.repro && <ReproView run={run} kind="bug" />}
                       {showPlan && <PlanView docs={docs} run={run} />}
                       {slice && <div className="pane-log"><LiveLog key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} /></div>}
                       {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
                       {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
+                      {drawer === 'visual' && <VisualView run={run} runId={runId} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
+                      {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
                       {showDiff && (
                         diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
                         : !diff ? <div className="center"><span className="spinner big" /></div>
                         : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
                       )}
-                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && (
+                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && (
                         <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
                       )}
                     </div>
@@ -461,6 +466,73 @@ function Num({ text, animate = true }: { text: string; animate?: boolean }) {
           : <small key={i}>{p}</small>,
       )}
     </>
+  );
+}
+
+/** Баг: доказательство воспроизведения. Рефакторинг: зелёный эталон до начала. */
+function ReproView({ run, kind }: { run: RunFile; kind: 'bug' | 'baseline' }) {
+  const r = run.repro;
+  if (!r) return <Empty icon={<Sparkles />} title={kind === 'bug' ? 'Баг ещё не воспроизведён' : 'Базовые проверки ещё не запускались'} />;
+  const ok = kind === 'bug' ? !r.passed : r.passed;
+  const failedCheck = r.checks?.find((c) => !c.passed);
+  return (
+    <div className={`repro ${ok ? 'is-ok' : 'is-bad'}`}>
+      <strong>
+        {kind === 'bug'
+          ? (ok ? 'Баг воспроизведён: проверки красные на текущем коде' : 'Тест не воспроизвёл баг — проверки зелёные')
+          : (ok ? 'Проверки зелёные до рефакторинга — эталон зафиксирован' : 'Проверки красные ещё до рефакторинга')}
+      </strong>
+      {(failedCheck ?? r.checks?.[0]) && <pre className="output">{stripAnsi((failedCheck ?? r.checks![0]).output).split('\n').slice(-18).join('\n')}</pre>}
+    </div>
+  );
+}
+
+/** Визуальная проверка: вердикт и галерея скриншотов. */
+function VisualView({ run, runId, idx }: { run: RunFile; runId: string; idx: number }) {
+  const v = run.visuals?.[idx];
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [big, setBig] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (!v) return;
+    void Promise.all(v.shots.map(async (s) => [s.file, await window.psflow.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
+      if (alive) setUrls(Object.fromEntries(pairs.filter((p): p is [string, string] => Boolean(p[1]))));
+    });
+    return () => { alive = false; };
+  }, [runId, v]);
+  if (!v) return <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">Приложение запустится после зелёных проверок.</Empty>;
+  const items = [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))];
+  return (
+    <div className="scroll">
+      <div className="review">
+        <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>
+          <span className="verdict-mark">{v.blocking.length ? v.blocking.length : <CircleCheck size={22} />}</span>
+          <div>
+            <strong>{v.blocking.length ? `Видимых проблем: ${v.blocking.length}` : 'В браузере всё выглядит верно'}</strong>
+            <p>{v.url} · скриншотов: {v.shots.length} · заметок: {v.notes.length}</p>
+          </div>
+        </div>
+        <div className="shots">
+          {v.shots.map((s) => (
+            <figure key={s.file} className="shot">
+              <button onClick={() => urls[s.file] && setBig(urls[s.file])}>{urls[s.file] ? <img src={urls[s.file]} alt={s.caption} /> : <span className="spinner" />}</button>
+              <figcaption>{s.caption}</figcaption>
+            </figure>
+          ))}
+        </div>
+        {items.length > 0 && (
+          <ul className="review-list">
+            {items.map((x, i) => (
+              <li key={i} className={`note n-${x.kind}`}>
+                {x.file && <span className="note-loc">{x.file}</span>}
+                <p>{x.message}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {big && <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label="Скриншот"><img src={big} alt="" /></div>}
+    </div>
   );
 }
 

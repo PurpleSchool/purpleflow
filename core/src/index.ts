@@ -6,3 +6,4 @@ export { killAll, liveCount } from './proc.js';
 export { claudeArgs } from './agents/claude.js';
 export { codexArgs } from './agents/codex.js';
 export { Git } from './git.js';
+export { stagesOf } from './modes.js';

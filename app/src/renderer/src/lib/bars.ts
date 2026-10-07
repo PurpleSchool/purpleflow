@@ -1,7 +1,7 @@
 import type { RunFile, StageAttempt, StageId } from '@psflow/core';
 import type { ActiveClock } from './clock';
 import { duration } from './format';
-import { STAGES } from './stages';
+import { stageTitle } from './stages';
 
 export type BarKind = 'done' | 'live' | 'fail' | 'stop' | 'wait' | 'wait-live';
 
@@ -25,7 +25,7 @@ export const rowOf = (s: StageId): StageId => (s === 'limit' ? 'gate2' : s);
 export function stageBars(run: RunFile, clock: ActiveClock, stage: StageId, now: number, minWidth = 0.8): Bar[] {
   const span = Math.max(1000, clock.total);
   const pct = (t: number) => Math.min(100, Math.max(0, (clock.map(t) / span) * 100));
-  const title = STAGES.find((s) => s.id === stage)?.title ?? stage;
+  const title = stageTitle(run, stage);
   const attempts = run.attempts.filter((a) => rowOf(a.stage) === stage);
   return attempts.map((a) => {
     const s = Date.parse(a.startedAt);

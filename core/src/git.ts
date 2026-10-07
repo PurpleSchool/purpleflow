@@ -97,6 +97,15 @@ export class Git {
     return files;
   }
 
+  /** Пути изменённых файлов ветки против базового коммита (с новыми неотслеживаемыми). */
+  changedFiles(worktree: string, base: string): Promise<string[]> {
+    return serialized(worktree, async () => {
+      await this.git(worktree, ['add', '-A', '-N']);
+      const out = await this.git(worktree, ['diff', '--name-only', base]);
+      return out.split('\n').map((x) => x.trim()).filter(Boolean);
+    });
+  }
+
   /** Унифицированный дифф текстом — для промпта ревьюера. */
   diffText(worktree: string, base: string, excludeGlobs: string[] = []): Promise<string> {
     return serialized(worktree, async () => {
@@ -111,12 +120,13 @@ export class Git {
     return r.code === 0 ? r.stdout : '';
   }
 
-  commitAll(worktree: string, message: string): Promise<string> {
-    return serialized(worktree, () => this.commitUnsafe(worktree, message));
+  commitAll(worktree: string, message: string, exclude: string[] = []): Promise<string> {
+    return serialized(worktree, () => this.commitUnsafe(worktree, message, exclude));
   }
 
-  private async commitUnsafe(worktree: string, message: string): Promise<string> {
-    await this.git(worktree, ['add', '-A']);
+  private async commitUnsafe(worktree: string, message: string, exclude: string[]): Promise<string> {
+    await this.git(worktree, ['add', '-A', '--', '.', ...exclude.map((e) => `:(exclude)${e}`)]);
+    if (exclude.length) await run(this.bin, ['reset', '-q', '--', ...exclude], { cwd: worktree, env: this.env });
     const status = await this.git(worktree, ['status', '--porcelain']);
     if (!status.trim()) return this.head(worktree);
     // Своё имя автора только если в репозитории не настроено — глобальный конфиг не трогаем.

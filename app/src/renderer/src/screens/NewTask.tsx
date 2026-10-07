@@ -1,16 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Check, FolderGit2, FolderOpen, GitBranch, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
+import { Check, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
 import type { ProjectCommands } from '@psflow/core';
 import { Button, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 import { useStore } from '../lib/store';
 import { ImageDrop, type PickedImage } from '../components/ImageDrop';
-import { STAGES } from '../lib/stages';
+import { MODES, stagesFor, type Mode } from '../lib/stages';
+import { MODE_ICON } from '../components/ModeIcon';
 import { shortPath } from '../lib/format';
 
 type Project = ProjectCommands & { isRepo: boolean; name: string; path: string };
 type Tab = 'task' | 'commands';
-type Cmd = 'setup' | 'lint' | 'test';
+type Cmd = 'setup' | 'lint' | 'test' | 'run' | 'url';
 
 const LAST_PROJECT = 'psflow.lastProject';
 const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -24,9 +25,13 @@ export function NewTaskScreen() {
   const [project, setProject] = useState<Project | null>(null);
   const [task, setTask] = useState('');
   const [images, setImages] = useState<PickedImage[]>([]);
-  const [cmds, setCmds] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '' });
+  const [cmds, setCmds] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '', run: '', url: '' });
+  const [mode, setMode] = useState<Mode>('task');
+  const [suggest, setSuggest] = useState<{ mode: Mode; reason: string } | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [visual, setVisual] = useState(true);
   /** Откуда взята каждая команда: файл проекта, нейросеть или правка руками. */
-  const [notes, setNotes] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '' });
+  const [notes, setNotes] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '', run: '', url: '' });
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDone, setAiDone] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -39,13 +44,13 @@ export function NewTaskScreen() {
     setAiDone(false);
     const cfg = info.isRepo ? await window.psflow.core.getProjectConfig(dir).catch(() => null) : null;
     if (cfg) {
-      setCmds({ setup: cfg.setupCommand, lint: cfg.lintCommand, test: cfg.testCommand });
-      setNotes(cfg.notes);
+      setCmds({ setup: cfg.setupCommand, lint: cfg.lintCommand, test: cfg.testCommand, run: cfg.runCommand ?? '', url: cfg.appUrl ?? '' });
+      setNotes({ ...cfg.notes, run: cfg.notes.run ?? '', url: '' });
       setSaved('saved');
     } else {
-      setCmds({ setup: info.setupCommand, lint: info.lintCommand, test: info.testCommand });
+      setCmds({ setup: info.setupCommand, lint: info.lintCommand, test: info.testCommand, run: '', url: '' });
       const from = info.detectedFrom ? `по ${info.detectedFrom}` : '';
-      setNotes({ setup: info.setupCommand ? from : '', lint: info.lintCommand ? from : '', test: info.testCommand ? from : '' });
+      setNotes({ setup: info.setupCommand ? from : '', lint: info.lintCommand ? from : '', test: info.testCommand ? from : '', run: '', url: '' });
       setSaved('draft');
     }
     try {
@@ -67,8 +72,8 @@ export function NewTaskScreen() {
     setError(null);
     try {
       const r = await window.psflow.core.detectCommandsAI(project.path);
-      setCmds({ setup: r.setupCommand, lint: r.lintCommand, test: r.testCommand });
-      setNotes({ setup: r.notes.setup, lint: r.notes.lint, test: r.notes.test });
+      setCmds({ setup: r.setupCommand, lint: r.lintCommand, test: r.testCommand, run: r.runCommand, url: r.appUrl });
+      setNotes({ setup: r.notes.setup, lint: r.notes.lint, test: r.notes.test, run: r.notes.run, url: '' });
       setAiDone(true);
       setSaved('dirty');
     } catch (e) {
@@ -83,7 +88,10 @@ export function NewTaskScreen() {
     setSaving(true);
     setError(null);
     try {
-      await window.psflow.core.saveProjectConfig(project.path, { setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, notes });
+      await window.psflow.core.saveProjectConfig(project.path, {
+        setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, runCommand: cmds.run, appUrl: cmds.url,
+        notes: { setup: notes.setup, lint: notes.lint, test: notes.test, run: notes.run },
+      });
       setSaved('saved');
     } catch (e) {
       setError(cleanErr(e));
@@ -103,6 +111,7 @@ export function NewTaskScreen() {
         type: 'run.start',
         input: {
           projectPath: project.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
+          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
@@ -119,13 +128,30 @@ export function NewTaskScreen() {
   };
 
   const busyRun = state.runs.find((r) => r.status === 'running');
+  const route = stagesFor(mode, Boolean(cmds.run.trim() && cmds.url.trim()) && visual);
   const canStart = Boolean(project?.isRepo && task.trim().length > 5) && !busyRun;
   const edit = (k: Cmd, v: string) => {
     setCmds({ ...cmds, [k]: v });
     setNotes({ ...notes, [k]: v ? 'указано вручную' : '' });
     setSaved('dirty');
   };
-  const summary = [cmds.setup, cmds.lint, cmds.test].filter(Boolean);
+  const summary = [cmds.setup, cmds.lint, cmds.test, cmds.run].filter(Boolean);
+  const canVisual = Boolean(cmds.run.trim() && cmds.url.trim());
+
+  const askMode = async () => {
+    if (task.trim().length < 6) return;
+    setSuggesting(true);
+    setError(null);
+    try {
+      const r = await window.psflow.core.suggestMode(task);
+      setSuggest({ mode: r.mode as Mode, reason: r.reason });
+      setMode(r.mode as Mode);
+    } catch (e) {
+      setError(cleanErr(e));
+    } finally {
+      setSuggesting(false);
+    }
+  };
 
   return (
     <div className="screen">
@@ -180,6 +206,33 @@ export function NewTaskScreen() {
                     <span className="cmd-edit">Настроить</span>
                   </button>
                 )}
+                {project?.isRepo && (
+                  <label className={`visual-toggle ${canVisual ? '' : 'is-off'}`} title={canVisual ? '' : 'Задайте команду запуска и адрес в командах проекта'}>
+                    <input type="checkbox" checked={canVisual && visual} disabled={!canVisual} onChange={(e) => setVisual(e.target.checked)} />
+                    <MonitorCheck size={16} />
+                    <span>
+                      <strong>Визуальная проверка</strong>
+                      <small>{canVisual ? 'Запустить приложение и проверить результат в браузере со скриншотами' : 'Нужна команда запуска приложения — задайте её в «Командах проекта»'}</small>
+                    </span>
+                  </label>
+                )}
+
+                <div className="modes" role="radiogroup" aria-label="Режим">
+                  {MODES.map((m) => (
+                    <button key={m.id} role="radio" aria-checked={mode === m.id} className={`mode ${mode === m.id ? 'is-on' : ''}`} onClick={() => setMode(m.id)} title={m.hint}>
+                      {MODE_ICON[m.id]}
+                      <span>{m.title}</span>
+                      {suggest?.mode === m.id && <Sparkles size={12} className="mode-ai" />}
+                    </button>
+                  ))}
+                  <button className="mode mode-auto" onClick={() => void askMode()} disabled={suggesting || task.trim().length < 6} title="Нейросеть прочитает задачу и предложит режим">
+                    {suggesting ? <span className="spinner" /> : <Sparkles size={15} />}
+                    <span>{suggesting ? 'Определяю…' : 'Авто'}</span>
+                  </button>
+                </div>
+                <p className="mode-hint">
+                  {suggest && suggest.mode === mode ? <><Sparkles size={13} /> {suggest.reason}</> : MODES.find((m) => m.id === mode)?.hint}
+                </p>
 
                 <div className="task-sheet bezel">
                   <label htmlFor="task" className="task-label">Что сделать</label>
@@ -216,6 +269,8 @@ export function NewTaskScreen() {
                   <CmdRow icon={<PackageOpen size={17} />} title="Подготовка" hint="Установка зависимостей" placeholder="не нужна" value={cmds.setup} note={notes.setup} onChange={(v) => edit('setup', v)} loading={aiBusy} />
                   <CmdRow icon={<ScanSearch size={17} />} title="Линтер" hint="Линтер и проверка типов" placeholder="не задан" value={cmds.lint} note={notes.lint} onChange={(v) => edit('lint', v)} loading={aiBusy} />
                   <CmdRow icon={<TestTubeDiagonal size={17} />} title="Тесты" hint="Все тесты, без watch-режима" placeholder="не заданы" value={cmds.test} note={notes.test} onChange={(v) => edit('test', v)} loading={aiBusy} />
+                  <CmdRow icon={<MonitorPlay size={17} />} title="Запуск приложения" hint="Для визуальной проверки; {port} — свободный порт" placeholder="например: npm run dev -- --port {port}" value={cmds.run} note={notes.run} onChange={(v) => edit('run', v)} loading={aiBusy} />
+                  <CmdRow icon={<Globe size={17} />} title="Адрес" hint="Главная страница приложения" placeholder="http://localhost:{port}" value={cmds.url} note={notes.url} onChange={(v) => edit('url', v)} loading={aiBusy} />
                 </div>
                 <div className="cmd-actions">
                   <p className="cmd-foot">Нейросеть только читает файлы проекта — package.json, конфиги, CI — и ничего не меняет.</p>
@@ -229,11 +284,11 @@ export function NewTaskScreen() {
           </div>
 
           <aside className="newtask-aside">
-            <h3>Как пойдёт задача</h3>
+            <h3>Как пойдёт: {MODES.find((m) => m.id === mode)?.title.toLowerCase()}</h3>
             <ol className="route">
-              {STAGES.map((s, i) => (
-                <li key={s.id} className={s.gate ? 'is-gate' : ''}>
-                  <span className="route-n">{s.gate ? '' : i + 1 - STAGES.slice(0, i).filter((x) => x.gate).length}</span>
+              {route.map((s, i) => (
+                <li key={`${mode}-${s.id}`} className={s.gate ? 'is-gate' : ''} style={{ animationDelay: `${i * 0.04}s` }}>
+                  <span className="route-n">{s.gate ? '' : i + 1 - route.slice(0, i).filter((x) => x.gate).length}</span>
                   <div>
                     <strong>{s.title}</strong>
                     <span>{s.hint}</span>

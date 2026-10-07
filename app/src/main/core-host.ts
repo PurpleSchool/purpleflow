@@ -27,6 +27,8 @@ function api(c: Orchestrator): CoreApi {
     getAttachment: async (id, i) => c.getAttachment(id, i),
     detectCommandsAI: (dir) => c.detectCommandsAI(dir),
     getProjectConfig: async (dir) => c.getProjectConfig(dir),
+    suggestMode: (task) => c.suggestMode(task),
+    getVisualShot: async (id, file) => c.getVisualShot(id, file),
     saveProjectConfig: async (dir, cfg) => c.saveProjectConfig(dir, cfg),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
