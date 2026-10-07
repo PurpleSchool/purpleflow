@@ -11,6 +11,14 @@ export interface ToolInfo {
 
 export type Role = 'planner' | 'executor' | 'reviewer';
 
+/** CLI-агент, который выполняет роль. */
+export type AgentKind = 'claude' | 'codex';
+
+/** Модели ролей; visual — модель claude для визуальной проверки (пусто — как у исполнителя-claude). */
+export type Models = Record<Role, string> & { visual?: string };
+
+export const DEFAULT_AGENTS: Record<Role, AgentKind> = { planner: 'claude', executor: 'claude', reviewer: 'codex' };
+
 export interface CoreSettings {
   /** Ручные пути к CLI; пустая строка — искать в PATH. */
   toolPaths: Partial<Record<ToolName, string>>;
@@ -21,7 +29,9 @@ export interface CoreSettings {
     codexBaseUrl?: string;
     apiKey: string;
   };
-  models: Record<Role, string>;
+  models: Models;
+  /** Агент на роль; по умолчанию планировщик и исполнитель — claude, ревьюер — codex. */
+  agents?: Partial<Record<Role, AgentKind>>;
   /**
    * Как claude авторизуется без прокси: 'login' — собственный вход Claude Code
    * (ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL из окружения игнорируются), 'env' — ключ из окружения.
@@ -53,6 +63,11 @@ export interface VisualResult {
   blocking: ReviewItem[];
   notes: ReviewItem[];
   shots: VisualShot[];
+  /** Проверить не удалось из‑за окружения (не поднялся API, нет тестового входа…) — это не ошибка реализации. */
+  unverified?: string;
+  /** Команда запуска и хвост её вывода — чтобы было видно, что не поднялось. */
+  command?: string;
+  serverOutput?: string;
 }
 
 export type GateId = 'gate1' | 'gate2' | 'limit';
@@ -93,6 +108,8 @@ export interface CheckResult {
   durationMs: number;
   output: string;
   timedOut?: boolean;
+  /** Проверка была красной и до задачи, а ошибок не прибавилось — не блокирует. */
+  preexisting?: { before: number | null; after: number | null };
 }
 
 export interface TestResult {
@@ -129,7 +146,7 @@ export interface LineComment {
 export interface GateDecision {
   gate: GateId;
   at: string;
-  decision: 'approve' | 'reject' | 'cancel';
+  decision: 'approve' | 'reject' | 'cancel' | 'accept';
   comment?: string;
   lineComments?: LineComment[];
 }
@@ -163,15 +180,21 @@ export interface RunFile {
   visual?: boolean;
   runCommand?: string;
   appUrl?: string;
+  visualNotes?: string;
+  envFiles?: string[];
   /** Большая задача: текущий этап реализации и их число (разделы tasks.md). */
   phase?: number;
   phases?: number;
   /** Баг: прогон проверок после воспроизведения — должен быть красным. */
   repro?: TestResult;
+  /** Линтер и тесты на базовом коммите, до работы агента: чтобы не требовать починки чужих старых ошибок. */
+  baseChecks?: CheckResult[];
   visuals?: VisualResult[];
   /** Команда подготовки (установка зависимостей) уже выполнена в worktree. */
   prepared?: boolean;
-  models: Record<Role, string>;
+  models: Models;
+  /** Агенты по ролям на момент старта (у старых прогонов — по умолчанию). */
+  agents?: Record<Role, AgentKind>;
   status: RunStatus;
   /** Стадия, которая выполняется сейчас или будет запущена при продолжении. */
   next: StageId;
@@ -196,6 +219,8 @@ export interface RunFile {
   attachments?: string[];
   /** Название придумал планировщик (первая строка proposal.md). */
   titleFromPlan?: boolean;
+  /** Рабочая копия удалена при очистке хранилища: run.json живёт только в данных приложения. */
+  worktreeRemoved?: boolean;
   /** Ветка psflow/<id> влита человеком из приложения. */
   merged?: { into: string; commit: string; at: string };
 }
@@ -227,8 +252,13 @@ export type CoreEvent =
   | { type: 'gate.waiting'; runId: string; gate: GateId; message?: string }
   | { type: 'stage.failed'; runId: string; stage: StageId; error: string }
   | { type: 'run.finished'; runId: string; status: RunStatus; message?: string }
+  /** Кадр браузера агента визуальной проверки (JPEG base64); null — трансляция закончилась. */
+  | { type: 'visual.frame'; runId: string; frame: { data: string; url: string; width: number; height: number } | null }
+  /** Приложение прогона для ручной проверки во вкладке «Браузер». */
+  | { type: 'preview.state'; runId: string; state: PreviewState }
   /** Снимок run.json после каждого изменения — UI просто перерисовывается. */
-  | { type: 'run.updated'; run: RunFile };
+  | { type: 'run.updated'; run: RunFile }
+  | { type: 'run.deleted'; runId: string };
 
 // ——— Команды (UI → ядро) ———
 
@@ -243,6 +273,8 @@ export interface StartRunInput {
   runCommand?: string;
   appUrl?: string;
   visual?: boolean;
+  visualNotes?: string;
+  envFiles?: string[];
   workspace?: Workspace;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
@@ -254,8 +286,12 @@ export type CoreCommand =
   | { type: 'gate.approve'; runId: string; comment?: string }
   | { type: 'gate.reject'; runId: string; comment: string; lineComments?: LineComment[] }
   | { type: 'gate.cancel'; runId: string }
+  /** Попытки исчерпаны: человек принимает как есть и идёт на приёмку. */
+  | { type: 'gate.accept'; runId: string }
   | { type: 'run.stop'; runId: string }
-  | { type: 'run.merge'; runId: string; target: string };
+  | { type: 'run.merge'; runId: string; target: string }
+  /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку psflow/<id>. */
+  | { type: 'run.delete'; runId: string; deleteBranch: boolean };
 
 export interface DiffFile {
   path: string;
@@ -288,6 +324,10 @@ export interface ProjectConfig {
   testCommand: string;
   runCommand?: string;
   appUrl?: string;
+  /** Инструкция агенту визуальной проверки: тестовый вход, сид данных, куда идти. */
+  visualNotes?: string;
+  /** Файлы окружения (не в git), которые копируются в worktree прогона: apps/api/.env… */
+  envFiles?: string[];
   workspace?: Workspace;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
@@ -300,10 +340,40 @@ export interface AiCommands {
   testCommand: string;
   runCommand: string;
   appUrl: string;
+  visualNotes: string;
   notes: { setup: string; lint: string; test: string; run: string };
+}
+
+/** Запущенное из ветки прогона приложение для ручной проверки. */
+export interface PreviewState {
+  status: 'idle' | 'starting' | 'ready' | 'failed';
+  url?: string;
+  command?: string;
+  error?: string;
+  /** Хвост вывода сервера — чтобы понять, почему не поднялось. */
+  output?: string;
 }
 
 export interface ModeSuggestion {
   mode: RunMode;
   reason: string;
+}
+
+/** Ошибка в команде проекта, найденная без запуска. */
+export interface CommandIssue {
+  /** Что не так — по-русски, для подсказки под полем. */
+  message: string;
+  /** Исправленная команда, если замена очевидна. */
+  fix?: string;
+}
+
+/** Категория данных PurpleFlow в каталоге приложения: размер и можно ли почистить. */
+export interface StorageItem {
+  id: 'worktrees-done' | 'worktrees-active' | 'worktrees-orphan' | 'browser' | 'shots' | 'history' | 'app-cache';
+  title: string;
+  hint: string;
+  bytes: number;
+  count: number;
+  /** Подпись кнопки очистки; нет — только показываем. */
+  clean?: string;
 }

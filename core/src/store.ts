@@ -59,6 +59,7 @@ export class RunStore {
    * иначе рабочая копия пользователя остаётся грязной. Дальше — только копия в данных приложения.
    */
   static inProject(run: RunFile): boolean {
+    if (run.worktreeRemoved) return false;
     return !(run.workspace === 'branch' && (run.mode === 'quick' || run.commit));
   }
 
@@ -110,6 +111,12 @@ export class RunStore {
 
   remove(id: string): void {
     this.writeIndex(this.readIndex().filter((e) => e.id !== id));
+  }
+
+  /** Всё, что прогон хранит в данных приложения: индекс, копия run.json, лог, PID-файлы. */
+  forget(id: string): void {
+    this.remove(id);
+    for (const f of [this.backupPath(id), this.logFile(id), this.pidFile(id), this.pidFile(`${id}:server`), this.pidFile(`${id}:preview`)]) fs.rmSync(f, { force: true });
   }
 
   private pidFile(group: string): string {

@@ -4,9 +4,9 @@ import type { RunFile, RunMode, StageId } from './types.js';
 export function stagesOf(mode: RunMode, visual: boolean): StageId[] {
   const v: StageId[] = visual ? ['visual'] : [];
   switch (mode) {
-    case 'quick': return ['implement', 'tests', ...v, 'review', 'gate2', 'finish'];
-    case 'refactor': return ['baseline', 'plan', 'gate1', 'implement', 'tests', ...v, 'review', 'gate2', 'finish'];
-    default: return ['plan', 'gate1', 'implement', 'tests', ...v, 'review', 'gate2', 'finish'];
+    case 'quick': return ['implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    case 'refactor': return ['baseline', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    default: return ['plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
   }
 }
 

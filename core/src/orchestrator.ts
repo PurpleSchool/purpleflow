@@ -13,9 +13,12 @@ import { OpenSpec } from './openspec.js';
 import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
 import { Prompts } from './prompts.js';
 import { RunStore } from './store.js';
+import { Screencast, findChrome, waitForCdp } from './screencast.js';
+import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js';
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
+import { DEFAULT_AGENTS } from './types.js';
 import type {
-  AiCommands, CheckResult, ModeSuggestion, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AgentKind, Role, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -101,11 +104,17 @@ export class Orchestrator {
       case 'gate.cancel':
         await this.decide(cmd.runId, 'cancel');
         return { runId: cmd.runId };
+      case 'gate.accept':
+        await this.decide(cmd.runId, 'accept');
+        return { runId: cmd.runId };
       case 'run.stop':
         await this.stop(cmd.runId);
         return { runId: cmd.runId };
       case 'run.merge':
         await this.merge(cmd.runId, cmd.target);
+        return { runId: cmd.runId };
+      case 'run.delete':
+        await this.deleteRun(cmd.runId, cmd.deleteBranch);
         return { runId: cmd.runId };
     }
   }
@@ -154,10 +163,109 @@ export class Orchestrator {
     const r = this.mustLoad(id);
     const tools = await this.tools(['git']);
     const git = new Git(tools.git, this.opts.env);
-    const skip = (p: string) => p.startsWith('openspec/') && p.endsWith('/run.json');
+    const env = new Set(this.envFilesOf(r));
+    const skip = (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p);
     // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
     if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
     return git.diff(r.worktreePath, r.baseCommit, skip);
+  }
+
+  /**
+   * Удалить прогон. Сначала гасим всё живое (агент, сервер, предпросмотр), потом worktree,
+   * по желанию — ветку, и данные в каталоге приложения. Рабочая копия проекта в режиме «ветка» не трогается.
+   */
+  private async deleteRun(id: string, deleteBranch: boolean) {
+    const r = this.store.load(id);
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+    // Проверяем до удаления чего-либо: открытую в проекте ветку git не удалит.
+    if (r && deleteBranch) {
+      const cur = await git.currentBranch(r.projectPath).catch(() => null);
+      if (cur === r.branch) throw new Error(`Проект сейчас на ветке ${r.branch} — переключитесь на другую (git checkout ${r.originalBranch ?? 'main'}), чтобы удалить её, или удалите прогон без ветки.`);
+    }
+    if (this.driving.has(id)) {
+      this.stopping.add(id);
+      await killGroup(id);
+      // drive сам выйдет из цикла; ждём, пока отпустит прогон.
+      for (let i = 0; i < 100 && this.driving.has(id); i++) await new Promise((res) => setTimeout(res, 100));
+    }
+    await killGroup(id);
+    await killGroup(`${id}:server`);
+    await this.stopPreview(id);
+    if (r) {
+      if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath)) await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => undefined);
+      if (deleteBranch) await git.deleteBranch(r.projectPath, r.branch).catch(() => undefined);
+    }
+    for (const dir of [this.attachmentsDir(id), path.join(this.opts.dataDir, 'visual', id)]) fs.rmSync(dir, { recursive: true, force: true });
+    this.store.forget(id);
+    this.emit({ type: 'run.deleted', runId: id });
+  }
+
+  // ——— Хранилище: сколько места занимают данные и что можно почистить ———
+
+  private runsWithFiles(): RunFile[] {
+    return this.store.list().map((s) => this.store.load(s.id)).filter((r): r is RunFile => Boolean(r));
+  }
+
+  async getStorage(): Promise<StorageItem[]> {
+    const runs = this.runsWithFiles();
+    const wtRoot = this.store.worktreesDir();
+    const own = (r: RunFile) => r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && r.worktreePath.startsWith(wtRoot);
+    const ended = (r: RunFile) => r.status === 'finished' || r.status === 'cancelled';
+    const done = runs.filter((r) => own(r) && ended(r));
+    const active = runs.filter((r) => own(r) && !ended(r));
+    const known = new Set(runs.map((r) => path.resolve(r.worktreePath)));
+    const orphan = subdirs(wtRoot).filter((d) => !known.has(path.resolve(d)) && !path.basename(d).startsWith('merge-'));
+    const visualRoot = path.join(this.opts.dataDir, 'visual');
+    const leftovers = browserLeftovers(visualRoot);
+    const shots = screenshots(visualRoot);
+    const history = ['logs', 'runs', 'attachments'].map((d) => path.join(this.opts.dataDir, d));
+    return [
+      { id: 'worktrees-done', title: 'Рабочие копии завершённых прогонов', hint: 'Worktree с зависимостями. Ветки с результатом, история, дифф и план остаются — пропадёт только ручной запуск во вкладке «Браузер».', bytes: await sizeOfAll(done.map((r) => r.worktreePath)), count: done.length, clean: 'Удалить' },
+      { id: 'worktrees-active', title: 'Рабочие копии незавершённых прогонов', hint: 'Нужны, чтобы продолжить прогон. Удаляются вместе с прогоном.', bytes: await sizeOfAll(active.map((r) => r.worktreePath)), count: active.length },
+      { id: 'worktrees-orphan', title: 'Брошенные рабочие копии', hint: 'Остались от удалённых или потерянных прогонов — ни к чему не привязаны.', bytes: await sizeOfAll(orphan), count: orphan.length, clean: 'Удалить' },
+      { id: 'browser', title: 'Служебные файлы браузера', hint: 'Профили Chrome и кэш Playwright после визуальных проверок. Скриншоты не трогаются.', bytes: await sizeOfAll(leftovers), count: leftovers.length, clean: 'Удалить' },
+      { id: 'shots', title: 'Скриншоты визуальных проверок', hint: 'Пропадут из деталей стадии «Визуальная проверка» у всех прогонов.', bytes: await sizeOfAll(shots), count: shots.length, clean: 'Удалить' },
+      { id: 'history', title: 'История прогонов', hint: 'Логи, run.json и изображения к задачам. Удаляются вместе с прогоном.', bytes: await sizeOfAll(history), count: runs.length },
+    ];
+  }
+
+  /** Очистить категорию; возвращает, сколько байт освободили. */
+  async cleanStorage(id: StorageItem['id']): Promise<number> {
+    const before = (await this.getStorage()).find((x) => x.id === id)?.bytes ?? 0;
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+    const wtRoot = this.store.worktreesDir();
+    if (id === 'worktrees-done') {
+      for (const r of this.runsWithFiles()) {
+        if (r.workspace === 'branch' || r.worktreeRemoved || !(r.status === 'finished' || r.status === 'cancelled')) continue;
+        if (!r.worktreePath.startsWith(wtRoot) || this.driving.has(r.id)) continue;
+        await this.stopPreview(r.id);
+        // Сначала помечаем: дальше run.json пишется только в данные приложения и worktree не пересоздаётся.
+        r.worktreeRemoved = true;
+        this.save(r);
+        await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => fs.rmSync(r.worktreePath, { recursive: true, force: true }));
+      }
+    } else if (id === 'worktrees-orphan') {
+      const known = new Set(this.runsWithFiles().map((r) => path.resolve(r.worktreePath)));
+      for (const d of subdirs(wtRoot)) {
+        if (known.has(path.resolve(d)) || path.basename(d).startsWith('merge-')) continue;
+        // Worktree знает свой репозиторий по файлу .git — снимаем регистрацию там же.
+        let gitdir: string | null = null;
+        try {
+          gitdir = fs.readFileSync(path.join(d, '.git'), 'utf8').match(/gitdir:\s*(.+)/)?.[1]?.trim() ?? null;
+        } catch { /* не worktree */ }
+        const repo = gitdir ? path.resolve(gitdir, '..', '..', '..') : null;
+        if (repo && fs.existsSync(repo)) await git.removeWorktree(repo, d).catch(() => undefined);
+        fs.rmSync(d, { recursive: true, force: true });
+      }
+    } else if (id === 'browser') {
+      for (const p of browserLeftovers(path.join(this.opts.dataDir, 'visual'))) fs.rmSync(p, { recursive: true, force: true });
+    } else if (id === 'shots') {
+      for (const p of screenshots(path.join(this.opts.dataDir, 'visual'))) fs.rmSync(p, { force: true });
+    }
+    const after = (await this.getStorage()).find((x) => x.id === id)?.bytes ?? 0;
+    return Math.max(0, before - after);
   }
 
   /** Ветки репозитория пользователя для слияния результата. */
@@ -233,7 +341,10 @@ export class Orchestrator {
     const prompt = 'Это проверка подключения. Ответь ровно одним словом: готово';
     const one = async (agent: 'claude' | 'codex'): Promise<ConnectionCheck> => {
       const t0 = Date.now();
-      const model = agent === 'claude' ? s.models.planner : s.models.reviewer;
+      // Модель — из первой роли, которую выполняет этот агент.
+      const agents = { ...DEFAULT_AGENTS, ...s.agents };
+      const role = (['planner', 'executor', 'reviewer'] as Role[]).find((x) => agents[x] === agent);
+      const model = role ? s.models[role] : '';
       const base = { bin: tools[agent], cwd: dir, env: this.opts.env, prompt, model, timeoutMs: 120_000, group: `check-${agent}`, onOutput: () => {}, proxy, claudeAuth: s.claudeAuth };
       const r = agent === 'claude' ? await runClaude(base) : await runCodex({ ...base, sandbox: 'read-only' });
       return { agent, ok: r.ok, model: model || 'по умолчанию', durationMs: Date.now() - t0, reply: r.text.trim().slice(0, 200), error: r.error };
@@ -304,11 +415,15 @@ export class Orchestrator {
       workspace,
       originalBranch,
       visual: visual || undefined,
-      runCommand: visual ? input.runCommand!.trim() : undefined,
-      appUrl: visual ? input.appUrl!.trim() : undefined,
+      // Команда запуска нужна и визуальной стадии, и ручной проверке во вкладке «Браузер».
+      runCommand: input.runCommand?.trim() || undefined,
+      appUrl: input.appUrl?.trim() || undefined,
+      visualNotes: input.visualNotes?.trim() || undefined,
+      envFiles: input.envFiles?.map((f) => f.trim()).filter(Boolean),
       // В режиме «ветка» зависимости — уже установленные пользователем; подготовку не запускаем.
       prepared: workspace === 'branch' || !input.setupCommand?.trim(),
       models: { ...s.models },
+      agents: { ...DEFAULT_AGENTS, ...s.agents },
       status: 'running',
       next: MODE_FIRST[mode],
       attempts: [],
@@ -324,6 +439,7 @@ export class Orchestrator {
       updatedAt: now,
     };
     this.save(run);
+    this.copyEnvFiles(run);
     this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${branch} от ${base.slice(0, 8)}\n${workspace === 'branch' ? `рабочая копия проекта ${repo} (была ветка ${originalBranch ?? 'detached HEAD'})` : `worktree ${worktreePath}`}\n`));
     void this.drive(run);
     return run.id;
@@ -350,10 +466,110 @@ export class Orchestrator {
     if (cur !== r.branch) throw new Error(`Проект сейчас на ветке ${cur ?? 'detached HEAD'}. Переключитесь на ${r.branch} (git checkout ${r.branch}) и продолжите.`);
   }
 
+  // ——— Ручная проверка: приложение из ветки прогона ———
+
+  private previews = new Map<string, PreviewState>();
+
+  getPreview(id: string): PreviewState {
+    return this.previews.get(id) ?? { status: 'idle' };
+  }
+
+  private setPreview(id: string, state: PreviewState) {
+    if (state.status === 'idle') this.previews.delete(id);
+    else this.previews.set(id, state);
+    this.emit({ type: 'preview.state', runId: id, state });
+  }
+
+  /** Поднять приложение в рабочей копии прогона на свободном порту (команды «Запуск приложения» и «Адрес»). */
+  async startPreview(id: string): Promise<PreviewState> {
+    const r = this.mustLoad(id);
+    const cur = this.previews.get(id);
+    if (cur && (cur.status === 'starting' || cur.status === 'ready')) return cur;
+    const cfg = this.getProjectConfig(r.projectPath);
+    const runCommand = cfg?.runCommand || r.runCommand;
+    const appUrl = cfg?.appUrl || r.appUrl;
+    if (!runCommand || !appUrl) throw new Error('Задайте «Запуск приложения» и «Адрес» в командах проекта на экране «Новая задача».');
+    if (!fs.existsSync(r.worktreePath)) throw new Error(`Рабочая копия прогона не найдена: ${r.worktreePath}`);
+    if (r.workspace === 'branch') await this.ensureOnBranch(r);
+    this.copyEnvFiles(r);
+
+    const port = await freePort();
+    const url = appUrl.replaceAll('{port}', String(port));
+    const command = runCommand.replaceAll('{port}', String(port));
+    const group = `${id}:preview`;
+    let output = '';
+    let exited: number | null | undefined;
+    const tail = (t: string) => {
+      output = (output + t).slice(-4000);
+    };
+    this.setPreview(id, { status: 'starting', url, command });
+    const server = runProc(command, [], {
+      cwd: r.worktreePath,
+      env: { ...this.opts.env, PORT: String(port), BROWSER: 'none' },
+      shell: true,
+      group,
+      onStdout: tail,
+      onStderr: tail,
+    });
+    void server.then((res) => {
+      exited = res.code;
+      const now = this.previews.get(id);
+      // Сервер упал сам (не по «Остановить») — показываем вывод.
+      if (now && now.url === url && (now.status === 'ready' || now.status === 'starting')) {
+        this.setPreview(id, { status: 'failed', url, command, error: `Приложение завершилось с кодом ${res.code}`, output });
+      }
+    });
+    const ready = await waitForUrl(url, 120_000, () => exited !== undefined || this.previews.get(id)?.url !== url);
+    const now = this.previews.get(id);
+    if (!now || now.url !== url) return this.getPreview(id); // остановили, пока поднималось
+    if (!ready) {
+      await killGroup(group);
+      const state: PreviewState = {
+        status: 'failed', url, command, output,
+        error: exited !== undefined ? `Приложение завершилось с кодом ${exited}, не открыв ${url}` : `За 2 минуты приложение не ответило на ${url}`,
+      };
+      this.setPreview(id, state);
+      return state;
+    }
+    const state: PreviewState = { status: 'ready', url, command };
+    this.setPreview(id, state);
+    return state;
+  }
+
+  async stopPreview(id: string): Promise<void> {
+    if (!this.previews.has(id)) return;
+    this.setPreview(id, { status: 'idle' });
+    await killGroup(`${id}:preview`);
+  }
+
+  /** Файлы окружения прогона: явный список или найденные в проекте (у прогонов без списка — из команд проекта). */
+  private envFilesOf(run: RunFile): string[] {
+    if (run.workspace === 'branch') return [];
+    return run.envFiles ?? this.getProjectConfig(run.projectPath)?.envFiles ?? [];
+  }
+
+  /** Скопировать .env-файлы проекта в worktree прогона (только недостающие; в режиме «ветка» они и так на месте). */
+  private copyEnvFiles(run: RunFile) {
+    const files = this.envFilesOf(run);
+    const copied: string[] = [];
+    for (const rel of files) {
+      const from = path.join(run.projectPath, rel);
+      const to = path.join(run.worktreePath, rel);
+      if (path.relative(run.projectPath, from).startsWith('..') || !fs.existsSync(from) || fs.existsSync(to)) continue;
+      try {
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.copyFileSync(from, to);
+        copied.push(rel);
+      } catch { /* нет доступа — проверки покажут, чего не хватает */ }
+    }
+    if (copied.length) this.log(run, c.dim(`файлы окружения скопированы в worktree: ${copied.join(', ')}`) + '\n');
+  }
+
   private async stop(id: string) {
     const r = this.store.load(id);
     if (!r) return;
     await killGroup(`${id}:server`);
+    await this.stopPreview(id);
     if (this.driving.has(id)) {
       this.stopping.add(id);
       await killGroup(id);
@@ -368,8 +584,10 @@ export class Orchestrator {
     }
   }
 
-  private async decide(id: string, decision: 'approve' | 'reject' | 'cancel', comment?: string, lineComments?: LineComment[]) {
+  private async decide(id: string, decision: 'approve' | 'reject' | 'cancel' | 'accept', comment?: string, lineComments?: LineComment[]) {
     const r = this.mustLoad(id);
+    // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
+    await this.stopPreview(id);
     if (!isGate(r.next) || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт решения на гейте');
     const gate = r.next as GateId;
     r.gates.push({ gate, at: new Date().toISOString(), decision, comment: comment?.trim() || undefined, lineComments: lineComments?.length ? lineComments : undefined });
@@ -381,6 +599,18 @@ export class Orchestrator {
     }
     r.message = undefined;
     const human = (text: string): Feedback => ({ source: 'human', text, lineComments: lineComments?.length ? lineComments : undefined });
+
+    if (decision === 'accept') {
+      if (gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
+      // Человек берёт ответственность на себя: красные проверки или замечания ревью — на приёмку, без новых попыток.
+      if (gateAttempt) gateAttempt.summary = 'Принято как есть';
+      this.log(r, c.amber('→ человек принял результат как есть — к приёмке') + '\n');
+      r.next = 'gate2';
+      r.status = 'running';
+      this.save(r);
+      void this.drive(r);
+      return;
+    }
 
     if (decision === 'cancel') {
       if (gate === 'limit') {
@@ -432,6 +662,8 @@ export class Orchestrator {
     if (this.driving.has(run.id)) return;
     this.driving.add(run.id);
     this.stopping.delete(run.id);
+    // Продолжение старого прогона: файлов окружения в worktree могло ещё не быть.
+    this.copyEnvFiles(run);
     try {
       while (run.status === 'running') {
         if (isGate(run.next)) {
@@ -462,7 +694,7 @@ export class Orchestrator {
 
   private async stagePlan(run: RunFile) {
     const s = this.opts.getSettings();
-    const tools = await this.tools(['claude', 'openspec']);
+    const tools = await this.tools(['openspec']);
     const attempt = this.begin(run, 'plan', run.models.planner);
 
     if (!run.prepared && run.setupCommand) {
@@ -473,6 +705,7 @@ export class Orchestrator {
       run.prepared = true;
       this.save(run);
     }
+    await this.captureBaseChecks(run);
 
     const prompt = this.prompts.render('plan.md', {
       changeId: run.changeId,
@@ -481,11 +714,10 @@ export class Orchestrator {
       testCommand: run.testCommand || 'не задана',
       feedback: this.feedbackBlock(run.feedback),
     });
-    const res = await runClaude({
-      ...this.agentBase(run, tools.claude, tools.openspec),
+    const res = await this.runRole(run, 'planner', {
       prompt,
       systemPrompt: this.prompts.raw('planner.system.md') + this.modeRules('planner', run),
-      model: run.models.planner,
+      openspec: true,
     });
     this.afterAgent(run, attempt, res);
 
@@ -549,7 +781,10 @@ export class Orchestrator {
   }
 
   private async stageImplement(run: RunFile) {
-    const tools = await this.tools(['claude', 'openspec']);
+
+    // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
+    // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
+    if (!run.attempts.some((x) => x.stage === 'implement')) await this.captureBaseChecks(run);
     run.implAttemptsUsed++;
     const attempt = this.begin(run, 'implement', run.models.executor);
     const prompt = this.prompts.render(this.tpl('implement', run), {
@@ -563,11 +798,10 @@ export class Orchestrator {
     });
     let res: AgentResult;
     try {
-      res = await runClaude({
-        ...this.agentBase(run, tools.claude, tools.openspec),
+      res = await this.runRole(run, 'executor', {
         prompt,
         systemPrompt: this.prompts.raw('executor.system.md') + this.modeRules('executor', run),
-        model: run.models.executor,
+        openspec: true,
       });
       this.afterAgent(run, attempt, res);
     } catch (e) {
@@ -631,8 +865,47 @@ export class Orchestrator {
     return { result, failed };
   }
 
-  private checksFeedback(failed: CheckResult[]): string {
-    return failed.map((x) => `${x.kind === 'lint' ? 'Линтер' : 'Тесты'} не прошли. Команда: \`${x.command}\`, код выхода ${x.exitCode}${x.timedOut ? ' (таймаут)' : ''}.\n\nВывод:\n\`\`\`\n${x.output}\n\`\`\``).join('\n\n');
+  private checksFeedback(failed: CheckResult[], base?: CheckResult[]): string {
+    return failed.map((x) => {
+      const before = base?.find((b) => b.kind === x.kind && !b.passed);
+      const head = `${x.kind === 'lint' ? 'Линтер' : 'Тесты'} не прошли. Команда: \`${x.command}\`, код выхода ${x.exitCode}${x.timedOut ? ' (таймаут)' : ''}.`;
+      // Проверка была красной и до задачи: просим исправить только новое, чужие старые ошибки не трогать.
+      const delta = before
+        ? `\n\nЭта проверка была красной ещё до задачи (ошибок: ${errorCount(before.output) ?? 'не удалось посчитать'}), сейчас — ${errorCount(x.output) ?? 'не удалось посчитать'}. Старые ошибки в чужом коде не исправляй — устрани только те, что появились из‑за твоих изменений, чтобы ошибок стало не больше, чем было.`
+        : '';
+      return `${head}${delta}\n\nВывод:\n\`\`\`\n${x.output}\n\`\`\``;
+    }).join('\n\n');
+  }
+
+  /** Линтер и тесты на базовом коммите — один раз за прогон, до первых правок агента. */
+  private async captureBaseChecks(run: RunFile) {
+    if (run.baseChecks || (!run.lintCommand && !run.testCommand)) return;
+    this.log(run, c.dim('Исходное состояние проверок (до правок агента):') + '\n');
+    const { result } = await this.runChecks(run);
+    run.baseChecks = result.checks ?? [];
+    const red = run.baseChecks.filter((x) => !x.passed);
+    if (red.length) {
+      this.log(run, c.amber(`! красные ещё до задачи: ${red.map((x) => `${CHECK_NAME[x.kind]} (ошибок: ${errorCount(x.output) ?? '?'})`).join(', ')} — от агента потребуется не добавлять новых ошибок`) + '\n');
+    }
+    this.save(run);
+  }
+
+  /** Красная проверка, которая была красной и до задачи и ошибок в ней не прибавилось, не блокирует. */
+  private compareWithBase(run: RunFile, result: TestResult): { result: TestResult; failed: CheckResult[] } {
+    const checks = (result.checks ?? []).map((x) => {
+      if (x.passed || x.timedOut) return x;
+      const before = run.baseChecks?.find((b) => b.kind === x.kind && b.command === x.command && !b.passed);
+      if (!before) return x;
+      const a = errorCount(before.output);
+      const b = errorCount(x.output);
+      // Посчитать не удалось — сравниваем по коду выхода: тот же код считаем «тем же состоянием».
+      const same = a != null && b != null ? b <= a : before.exitCode === x.exitCode;
+      if (!same) return x;
+      this.log(run, c.amber(`! ${CHECK_NAME[x.kind]}: красный и до задачи, новых ошибок нет (${a ?? '?'} → ${b ?? '?'}) — не блокирует`) + '\n');
+      return { ...x, preexisting: { before: a, after: b } };
+    });
+    const failed = checks.filter((x) => !x.passed && !x.preexisting);
+    return { result: { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0 }, failed };
   }
 
   private async stageTests(run: RunFile) {
@@ -652,13 +925,16 @@ export class Orchestrator {
       }
     }
 
-    const { result, failed } = await this.runChecks(run);
+    const raw = await this.runChecks(run);
+    const { result, failed } = this.compareWithBase(run, raw.result);
     run.tests.push(result);
     this.emit({ type: 'tests.result', runId: run.id, result });
     const checks = result.checks ?? [];
     const summary = !checks.length ? 'Пропущены'
       : failed.length ? `Красные: ${failed.map((x) => CHECK_NAME[x.kind]).join(' и ')}`
-      : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
+      : checks.some((x) => x.preexisting)
+        ? checks.map((x) => `${CHECK_NAME[x.kind]}${x.preexisting ? ' — как до задачи' : ' — ok'}`).join(', ').replace(/^./, (m) => m.toUpperCase())
+        : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
     this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
 
     if (result.passed) {
@@ -673,11 +949,11 @@ export class Orchestrator {
         this.save(run);
         return;
       }
-      run.next = run.visual ? 'visual' : await this.reviewOrAccept(run);
+      run.next = await this.reviewOrAccept(run);
       this.save(run);
       return;
     }
-    run.feedback = { source: 'tests', text: this.checksFeedback(failed) };
+    run.feedback = { source: 'tests', text: this.checksFeedback(failed, run.baseChecks) };
     this.nextImplementOrLimit(run, `Проверки красные после ${run.implAttemptsUsed} попыток реализации.`);
   }
 
@@ -694,6 +970,7 @@ export class Orchestrator {
     }
     const { result } = await this.runChecks(run);
     run.repro = result;
+    run.baseChecks = result.checks ?? [];
     if (!result.checks?.length) {
       this.end(run, attempt, 'failed', 'Нет проверок');
       this.markStopped(run, 'Для рефакторинга нужны команды линтера или тестов — без них нельзя доказать, что поведение не изменилось. Задайте их в командах проекта.');
@@ -709,15 +986,15 @@ export class Orchestrator {
     this.save(run);
   }
 
-  /** Быстрая правка с маленьким диффом идёт на приёмку без ревью. */
+  /** После проверок — ревью; быстрая правка с маленьким диффом идёт без него (сразу к визуальной проверке или приёмке). */
   private async reviewOrAccept(run: RunFile): Promise<StageId> {
     if (modeOf(run) !== 'quick') return 'review';
     const tools = await this.tools(['git']);
-    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB]);
+    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
     const lines = diff.split('\n').filter((l) => /^[+-][^+-]/.test(l)).length;
     if (lines <= QUICK_REVIEW_LINES) {
       this.log(run, c.dim(`Дифф ${lines} строк — ревью пропущено (быстрая правка).`) + '\n');
-      return 'gate2';
+      return run.visual ? 'visual' : 'gate2';
     }
     return 'review';
   }
@@ -734,6 +1011,8 @@ export class Orchestrator {
       testCommand: cfg.testCommand.trim(),
       runCommand: cfg.runCommand?.trim() || undefined,
       appUrl: cfg.appUrl?.trim() || undefined,
+      visualNotes: cfg.visualNotes?.trim() || undefined,
+      envFiles: cfg.envFiles?.map((f) => f.trim()).filter(Boolean),
       workspace: cfg.workspace,
       notes: cfg.notes,
       updatedAt: new Date().toISOString(),
@@ -754,7 +1033,7 @@ export class Orchestrator {
       cwd: dir,
       env: this.opts.env,
       prompt: this.prompts.raw('detect-commands.md'),
-      model: s.models.executor || undefined,
+      model: this.claudeModel(s.agents, s.models) || undefined,
       timeoutMs: 3 * 60_000,
       group: `detect-${Date.now()}`,
       onOutput: () => {},
@@ -774,6 +1053,7 @@ export class Orchestrator {
         testCommand: str(j.test),
         runCommand: str(j.run),
         appUrl: str(j.url),
+        visualNotes: str(j.visual),
         notes: { setup: str(j.notes?.setup), lint: str(j.notes?.lint), test: str(j.notes?.test), run: str(j.notes?.run) },
       };
     } catch {
@@ -790,7 +1070,7 @@ export class Orchestrator {
       cwd: os.tmpdir(),
       env: this.opts.env,
       prompt: this.prompts.render('suggest-mode.md', { task }),
-      model: s.models.executor || undefined,
+      model: this.claudeModel(s.agents, s.models) || undefined,
       timeoutMs: 90_000,
       group: `mode-${Date.now()}`,
       onOutput: () => {},
@@ -820,13 +1100,16 @@ export class Orchestrator {
   private async stageVisual(run: RunFile) {
     const s = this.opts.getSettings();
     const tools = await this.tools(['claude']);
-    const attempt = this.begin(run, 'visual', run.models.executor);
+    const attempt = this.begin(run, 'visual', run.models.visual || this.claudeModel(run.agents, run.models) || 'claude');
     const dir = this.visualDir(run, attempt.attempt);
     fs.mkdirSync(dir, { recursive: true });
     const port = await freePort();
     const url = run.appUrl!.replaceAll('{port}', String(port));
     const command = run.runCommand!.replaceAll('{port}', String(port));
     const serverGroup = `${run.id}:server`;
+    let cast: Screencast | null = null;
+    /** Хвост вывода команды запуска — показать человеку, если проверить не удалось (упал API и т. п.). */
+    let serverOut = '';
 
     this.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
     let exited: number | null | undefined;
@@ -835,8 +1118,8 @@ export class Orchestrator {
       env: { ...this.opts.env, PORT: String(port), BROWSER: 'none', CI: '1' },
       shell: true,
       group: serverGroup,
-      onStdout: (t) => this.log(run, c.dim(crlf(t)), false),
-      onStderr: (t) => this.log(run, c.dim(crlf(t)), false),
+      onStdout: (t) => { serverOut = (serverOut + t).slice(-6000); this.log(run, c.dim(crlf(t)), false); },
+      onStderr: (t) => { serverOut = (serverOut + t).slice(-6000); this.log(run, c.dim(crlf(t)), false); },
     });
     void server.then((r) => { exited = r.code; });
 
@@ -858,6 +1141,10 @@ export class Orchestrator {
       } else {
         fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
       }
+
+      // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
+      const live = await this.startLiveBrowser(run, dir, url, serverGroup, session);
+      cast = live?.cast ?? null;
       const docs = await this.getChangeDocs(run.id);
       const tg = await this.tools(['git']);
       const changed = await new Git(tg.git, this.opts.env).changedFiles(run.worktreePath, run.baseCommit);
@@ -869,13 +1156,17 @@ export class Orchestrator {
         proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
         specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
         files: changed.filter((f) => !f.startsWith('openspec/')).map((f) => `- ${f}`).join('\n') || '(нет)',
+        // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
+        notes: this.getProjectConfig(run.projectPath)?.visualNotes || run.visualNotes || '(нет — если нужен вход или данные, которых нет, верни "unverified")',
       });
       const res = await runClaude({
         ...this.agentBase(run, tools.claude),
         env: prependPath(this.opts.env, dir),
         prompt,
-        systemPrompt: this.prompts.raw('visual.system.md') + this.modeRules('visual', run),
-        model: run.models.executor,
+        systemPrompt: this.prompts.raw('visual.system.md') + this.modeRules('visual', run)
+          + (live ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.` : ''),
+        // Визуальная проверка всегда на claude (браузер через pw); модель исполнителя — только если он тоже claude.
+        model: run.models.visual || this.claudeModel(run.agents, run.models),
         addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
         // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
         tools: ['Bash', 'Read', 'Glob', 'Grep'],
@@ -893,16 +1184,27 @@ export class Orchestrator {
         const full = path.join(dir, f);
         if (!shots.some((x) => x.file === full)) shots.push({ file: full, caption: f });
       }
-      const result: VisualResult = { at: new Date().toISOString(), url, blocking: parsed.blocking, notes: parsed.notes, shots };
-      run.visuals = [...(run.visuals ?? []), result];
+      const unverified = parseUnverified(res.text);
       const fmt = (i: ReviewItem) => `${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`;
+      if (unverified) {
+        // Окружение не дало проверить (не поднялся API, нет входа): исполнитель тут не поможет — идём дальше, решает человек.
+        const result: VisualResult = { at: new Date().toISOString(), url, blocking: [], notes: [...parsed.blocking, ...parsed.notes], shots, unverified, command, serverOutput: serverOut.trim() || undefined };
+        run.visuals = [...(run.visuals ?? []), result];
+        this.log(run, c.amber(`! визуально проверить не удалось: ${unverified}`) + '\n' + c.dim('Задача не возвращается исполнителю — проверьте сами во вкладке «Браузер». Тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.') + '\n');
+        this.end(run, attempt, 'done', `Не удалось проверить: ${unverified}`);
+        run.next = 'gate2';
+        this.save(run);
+        return;
+      }
+      const result: VisualResult = { at: new Date().toISOString(), url, blocking: parsed.blocking, notes: parsed.notes, shots, command, serverOutput: serverOut.trim() || undefined };
+      run.visuals = [...(run.visuals ?? []), result];
       if (result.blocking.length) this.log(run, c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) + result.blocking.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
       this.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
       this.end(run, attempt, result.blocking.length ? 'failed' : 'done',
         result.blocking.length ? `Проблем: ${result.blocking.length}, скриншотов: ${shots.length}` : `Выглядит верно, скриншотов: ${shots.length}`);
 
       if (!result.blocking.length) {
-        run.next = await this.reviewOrAccept(run);
+        run.next = 'gate2';
         this.save(run);
         return;
       }
@@ -914,25 +1216,61 @@ export class Orchestrator {
       };
       this.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
     } finally {
+      cast?.stop();
+      this.emit({ type: 'visual.frame', runId: run.id, frame: null });
       await runProc('npx', ['-y', '@playwright/cli@latest', `-s=psflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: this.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
       await killGroup(serverGroup);
+      // Профиль Chrome (десятки МБ) после проверки не нужен — скриншоты остаются.
+      fs.rmSync(path.join(dir, 'chrome-profile'), { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Chrome без окна с портом отладки в группе процессов сервера (гаснет вместе с ним), pw подключается к нему.
+   * null — Chrome не найден или не поднялся: агент откроет свой браузер через `pw open`, без трансляции.
+   */
+  private async startLiveBrowser(run: RunFile, dir: string, url: string, group: string, session: string): Promise<{ cast: Screencast } | null> {
+    const chrome = findChrome(this.opts.env);
+    if (!chrome) return null;
+    const port = await freePort();
+    void runProc(chrome, [
+      '--headless=new', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1',
+      `--user-data-dir=${path.join(dir, 'chrome-profile')}`, '--no-first-run', '--no-default-browser-check',
+      // Плотность как у Retina: в трансляции и на скриншотах текст чёткий, а не растянутый вдвое.
+      '--window-size=1440,900', '--force-device-scale-factor=2', url,
+    ], { cwd: dir, env: this.opts.env, group }).catch(() => undefined);
+    if (!(await waitForCdp(port))) {
+      this.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
+      return null;
+    }
+    const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], { cwd: dir, env: this.opts.env, timeoutMs: 120_000 });
+    if (att.code !== 0) {
+      this.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
+      return null;
+    }
+    const cast = new Screencast(port, (frame) => this.emit({ type: 'visual.frame', runId: run.id, frame }));
+    cast.start();
+    this.log(run, c.dim('Браузер агента транслируется во вкладку «Браузер».') + '\n');
+    return { cast };
   }
 
   /** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
   getVisualShot(id: string, file: string): string | null {
-    const root = path.join(this.opts.dataDir, 'visual', id);
-    const full = path.resolve(file);
-    if (!full.startsWith(root + path.sep) || !fs.existsSync(full)) return null;
+    if (!fs.existsSync(file)) return null;
+    // Сравниваем реальные пути: каталог данных может быть ссылкой.
+    const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+    const root = real(path.join(this.opts.dataDir, 'visual', id));
+    const full = real(file);
+    if (!full.startsWith(root + path.sep)) return null;
     const ext = path.extname(full).slice(1).toLowerCase();
     return `data:image/${ext === 'jpg' ? 'jpeg' : ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`;
   }
 
   private async stageReview(run: RunFile) {
-    const tools = await this.tools(['git', 'codex']);
+    const tools = await this.tools(['git']);
     const attempt = this.begin(run, 'review', run.models.reviewer);
     const git = new Git(tools.git, this.opts.env);
-    let diff = await git.diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB]);
+    let diff = await git.diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
     if (diff.length > MAX_DIFF) diff = diff.slice(0, MAX_DIFF) + '\n… (дифф обрезан, остальное смотри через git diff)';
     const docs = await this.getChangeDocs(run.id);
     const lastTest = run.tests[run.tests.length - 1];
@@ -950,11 +1288,9 @@ export class Orchestrator {
       ].filter(Boolean).join('\n'),
     });
 
-    const res = await runCodex({
-      ...this.agentBase(run, tools.codex),
+    const res = await this.runRole(run, 'reviewer', {
       prompt,
-      model: run.models.reviewer,
-      sandbox: 'read-only',
+      readOnly: true,
       images: [...(run.attachments ?? []), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
       outputSchema: this.prompts.json<object>('review.schema.json'),
     });
@@ -973,7 +1309,8 @@ export class Orchestrator {
     this.end(run, attempt, review.blocking.length ? 'failed' : 'done', review.blocking.length ? `Блокирующих: ${review.blocking.length}` : `Без блокирующих, заметок: ${review.notes.length}`);
 
     if (!review.blocking.length) {
-      run.next = 'gate2';
+      // Порядок: ревью диффа (дёшево, без окружения) → визуальная проверка → приёмка со свежими скриншотами.
+      run.next = run.visual ? 'visual' : 'gate2';
       run.feedback = undefined;
       this.save(run);
       return;
@@ -1009,7 +1346,11 @@ export class Orchestrator {
     let sha: string;
     try {
       // Быстрая правка идёт без OpenSpec: run.json остаётся в данных прогона, но не в коммите проекта.
-      const exclude = modeOf(run) === 'quick' && RunStore.inProject(run) ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : [];
+      const exclude = [
+        ...(modeOf(run) === 'quick' && RunStore.inProject(run) ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : []),
+        // Скопированные файлы окружения — секреты разработчика, в коммит не попадают даже без .gitignore.
+        ...this.envFilesOf(run),
+      ];
       sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`, exclude);
     } catch (e) {
       // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
@@ -1020,7 +1361,9 @@ export class Orchestrator {
     }
     run.commit = sha;
     this.save(run);
-    this.log(run, c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
+    this.log(run, sha === run.baseCommit
+      ? c.amber(`! изменений нет — коммит в ${run.branch} не создан`) + '\n'
+      : c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
     if (run.workspace === 'branch') {
       this.log(run, c.dim(`Проект остался на ветке ${run.branch} — можно посмотреть результат.${run.originalBranch ? ` Вернуться: git checkout ${run.originalBranch}` : ''}`) + '\n');
     }
@@ -1147,6 +1490,42 @@ export class Orchestrator {
     return this.prompts.render('feedback.md', { source, text: f.text, lineComments: lines });
   }
 
+  /** Модель для служебных запусков claude: модель исполнителя или планировщика, если эту роль выполняет claude. */
+  private claudeModel(agents: Partial<Record<Role, AgentKind>> | undefined, models: Record<Role, string>): string {
+    const a = { ...DEFAULT_AGENTS, ...agents };
+    if (a.executor === 'claude') return models.executor;
+    if (a.planner === 'claude') return models.planner;
+    return '';
+  }
+
+  /**
+   * Запуск агента роли: claude или codex — как выбрано в настройках на момент старта прогона.
+   * readOnly — только чтение (ревью); иначе агент правит файлы в рабочей копии прогона.
+   */
+  private async runRole(run: RunFile, role: Role, o: {
+    prompt: string; systemPrompt?: string; openspec?: boolean; readOnly?: boolean; images?: string[]; outputSchema?: object;
+  }): Promise<AgentResult> {
+    const agent = run.agents?.[role] ?? DEFAULT_AGENTS[role];
+    const tools = await this.tools(o.openspec ? [agent, 'openspec'] : [agent]);
+    const base = this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined);
+    const model = run.models[role] || undefined;
+    if (agent === 'codex') {
+      return runCodex({ ...base, prompt: o.prompt, systemPrompt: o.systemPrompt, model, sandbox: o.readOnly ? 'read-only' : 'workspace-write', images: o.images, outputSchema: o.outputSchema });
+    }
+    // claude не принимает изображения флагом — даём пути, он откроет их инструментом Read.
+    const images = o.images?.filter((f) => fs.existsSync(f)) ?? [];
+    const prompt = images.length ? `${o.prompt}\n\nИзображения (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}` : o.prompt;
+    const dirs = [...new Set([...(base.addDirs ?? []), ...images.map((f) => path.dirname(f))])];
+    return runClaude({
+      ...base,
+      prompt,
+      systemPrompt: o.systemPrompt,
+      model,
+      addDirs: dirs.length ? dirs : undefined,
+      tools: o.readOnly ? ['Read', 'Glob', 'Grep'] : undefined,
+    });
+  }
+
   private agentBase(run: RunFile, bin: string, openspecBin?: string) {
     const s = this.opts.getSettings();
     // Агенту нужен тот же openspec, что и ядру.
@@ -1252,6 +1631,31 @@ export function planTitle(proposal: string): string | null {
 const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
 
 /** Свободный TCP-порт на localhost. */
+/**
+ * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
+ * null — если вывод не распознан.
+ */
+export function errorCount(output: string): number | null {
+  // eslint-disable-next-line no-control-regex
+  const text = output.replace(/\x1b\[[0-9;]*m/g, '');
+  const patterns = [
+    /✖\s*\d+\s+problems?\s*\((\d+)\s+errors?/g, // ESLint
+    /Found (\d+) errors?/g, // tsc
+    /Tests?:\s+(\d+) failed/g, // Jest, Vitest
+    /^[ℹ#]\s*fail (\d+)/gm, // node:test, TAP
+    /(\d+) failed(?:,| in )/g, // pytest
+    /(\d+) failing/g, // mocha
+  ];
+  for (const re of patterns) {
+    const found = [...text.matchAll(re)];
+    if (found.length) return found.reduce((n, m) => n + Number(m[1]), 0);
+  }
+  const goFails = text.match(/^--- FAIL/gm);
+  if (goFails) return goFails.length;
+  const lines = text.split('\n').filter((l) => /\berror\b/i.test(l)).length;
+  return lines || null;
+}
+
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -1282,6 +1686,19 @@ async function waitForUrl(url: string, timeoutMs: number, abort: () => boolean):
 }
 
 /** «shots» из JSON-ответа визуальной проверки. */
+/** Визуальная проверка: причина, по которой проверить не удалось (поле "unverified"), иначе null. */
+export function parseUnverified(text: string): string | null {
+  const a = text.indexOf('{');
+  const b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try {
+    const j = JSON.parse(text.slice(a, b + 1)) as { unverified?: unknown };
+    return typeof j.unverified === 'string' && j.unverified.trim() ? j.unverified.trim().slice(0, 400) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseShots(text: string): { file: string; caption: string }[] {
   try {
     const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));

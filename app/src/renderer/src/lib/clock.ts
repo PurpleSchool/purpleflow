@@ -3,6 +3,8 @@ import type { RunFile } from '@psflow/core';
 /** Промежутки короче этого — обычные переходы между стадиями, их считаем. Длиннее — прогон стоял. */
 const GAP_MS = 5000;
 
+const GATES = ['gate1', 'gate2', 'limit'];
+
 export interface ActiveClock {
   /** Активное время прогона, мс: идут стадии или ждём решения человека. */
   total: number;
@@ -18,7 +20,7 @@ export interface ActiveClock {
  * Время прогона без пауз, когда он стоял после ошибки или «Стоп» и его не перезапускали
  * (и когда приложение было закрыто посреди стадии).
  */
-export function activeClock(run: RunFile, now = Date.now()): ActiveClock {
+export function activeClock(run: RunFile, now = Date.now(), opts: { compressGates?: boolean } = {}): ActiveClock {
   const spans = run.attempts
     .map((a) => {
       const s = Date.parse(a.startedAt);
@@ -47,7 +49,29 @@ export function activeClock(run: RunFile, now = Date.now()): ActiveClock {
   const gaps: { at: number; ms: number }[] = [];
   for (let i = 1; i < merged.length; i++) gaps.push({ at: map(merged[i - 1][1]), ms: merged[i][0] - merged[i - 1][1] });
   const total = merged.reduce((n, [s, e]) => n + (e - s), 0);
-  return { total, map, gaps, paused: gaps.reduce((n, g) => n + g.ms, 0) };
+  const paused = gaps.reduce((n, g) => n + g.ms, 0);
+  if (!opts.compressGates) return { total, map, gaps, paused };
+
+  // Ожидание человека на шкале — фиксированный слот: час на приёмке не должен сплющивать работу агентов.
+  const gateSpans = run.attempts
+    .filter((a) => GATES.includes(a.stage))
+    .map((a) => [Date.parse(a.startedAt), a.endedAt ? Date.parse(a.endedAt) : a.status === 'running' ? now : Date.parse(a.startedAt)] as [number, number])
+    .filter(([s, e]) => e > s);
+  const gateMs = gateSpans.reduce((n, [s, e]) => n + (map(e) - map(s)), 0);
+  const slot = Math.max(2000, (total - gateMs) * 0.05);
+  const squeeze = (t: number) => {
+    let cut = 0;
+    for (const [s, e] of gateSpans) {
+      const len = map(e) - map(s);
+      if (len <= slot) continue;
+      const inside = Math.max(0, Math.min(map(t), map(e)) - map(s));
+      cut += inside * (1 - slot / len);
+    }
+    return map(t) - cut;
+  };
+  const end = Math.max(now, ...merged.map(([, e]) => e));
+  const sgaps = gaps.map((g, i) => ({ ...g, at: squeeze(merged[i][1]) }));
+  return { total: squeeze(end), map: squeeze, gaps: sgaps, paused };
 }
 
 /** Длительность в мс → «4 мин 17 с». */

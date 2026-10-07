@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BrowserWindow, app, dialog, ipcMain, nativeTheme, safeStorage, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, safeStorage, session, shell, utilityProcess, webContents, type UtilityProcess } from 'electron';
+import type { CoreEvent } from '@psflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 
@@ -13,6 +14,16 @@ else {
   if (fs.existsSync(legacy)) app.setPath('userData', legacy);
 }
 
+// Один экземпляр на профиль: второй при старте принял бы живые процессы прогонов первого за брошенные и убил их.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
 let win: BrowserWindow | null = null;
 let host: UtilityProcess | null = null;
 let ready: Promise<void> | null = null;
@@ -22,12 +33,61 @@ const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Err
 const promptsDir = () =>
   app.isPackaged ? path.join(process.resourcesPath, 'prompts') : path.join(app.getAppPath(), '..', 'core', 'prompts');
 
+// ——— Уведомления: прогон ждёт решения, остановился с ошибкой или готов ———
+
+const runInfo = new Map<string, { title: string; status: string }>();
+const GATE_WORD: Record<string, string> = { gate1: 'утвердите план', gate2: 'примите результат', limit: 'попытки исчерпаны — решите, что дальше' };
+
+function updateBadge() {
+  const waiting = [...runInfo.values()].filter((r) => r.status === 'waiting').length;
+  app.setBadgeCount(waiting);
+}
+
+function notify(runId: string, title: string, body: string) {
+  const s = publicSettings();
+  const focused = Boolean(win?.isFocused());
+  // В фокусе — только звук в окне; свёрнуто или в фоне — системное уведомление и прыжок значка в доке.
+  if (s.sound) win?.webContents.send('app:chime');
+  if (!s.notify || focused || !Notification.isSupported()) return;
+  const n = new Notification({ title, body, silent: true });
+  n.on('click', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send('app:go', runId);
+  });
+  n.show();
+  if (process.platform === 'darwin') app.dock?.bounce('informational');
+  else win?.flashFrame(true);
+}
+
+function attention(e: CoreEvent) {
+  if (e.type === 'run.updated') {
+    runInfo.set(e.run.id, { title: e.run.title, status: e.run.status });
+    updateBadge();
+    return;
+  }
+  if (e.type === 'run.deleted') {
+    runInfo.delete(e.runId);
+    updateBadge();
+    return;
+  }
+  const title = () => runInfo.get((e as { runId: string }).runId)?.title ?? 'Прогон';
+  if (e.type === 'gate.waiting') notify(e.runId, 'Нужно ваше решение', `${title()}: ${GATE_WORD[e.gate] ?? 'ждёт решения'}`);
+  else if (e.type === 'run.finished' && e.status === 'finished') notify(e.runId, 'Прогон готов', `${title()}: коммит в ветке, можно влить`);
+  else if (e.type === 'run.finished' && e.status === 'stopped' && e.message && !/пользовател/.test(e.message)) notify(e.runId, 'Прогон остановлен', `${title()}: ${e.message.slice(0, 160)}`);
+}
+
 function startHost(): Promise<void> {
   host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), [], { serviceName: 'PurpleFlow Core', stdio: 'inherit' });
   ready = new Promise((resolve) => {
     host!.on('message', (m: HostMessage) => {
       if (m.kind === 'ready') resolve();
-      else if (m.kind === 'event') win?.webContents.send('core:event', m.event);
+      else if (m.kind === 'event') {
+        win?.webContents.send('core:event', m.event);
+        attention(m.event);
+      }
       else if (m.kind === 'reply') {
         const p = pending.get(m.id);
         if (!p) return;
@@ -107,12 +167,14 @@ function createWindow() {
     backgroundMaterial: material === 'acrylic' ? 'acrylic' : undefined,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 20, y: 22 },
-    titleBarOverlay: isMac ? undefined : { color: '#00000000', symbolColor: '#a7a9b1', height: 60 },
+    titleBarOverlay: isMac ? undefined : { color: '#00000000', symbolColor: '#a7a9b1', height: 44 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      // Вкладка «Браузер» — <webview> в отдельной сессии; параметры жёстко задаются в will-attach-webview.
+      webviewTag: true,
       // Фоновое окно скриншотов не должно притормаживать отрисовку.
       backgroundThrottling: !process.env.PSFLOW_CAPTURE,
     },
@@ -175,6 +237,76 @@ ipcMain.handle('dialog:file', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'showHiddenFiles'], title: 'Исполняемый файл' });
   return r.canceled ? null : r.filePaths[0];
 });
+// ——— Вкладка «Браузер»: приложение проекта во встроенном webview ———
+
+const PREVIEW_PARTITION = 'psflow-preview';
+const isLocalUrl = (u: string) => {
+  try {
+    const { protocol, hostname } = new URL(u);
+    return /^https?:$/.test(protocol) && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
+  } catch {
+    return false;
+  }
+};
+
+app.on('web-contents-created', (_e, contents) => {
+  // webview — только для приложения проекта: без preload и Node, в своей сессии, только локальные адреса.
+  contents.on('will-attach-webview', (ev, prefs, params) => {
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.nodeIntegrationInSubFrames = false;
+    prefs.contextIsolation = true;
+    prefs.sandbox = true;
+    prefs.webSecurity = true;
+    if (params.partition !== PREVIEW_PARTITION || !isLocalUrl(params.src)) ev.preventDefault();
+  });
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isLocalUrl(url)) void contents.loadURL(url);
+      else if (/^https?:/.test(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (ev, url) => {
+      if (!isLocalUrl(url)) {
+        ev.preventDefault();
+        if (/^https?:/.test(url)) void shell.openExternal(url);
+      }
+    });
+  }
+});
+
+ipcMain.handle('preview:emulate', (e, id: number, mobile: boolean) => {
+  const wc = webContents.fromId(id);
+  // Только webview нашего окна.
+  if (!wc || wc.getType() !== 'webview' || wc.hostWebContents !== e.sender) return;
+  // Ширину 390 задаёт рамка во вкладке; enableDeviceEmulation в webview ломает отрисовку — меняем только user agent.
+  wc.setUserAgent(mobile
+    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+    : app.userAgentFallback);
+  wc.reload();
+});
+
+// ——— Кэш Chromium приложения (HTTP, скомпилированный код, шейдеры) ———
+const CACHE_DIRS = ['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'GraphiteDawnCache', 'Shared Dictionary'];
+function dirBytes(p: string): number {
+  try {
+    const st = fs.lstatSync(p);
+    if (!st.isDirectory()) return st.size;
+    return fs.readdirSync(p).reduce((n, e) => n + dirBytes(path.join(p, e)), 0);
+  } catch {
+    return 0;
+  }
+}
+ipcMain.handle('cache:size', () => CACHE_DIRS.reduce((n, d) => n + dirBytes(path.join(app.getPath('userData'), d)), 0));
+ipcMain.handle('cache:clear', async () => {
+  for (const s of [session.defaultSession, session.fromPartition(PREVIEW_PARTITION)]) {
+    await s.clearCache();
+    await s.clearCodeCaches({});
+  }
+  // Сайты проектов из вкладки «Браузер»: куки и localStorage тестовых входов.
+  await session.fromPartition(PREVIEW_PARTITION).clearStorageData();
+});
+
 ipcMain.handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined));
 
 let quitting = false;
@@ -193,7 +325,16 @@ app.on('before-quit', (e) => {
   host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
 });
 
+ipcMain.handle('notify:test', () => {
+  const s = publicSettings();
+  if (s.sound) win?.webContents.send('app:chime');
+  if (s.notify && Notification.isSupported()) new Notification({ title: 'PurpleFlow', body: 'Так будут выглядеть уведомления, когда прогону нужно ваше внимание.', silent: true }).show();
+});
+
 app.whenReady().then(() => {
+  if (!primary) return;
+  // Сайт проекта во вкладке «Браузер» не получает разрешений (камера, геолокация, уведомления…).
+  session.fromPartition(PREVIEW_PARTITION).setPermissionRequestHandler((_wc, _p, cb) => cb(false));
   if (process.env.PSFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
   void startHost();
   createWindow();

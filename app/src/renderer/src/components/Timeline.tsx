@@ -10,7 +10,7 @@ const LEGEND: { kind: BarKind; label: string }[] = [
   { kind: 'done', label: 'Работа агента или оркестратора' },
   { kind: 'live', label: 'Идёт сейчас' },
   { kind: 'fail', label: 'Неудачная попытка' },
-  { kind: 'wait', label: 'Ожидание решения человека' },
+  { kind: 'wait', label: 'Ожидание решения человека — без масштаба' },
 ];
 
 /** Тикает раз в секунду, пока прогон жив, — чтобы текущие полоски росли. */
@@ -39,7 +39,7 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
   compact?: boolean;
 }) {
   const now = useNow(run);
-  const clock = activeClock(run, now);
+  const clock = activeClock(run, now, { compressGates: true });
   const span = Math.max(1000, clock.total);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
 
@@ -70,8 +70,8 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
           >
             <span className="gantt-label">
               <span className={`gantt-node ${st.gate ? 'is-gate-node' : ''}`}>
-                {STAGE_ICON[st.id]}
-                {current === st.id && <span className="tab-live" />}
+                {/* Идёт работа — вместо иконки крутится кружок внутри узла. */}
+                {state === 'active' ? <span className="node-spin" /> : STAGE_ICON[st.id]}
               </span>
               <span className="gantt-name">
                 <span>{st.title}{tries > 1 && <em> ×{tries}</em>}</span>
@@ -81,7 +81,8 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
             <span className="gantt-track">
               {bars.map((b, i) => {
                 const full = `${bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}${b.took}`;
-                const label = compact ? '' : fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
+                // Ожидание человека — фиксированный слот без времени (точное время — в подсказке).
+                const label = compact || b.kind === 'wait' || b.kind === 'wait-live' ? '' : fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
                 return (
                   <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: `${b.left}%`, width: `${b.width}%` }} title={b.tip}>
                     {label && <b>{label}</b>}

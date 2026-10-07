@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Check, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
-import type { ProjectCommands, Workspace } from '@psflow/core';
-import { Button, Input, Topbar } from '../components/ui';
+import { Check, FileLock2, KeyRound, Minus, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
+import type { CommandIssue, ProjectCommands, Workspace } from '@psflow/core';
+import { Button, Input, TextArea, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 import { useStore } from '../lib/store';
 import { ImageDrop, type PickedImage } from '../components/ImageDrop';
@@ -9,7 +9,7 @@ import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { shortPath } from '../lib/format';
 
-type Project = ProjectCommands & { isRepo: boolean; name: string; path: string };
+type Project = ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; path: string };
 type Tab = 'task' | 'commands';
 type Cmd = 'setup' | 'lint' | 'test' | 'run' | 'url';
 
@@ -31,6 +31,12 @@ export function NewTaskScreen() {
   const [suggesting, setSuggesting] = useState(false);
   const [visual, setVisual] = useState(true);
   const [workspace, setWorkspace] = useState<Workspace>('worktree');
+  /** Инструкция агенту визуальной проверки: тестовый вход, сид данных. */
+  const [visualNotes, setVisualNotes] = useState('');
+  /** Файлы окружения для worktree — через запятую. */
+  const [envFiles, setEnvFiles] = useState('');
+  /** Найденные без запуска ошибки в командах: нет скрипта в package.json и т. п. */
+  const [issues, setIssues] = useState<Record<string, CommandIssue[]>>({});
   /** Откуда взята каждая команда: файл проекта, нейросеть или правка руками. */
   const [notes, setNotes] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '', run: '', url: '' });
   const [aiBusy, setAiBusy] = useState(false);
@@ -48,12 +54,16 @@ export function NewTaskScreen() {
       setCmds({ setup: cfg.setupCommand, lint: cfg.lintCommand, test: cfg.testCommand, run: cfg.runCommand ?? '', url: cfg.appUrl ?? '' });
       setNotes({ ...cfg.notes, run: cfg.notes.run ?? '', url: '' });
       setWorkspace(cfg.workspace ?? 'worktree');
+      setVisualNotes(cfg.visualNotes ?? '');
+      setEnvFiles((cfg.envFiles ?? info.envFiles).join(', '));
       setSaved('saved');
     } else {
       setCmds({ setup: info.setupCommand, lint: info.lintCommand, test: info.testCommand, run: '', url: '' });
       const from = info.detectedFrom ? `по ${info.detectedFrom}` : '';
       setNotes({ setup: info.setupCommand ? from : '', lint: info.lintCommand ? from : '', test: info.testCommand ? from : '', run: '', url: '' });
       setWorkspace('worktree');
+      setVisualNotes('');
+      setEnvFiles(info.envFiles.join(', '));
       setSaved('draft');
     }
     try {
@@ -76,6 +86,7 @@ export function NewTaskScreen() {
     try {
       const r = await window.psflow.core.detectCommandsAI(project.path);
       setCmds({ setup: r.setupCommand, lint: r.lintCommand, test: r.testCommand, run: r.runCommand, url: r.appUrl });
+      if (r.visualNotes) setVisualNotes(r.visualNotes);
       setNotes({ setup: r.notes.setup, lint: r.notes.lint, test: r.notes.test, run: r.notes.run, url: '' });
       setAiDone(true);
       setSaved('dirty');
@@ -92,7 +103,7 @@ export function NewTaskScreen() {
     setError(null);
     try {
       await window.psflow.core.saveProjectConfig(project.path, {
-        setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, runCommand: cmds.run, appUrl: cmds.url, workspace,
+        setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, runCommand: cmds.run, appUrl: cmds.url, visualNotes, envFiles: envList, workspace,
         notes: { setup: notes.setup, lint: notes.lint, test: notes.test, run: notes.run },
       });
       setSaved('saved');
@@ -114,7 +125,7 @@ export function NewTaskScreen() {
         type: 'run.start',
         input: {
           projectPath: project.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, workspace,
+          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, visualNotes, envFiles: envList, workspace,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
@@ -130,6 +141,14 @@ export function NewTaskScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!project?.isRepo) return setIssues({});
+    const t = setTimeout(() => {
+      void window.psflow.core.checkCommands(project.path, { setup: cmds.setup, lint: cmds.lint, test: cmds.test, run: cmds.run }).then(setIssues).catch(() => setIssues({}));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [project?.path, project?.isRepo, cmds.setup, cmds.lint, cmds.test, cmds.run]);
+
   const busyRun = state.runs.find((r) => r.status === 'running');
   // Визуальная проверка всегда видна в маршруте и включается переключателем прямо в нём.
   const route = stagesFor(mode, true);
@@ -139,7 +158,13 @@ export function NewTaskScreen() {
     setNotes({ ...notes, [k]: v ? 'указано вручную' : '' });
     setSaved('dirty');
   };
-  const summary = [cmds.setup, cmds.lint, cmds.test, cmds.run].filter(Boolean);
+  const envList = envFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean);
+  const summary = [
+    { label: 'Подготовка', value: cmds.setup },
+    { label: 'Линтер', value: cmds.lint },
+    { label: 'Тесты', value: cmds.test },
+    { label: 'Запуск', value: cmds.run && cmds.url ? `${cmds.run}  →  ${cmds.url}` : '' },
+  ].map((c) => ({ ...c, on: Boolean(c.value.trim()) }));
   const canVisual = Boolean(cmds.run.trim() && cmds.url.trim());
 
   const askMode = async () => {
@@ -209,7 +234,12 @@ export function NewTaskScreen() {
                 {project?.isRepo && (
                   <button className="cmd-summary" onClick={() => setTab('commands')}>
                     <span className="muted">Команды проекта</span>
-                    {summary.length ? summary.map((c, i) => <code key={i}>{c}</code>) : <span className="muted">не заданы — проверки будут пропущены</span>}
+                    {summary.map((c) => (
+                      <span key={c.label} className={`cmd-chip ${c.on ? 'is-on' : ''}`} title={c.on ? c.value : 'Не задано — шаг пропускается'}>
+                        {c.on ? <Check size={13} /> : <Minus size={13} />}
+                        {c.label}
+                      </span>
+                    ))}
                     <span className="grow" />
                     {saved !== 'saved' && <span className="cmd-unsaved">проверьте и сохраните</span>}
                     <span className="cmd-edit">Настроить</span>
@@ -265,11 +295,49 @@ export function NewTaskScreen() {
                   </Button>
                 </header>
                 <div className="cmd-list">
-                  <CmdRow icon={<PackageOpen size={17} />} title="Подготовка" hint="Установка зависимостей" placeholder="не нужна" value={cmds.setup} note={notes.setup} onChange={(v) => edit('setup', v)} loading={aiBusy} />
-                  <CmdRow icon={<ScanSearch size={17} />} title="Линтер" hint="Линтер и проверка типов" placeholder="не задан" value={cmds.lint} note={notes.lint} onChange={(v) => edit('lint', v)} loading={aiBusy} />
-                  <CmdRow icon={<TestTubeDiagonal size={17} />} title="Тесты" hint="Все тесты, без watch-режима" placeholder="не заданы" value={cmds.test} note={notes.test} onChange={(v) => edit('test', v)} loading={aiBusy} />
-                  <CmdRow icon={<MonitorPlay size={17} />} title="Запуск приложения" hint="Для визуальной проверки; {port} — свободный порт" placeholder="например: npm run dev -- --port {port}" value={cmds.run} note={notes.run} onChange={(v) => edit('run', v)} loading={aiBusy} />
+                  <CmdRow icon={<PackageOpen size={17} />} title="Подготовка" hint="Установка зависимостей" placeholder="не нужна" value={cmds.setup} note={notes.setup} onChange={(v) => edit('setup', v)} loading={aiBusy} issues={issues.setup} />
+                  <CmdRow icon={<ScanSearch size={17} />} title="Линтер" hint="Линтер и проверка типов" placeholder="не задан" value={cmds.lint} note={notes.lint} onChange={(v) => edit('lint', v)} loading={aiBusy} issues={issues.lint} />
+                  <CmdRow icon={<TestTubeDiagonal size={17} />} title="Тесты" hint="Все тесты, без watch-режима" placeholder="не заданы" value={cmds.test} note={notes.test} onChange={(v) => edit('test', v)} loading={aiBusy} issues={issues.test} />
+                  <CmdRow icon={<MonitorPlay size={17} />} title="Запуск приложения" hint="Для визуальной проверки; {port} — свободный порт" placeholder="например: npm run dev -- --port {port}" value={cmds.run} note={notes.run} onChange={(v) => edit('run', v)} loading={aiBusy} issues={issues.run} />
                   <CmdRow icon={<Globe size={17} />} title="Адрес" hint="Главная страница приложения" placeholder="http://localhost:{port}" value={cmds.url} note={notes.url} onChange={(v) => edit('url', v)} loading={aiBusy} />
+                  <div className="cmd-row">
+                    <span className="cmd-icon"><FileLock2 size={17} /></span>
+                    <div className="cmd-label">
+                      <strong>Файлы окружения</strong>
+                      <span>Копируются в отдельную копию прогона, не коммитятся</span>
+                    </div>
+                    <div className="cmd-field">
+                      <Input
+                        mono
+                        placeholder="например: apps/api/.env, apps/web/.env.local"
+                        value={envFiles}
+                        onChange={(e) => {
+                          setEnvFiles(e.target.value);
+                          if (saved === 'saved') setSaved('dirty');
+                        }}
+                      />
+                      <span className="cmd-note">{project?.envFiles.length ? `Найдены в проекте: ${project.envFiles.join(', ')}` : 'В git их нет, поэтому в worktree без копирования их не будет. В режиме «Ветка» не нужны.'}</span>
+                    </div>
+                  </div>
+                  <div className={`cmd-row ${aiBusy ? 'is-loading' : ''}`}>
+                    <span className="cmd-icon"><KeyRound size={17} /></span>
+                    <div className="cmd-label">
+                      <strong>Инструкция для проверки</strong>
+                      <span>Тестовый вход, сид данных — для визуальной проверки</span>
+                    </div>
+                    <div className="cmd-field">
+                      <TextArea
+                        rows={3}
+                        placeholder={'например: вход test@example.com / test1234 (создаётся npm run seed в apps/api), доска — /board'}
+                        value={visualNotes}
+                        onChange={(e) => {
+                          setVisualNotes(e.target.value);
+                          if (saved === 'saved') setSaved('dirty');
+                        }}
+                      />
+                      <span className="cmd-note">Только тестовые учётки — текст хранится в данных приложения и передаётся агенту как есть.</span>
+                    </div>
+                  </div>
                 </div>
                 <div className="cmd-actions">
                   <p className="cmd-foot">Нейросеть только читает файлы проекта — package.json, конфиги, CI — и ничего не меняет.</p>
@@ -370,8 +438,8 @@ const WORKSPACES: { id: Workspace; title: string; hint: ReactNode }[] = [
   },
 ];
 
-function CmdRow({ icon, title, hint, placeholder, value, note, onChange, loading }: {
-  icon: ReactNode; title: string; hint: string; placeholder: string; value: string; note: string; onChange: (v: string) => void; loading: boolean;
+function CmdRow({ icon, title, hint, placeholder, value, note, onChange, loading, issues }: {
+  icon: ReactNode; title: string; hint: string; placeholder: string; value: string; note: string; onChange: (v: string) => void; loading: boolean; issues?: CommandIssue[];
 }) {
   return (
     <div className={`cmd-row ${loading ? 'is-loading' : ''}`}>
@@ -382,7 +450,12 @@ function CmdRow({ icon, title, hint, placeholder, value, note, onChange, loading
       </div>
       <div className="cmd-field">
         <Input mono placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
-        {note && <span className="cmd-note" title={note}>{note}</span>}
+        {issues?.length ? issues.map((x, i) => (
+          <span key={i} className="cmd-issue">
+            <TriangleAlert size={13} /> {x.message}
+            {x.fix && <button className="link" onClick={() => onChange(x.fix!)}>Исправить</button>}
+          </span>
+        )) : note && <span className="cmd-note" title={note}>{note}</span>}
       </div>
     </div>
   );

@@ -27,12 +27,12 @@ mac:
   # Нотаризация: APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER или APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID.
   notarize: true
 dmg:
-  artifactName: PS-Flow-${version}-${arch}.dmg
+  artifactName: PurpleFlow-${version}-${arch}.dmg
 win:
   target:
     - target: nsis
       arch: [x64, arm64]
-  artifactName: PS-Flow-Setup-${version}-${arch}.exe
+  artifactName: PurpleFlow-Setup-${version}-${arch}.exe
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -40,4 +40,4 @@ linux:
   target: [AppImage, deb]
   category: Development
   maintainer: PurpleSchool
-  artifactName: PS-Flow-${version}-${arch}.${ext}
+  artifactName: PurpleFlow-${version}-${arch}.${ext}

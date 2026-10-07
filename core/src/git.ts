@@ -100,6 +100,17 @@ export class Git {
     return r.code === 0 ? r.stdout.split('\n').map((x) => x.trim()).filter(Boolean) : [];
   }
 
+  /** Убрать worktree прогона (вместе с незакоммиченным в ней). */
+  async removeWorktree(repo: string, worktreePath: string): Promise<void> {
+    await run(this.bin, ['worktree', 'remove', '--force', worktreePath], { cwd: repo, env: this.env, timeoutMs: 60_000 });
+    fs.rmSync(worktreePath, { recursive: true, force: true });
+    await run(this.bin, ['worktree', 'prune'], { cwd: repo, env: this.env });
+  }
+
+  async deleteBranch(repo: string, branch: string): Promise<void> {
+    await this.git(repo, ['branch', '-D', branch]);
+  }
+
   async worktreeExists(repo: string, worktreePath: string): Promise<boolean> {
     if (!fs.existsSync(worktreePath)) return false;
     const out = await this.git(repo, ['worktree', 'list', '--porcelain']).catch(() => '');
@@ -173,10 +184,18 @@ export class Git {
   }
 
   private async commitUnsafe(worktree: string, message: string, exclude: string[]): Promise<string> {
+    // git ругается на :(exclude) для файлов из .gitignore — они и так не попадут в коммит, исключаем только остальные.
+    const tracked: string[] = [];
+    for (const e of exclude) {
+      const ignored = await run(this.bin, ['check-ignore', '-q', '--', e], { cwd: worktree, env: this.env });
+      if (ignored.code !== 0) tracked.push(e);
+    }
+    exclude = tracked;
     await this.git(worktree, ['add', '-A', '--', '.', ...exclude.map((e) => `:(exclude)${e}`)]);
     if (exclude.length) await run(this.bin, ['reset', '-q', '--', ...exclude], { cwd: worktree, env: this.env });
-    const status = await this.git(worktree, ['status', '--porcelain']);
-    if (!status.trim()) return this.head(worktree);
+    // Смотрим на индекс, а не на status: исключённые файлы (run.json быстрой правки) остаются неотслеживаемыми.
+    const staged = await this.git(worktree, ['diff', '--cached', '--name-only']);
+    if (!staged.trim()) return this.head(worktree);
     // Своё имя автора только если в репозитории не настроено — глобальный конфиг не трогаем.
     const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
     const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];

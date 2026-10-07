@@ -66,3 +66,32 @@ test('merge: чистая копия, грязная копия, ветка вн
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('commitAll: изменений нет, кроме исключённого файла — коммит не создаётся и не падает', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-noop-'));
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
+  g('init', '-q');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  const base = g('rev-parse', 'HEAD').trim();
+  fs.mkdirSync(path.join(dir, 'openspec/changes/x'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'openspec/changes/x/run.json'), '{}');
+  const sha = await new Git('git', process.env).commitAll(dir, 'x', ['openspec/changes/x/run.json']);
+  assert.equal(sha, base);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('commitAll: исключение файла из .gitignore не ломает коммит', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-ign-'));
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
+  g('init', '-q');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.env\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  const before = g('rev-parse', 'HEAD').trim();
+  const sha = await new Git('git', process.env).commitAll(dir, 'x', ['.env']);
+  assert.notEqual(sha, before);
+  assert.equal(g('show', '--name-only', '--format=', 'HEAD').trim(), 'a.txt');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -1,27 +1,33 @@
 import type {
-  AiCommands, ConnectionCheck, ModeSuggestion, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, CommandIssue, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
 export interface PublicSettings {
   toolPaths: Partial<Record<ToolName, string>>;
   proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean };
-  models: Record<Role, string>;
+  models: Models;
+  agents: Record<Role, AgentKind>;
   agentTimeoutMin: number;
   testTimeoutMin: number;
   onboarded: boolean;
   windowGlass: boolean;
+  notify: boolean;
+  sound: boolean;
   claudeAuth: 'login' | 'env';
 }
 
 export interface SettingsPatch {
   toolPaths?: Partial<Record<ToolName, string>>;
   proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string };
-  models?: Partial<Record<Role, string>>;
+  models?: Partial<Models>;
+  agents?: Partial<Record<Role, AgentKind>>;
   agentTimeoutMin?: number;
   testTimeoutMin?: number;
   onboarded?: boolean;
   windowGlass?: boolean;
+  notify?: boolean;
+  sound?: boolean;
   claudeAuth?: 'login' | 'env';
 }
 
@@ -42,7 +48,7 @@ export interface CoreApi {
   getChangeDocs(id: string): Promise<ChangeDocs>;
   detectTools(): Promise<Record<ToolName, ToolInfo>>;
   testConnection(): Promise<ConnectionCheck[]>;
-  detectProject(dir: string): Promise<ProjectCommands & { isRepo: boolean; name: string }>;
+  detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
   isDriving(id: string): Promise<boolean>;
   listBranches(id: string): Promise<{ branches: string[]; current: string | null }>;
   getAttachment(id: string, index: number): Promise<string | null>;
@@ -50,6 +56,13 @@ export interface CoreApi {
   getProjectConfig(dir: string): Promise<ProjectConfig | null>;
   suggestMode(task: string): Promise<ModeSuggestion>;
   getVisualShot(id: string, file: string): Promise<string | null>;
+  /** Проверка команд без запуска: скрипты npm/pnpm/yarn есть в package.json нужной папки. */
+  checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>>;
+  getStorage(): Promise<StorageItem[]>;
+  cleanStorage(id: StorageItem['id']): Promise<number>;
+  startPreview(id: string): Promise<PreviewState>;
+  stopPreview(id: string): Promise<void>;
+  getPreview(id: string): Promise<PreviewState>;
   saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
 }
 
@@ -66,6 +79,14 @@ export interface PsFlowBridge {
   pickFolder(): Promise<string | null>;
   pickFile(): Promise<string | null>;
   openPath(p: string): Promise<void>;
+  /** Вкладка «Браузер»: эмуляция телефона для webview по его webContentsId. */
+  previewEmulate(webContentsId: number, mobile: boolean): Promise<void>;
+  /** Кэш Chromium самого приложения (HTTP, код, GPU): размер и очистка. */
+  appCache: { size(): Promise<number>; clear(): Promise<void> };
+  /** Звук внимания и переход к прогону по клику на уведомление. */
+  onChime(fn: () => void): () => void;
+  onGo(fn: (runId: string) => void): () => void;
+  testNotification(): Promise<void>;
   platform: string;
   /** Материал окна при запуске: нативное стекло ОС или непрозрачный фон. */
   material: 'vibrancy' | 'acrylic' | 'none';

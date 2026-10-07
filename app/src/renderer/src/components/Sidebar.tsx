@@ -1,62 +1,125 @@
-import type { ToolName } from '@psflow/core';
-import { useStore, type View } from '../lib/store';
-import { PillTabs } from './PillTabs';
+import { useMemo } from 'react';
+import { PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react';
+import type { RunSummary, ToolName } from '@psflow/core';
+import { useStore } from '../lib/store';
+import { shortPath } from '../lib/format';
+import { MODES } from '../lib/stages';
 
 const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
 
-/** Верхняя панель: знак, навигация пилюлями, состояние инструментов. Тянется за окно (drag). */
-export function AppBar() {
-  const { state, go } = useStore();
-  const v = state.view.name;
-  const last = state.runs.find((r) => r.id === state.lastRunId);
-  const active = state.runs.find((r) => r.status === 'running' || r.status === 'waiting');
-  const current = active ?? last;
+const STATUS_WORD: Record<RunSummary['status'], string> = {
+  running: 'идёт', waiting: 'ждёт вас', stopped: 'остановлен', cancelled: 'отменён', finished: 'готово',
+};
 
-  const liveDot = current && (current.status === 'running' || current.status === 'waiting') ? <i className={`navdot ${current.status}`} /> : null;
-  const go2 = (name: View['name']) => {
-    if (name === 'run') {
-      if (current) go({ name: 'run', runId: current.id });
-    } else go({ name } as View);
+/** Прогоны по группам: сначала ждущие решения человека, остальные — по дням. */
+function groupRuns(runs: RunSummary[]) {
+  const waiting = runs.filter((r) => r.status === 'waiting');
+  const rest = runs.filter((r) => r.status !== 'waiting');
+  const day = (iso: string) => new Date(iso).toDateString();
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 7);
+  const label = (iso: string) => {
+    const d = new Date(iso);
+    if (day(iso) === today.toDateString()) return 'Сегодня';
+    if (day(iso) === yesterday.toDateString()) return 'Вчера';
+    if (d > weekAgo) return 'На этой неделе';
+    return 'Ранее';
   };
+  const groups: { title: string; runs: RunSummary[] }[] = [];
+  if (waiting.length) groups.push({ title: 'Ждут вас', runs: waiting });
+  for (const r of rest) {
+    const t = label(r.createdAt);
+    const g = groups.find((x) => x.title === t);
+    if (g) g.runs.push(r);
+    else groups.push({ title: t, runs: [r] });
+  }
+  return groups;
+}
+
+const projectName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+
+/** Левая панель: новая задача, прогоны по дням, настройки и инструменты. Сворачивается (⌘B). */
+export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { state, go } = useStore();
+  const v = state.view;
+  const groups = useMemo(() => groupRuns(state.runs), [state.runs]);
+  const waiting = state.runs.filter((r) => r.status === 'waiting').length;
+  const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
+
+  if (collapsed) {
+    return (
+      <div className="side-mini drag">
+        <button className="side-icon" title={toggleTitle} onClick={onToggle}>
+          <PanelLeftOpen size={17} />
+          {waiting > 0 && <span className="side-badge">{waiting}</span>}
+        </button>
+        <button className="side-icon" title="Новая задача" onClick={() => go({ name: 'new' })}><Plus size={17} /></button>
+      </div>
+    );
+  }
 
   return (
-    <header className="appbar drag">
-      <div className="appbar-brand">
-        <Mark size={26} />
-        <span>PurpleFlow</span>
+    <aside className="side">
+      <div className="side-top drag">
+        <div className="side-brand">
+          <Mark size={22} />
+          <span>PurpleFlow</span>
+        </div>
+        <button className="side-icon" title={toggleTitle} onClick={onToggle}><PanelLeftClose size={17} /></button>
       </div>
 
-      <nav aria-label="Разделы">
-        <PillTabs<View['name']>
-          className="navpills"
-          itemClassName="navpill"
-          role="navigation"
-          value={v}
-          onChange={go2}
-          items={[
-            { id: 'new', label: 'Новая задача' },
-            { id: 'run', label: <>{liveDot}Прогон</>, disabled: !current },
-            { id: 'history', label: 'История' },
-            { id: 'settings', label: 'Настройки' },
-          ]}
-        />
+      <button className={`side-new ${v.name === 'new' ? 'is-on' : ''}`} onClick={() => go({ name: 'new' })}>
+        <Plus size={16} /> Новая задача
+      </button>
+
+      <nav className="side-list" aria-label="Прогоны">
+        {groups.length === 0 && <p className="side-empty">Прогонов пока нет. Опишите задачу — здесь появится её прогон.</p>}
+        {groups.map((g) => (
+          <section key={g.title} className={`side-group ${g.title === 'Ждут вас' ? 'is-attention' : ''}`}>
+            <h4>{g.title}</h4>
+            {g.runs.map((r) => (
+              <button
+                key={r.id}
+                className={`side-run st-${r.status} ${v.name === 'run' && v.runId === r.id ? 'is-on' : ''}`}
+                disabled={r.missing}
+                title={r.missing ? `run.json не найден: ${r.runJsonPath}` : `${r.title}\n${shortPath(r.projectPath)} · ${STATUS_WORD[r.status]}`}
+                onClick={() => go({ name: 'run', runId: r.id })}
+              >
+                <span className="side-dot" aria-label={STATUS_WORD[r.status]} />
+                <span className="side-run-text">
+                  <span className="side-run-title">{r.title}</span>
+                  <span className="side-run-sub">
+                    <span className="side-run-project">{r.missing ? 'run.json не найден' : projectName(r.projectPath)}</span>
+                    {!r.missing && <span className="side-run-mode">{MODES.find((m) => m.id === (r.mode ?? 'task'))?.title}</span>}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </section>
+        ))}
       </nav>
 
-      <span className="grow" />
-
-      <div className="appbar-tools" title="Найденные инструменты">
-        {TOOLS.map((t) => {
-          const info = state.tools?.[t];
-          const ok = info?.path && !info.error;
-          return (
-            <span key={t} className={`tool-chip ${state.toolsLoading && !info ? 'is-loading' : ok ? 'is-ok' : 'is-bad'}`} title={info ? `${info.path ?? 'не найден'} ${info.version ?? ''}` : 'проверяем…'}>
-              <i />
-              {t}
-            </span>
-          );
-        })}
+      <div className="side-bottom">
+        <button className={`side-link ${v.name === 'settings' ? 'is-on' : ''}`} onClick={() => go({ name: 'settings' })}>
+          <Settings size={16} /> Настройки
+        </button>
+        <div className="side-tools" title="Найденные инструменты">
+          {TOOLS.map((t) => {
+            const info = state.tools?.[t];
+            const ok = info?.path && !info.error;
+            return (
+              <span key={t} className={`tool-chip ${state.toolsLoading && !info ? 'is-loading' : ok ? 'is-ok' : 'is-bad'}`} title={info ? `${info.path ?? 'не найден'} ${info.version ?? ''}` : 'проверяем…'}>
+                <i />
+                {t}
+              </span>
+            );
+          })}
+        </div>
       </div>
-    </header>
+    </aside>
   );
 }
 

@@ -30,6 +30,8 @@ const settings: CoreSettings = {
     executor: process.env.PSFLOW_EXECUTOR ?? 'sonnet',
     reviewer: process.env.PSFLOW_REVIEWER ?? '',
   },
+  // --agents planner=claude,executor=codex,reviewer=claude
+  agents: Object.fromEntries((process.argv[process.argv.indexOf('--agents') + 1] ?? '').split(',').filter((x) => x.includes('=') && process.argv.includes('--agents')).map((x) => x.split('='))),
   agentTimeoutMin: 20,
   testTimeoutMin: 5,
 };
@@ -41,6 +43,7 @@ const core = new Orchestrator({
   getSettings: () => settings,
 });
 
+let frames = 0;
 const started = Date.now();
 const t = () => `[${((Date.now() - started) / 1000).toFixed(0).padStart(4)}s]`;
 
@@ -51,6 +54,11 @@ const done = new Promise<void>((resolve) => {
       return;
     }
     if (e.type === 'run.updated') return;
+    if (e.type === 'visual.frame') {
+      frames++;
+      if (e.frame && argv.includes('--save-frame')) fs.writeFileSync(path.join(arg('data') ?? os.tmpdir(), 'last-frame.jpg'), Buffer.from(e.frame.data, 'base64'));
+      return;
+    }
     console.log(t(), e.type, JSON.stringify({ ...e, runId: undefined }).slice(0, 400));
     if (crashOn && e.type === 'stage.started' && e.stage === crashOn) {
       setTimeout(() => {
@@ -86,7 +94,7 @@ if (resumeRun) {
 } else {
   const image = arg('image');
   const attachments = image ? [{ name: path.basename(image), data: new Uint8Array(fs.readFileSync(image)) }] : undefined;
-  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', lintCommand: arg('lint'), attachments, mode: (arg('mode') as never) ?? 'task', visual: Boolean(arg('run')), runCommand: arg('run'), appUrl: arg('url'), workspace: (arg('workspace') as never) ?? 'worktree' } }));
+  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', lintCommand: arg('lint'), attachments, mode: (arg('mode') as never) ?? 'task', visual: Boolean(arg('run')), runCommand: arg('run'), appUrl: arg('url'), workspace: (arg('workspace') as never) ?? 'worktree', envFiles: arg('env')?.split(',') } }));
 }
 console.log(t(), 'run', runId);
 if (stopAfter) {
@@ -101,5 +109,5 @@ const run = core.getRun(runId)!;
 console.log(t(), 'status', run.status, '| attempts', run.attempts.map((a) => `${a.stage}#${a.attempt}:${a.status}`).join(' '));
 console.log(t(), 'title', JSON.stringify(run.title), 'fromPlan', run.titleFromPlan, 'attachments', run.attachments);
 console.log(t(), 'mode', run.mode, 'phases', run.phases, 'repro', run.repro && { passed: run.repro.passed }, 'visuals', JSON.stringify(run.visuals?.map((v) => ({ blocking: v.blocking.length, notes: v.notes.length, shots: v.shots.map((x) => x.caption) }))));
-console.log(t(), 'tokens', JSON.stringify(run.totals), '| live processes', liveCount());
+console.log(t(), 'tokens', JSON.stringify(run.totals), '| live processes', liveCount(), '| frames', frames);
 console.log(t(), 'run.json', run.archivedPath ?? path.join(run.worktreePath, 'openspec/changes', run.changeId, 'run.json'));

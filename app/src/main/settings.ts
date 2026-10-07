@@ -1,28 +1,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, safeStorage } from 'electron';
-import type { CoreSettings } from '@psflow/core';
+import type { AgentKind, CoreSettings, Role } from '@psflow/core';
 import type { PublicSettings, SettingsPatch } from '../shared/ipc';
 
 interface StoredSettings {
   toolPaths: CoreSettings['toolPaths'];
   proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string };
   models: CoreSettings['models'];
+  agents: Record<Role, AgentKind>;
   agentTimeoutMin: number;
   testTimeoutMin: number;
   onboarded: boolean;
   windowGlass: boolean;
+  /** Системные уведомления, когда прогон ждёт решения, готов или упал. */
+  notify: boolean;
+  /** Короткий звук в тех же случаях. */
+  sound: boolean;
   claudeAuth: 'login' | 'env';
 }
 
 const DEFAULTS: StoredSettings = {
   toolPaths: {},
   proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '' },
-  models: { planner: 'opus', executor: 'sonnet', reviewer: '' },
+  models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '' },
+  agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
   agentTimeoutMin: 30,
   testTimeoutMin: 10,
   onboarded: false,
   windowGlass: true,
+  notify: true,
+  sound: true,
   claudeAuth: 'login',
 };
 
@@ -45,6 +53,7 @@ function load(): StoredSettings {
       ...raw,
       proxy: { ...DEFAULTS.proxy, ...raw.proxy },
       models: { ...DEFAULTS.models, ...raw.models },
+      agents: { ...DEFAULTS.agents, ...raw.agents },
       toolPaths: { ...raw.toolPaths },
     };
   } catch {
@@ -75,10 +84,13 @@ export function publicSettings(): PublicSettings {
     toolPaths: s.toolPaths,
     proxy: { baseUrl: s.proxy.baseUrl, codexBaseUrl: s.proxy.codexBaseUrl, hasKey: Boolean(s.proxy.apiKeyEnc) },
     models: s.models,
+    agents: s.agents,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
     onboarded: s.onboarded,
     windowGlass: s.windowGlass,
+    notify: s.notify,
+    sound: s.sound,
     claudeAuth: s.claudeAuth,
   };
 }
@@ -91,6 +103,7 @@ export function coreSettings(): CoreSettings {
     // Есть токен — агенты идут через прокси PurpleSchool; нет — через собственный вход claude и codex.
     proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey },
     models: s.models,
+    agents: s.agents,
     claudeAuth: s.claudeAuth,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
@@ -101,6 +114,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   const s = structuredClone(load());
   if (patch.toolPaths) s.toolPaths = { ...s.toolPaths, ...patch.toolPaths };
   if (patch.models) s.models = { ...s.models, ...patch.models };
+  if (patch.agents) s.agents = { ...s.agents, ...patch.agents };
   if (patch.proxy) {
     if (patch.proxy.baseUrl !== undefined) s.proxy.baseUrl = patch.proxy.baseUrl;
     if (patch.proxy.codexBaseUrl !== undefined) s.proxy.codexBaseUrl = patch.proxy.codexBaseUrl;
@@ -116,6 +130,8 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
   if (patch.onboarded !== undefined) s.onboarded = patch.onboarded;
   if (patch.windowGlass !== undefined) s.windowGlass = patch.windowGlass;
+  if (patch.notify !== undefined) s.notify = patch.notify;
+  if (patch.sound !== undefined) s.sound = patch.sound;
   if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
   persist(s);
   return publicSettings();

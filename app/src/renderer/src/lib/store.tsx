@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { CoreEvent, RunFile, RunSummary, ToolInfo, ToolName } from '@psflow/core';
 import type { PublicSettings } from '../../../shared/ipc';
 
-export type View = { name: 'new' } | { name: 'run'; runId: string } | { name: 'history' } | { name: 'settings' };
+export type View = { name: 'new' } | { name: 'run'; runId: string } | { name: 'settings' };
 
 interface State {
   view: View;
@@ -21,7 +21,8 @@ type Action =
   | { t: 'settings'; settings: PublicSettings }
   | { t: 'tools'; tools: Record<ToolName, ToolInfo> | null; loading: boolean }
   | { t: 'runs'; runs: RunSummary[] }
-  | { t: 'run'; run: RunFile };
+  | { t: 'run'; run: RunFile }
+  | { t: 'deleted'; runId: string };
 
 function summarize(r: RunFile, runJsonPath = ''): RunSummary {
   return {
@@ -38,6 +39,12 @@ function reducer(s: State, a: Action): State {
       return { ...s, settings: a.settings };
     case 'tools':
       return { ...s, tools: a.tools ?? s.tools, toolsLoading: a.loading };
+    case 'deleted': {
+      const details = { ...s.details };
+      delete details[a.runId];
+      const view: View = s.view.name === 'run' && s.view.runId === a.runId ? { name: 'new' } : s.view;
+      return { ...s, view, details, runs: s.runs.filter((r) => r.id !== a.runId), lastRunId: s.lastRunId === a.runId ? null : s.lastRunId };
+    }
     case 'runs':
       return { ...s, runs: a.runs, lastRunId: s.lastRunId ?? a.runs[0]?.id ?? null };
     case 'run': {
@@ -107,6 +114,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const off = window.psflow.onEvent((e) => {
       if (e.type === 'run.updated') dispatch({ t: 'run', run: e.run });
+      if (e.type === 'run.deleted') dispatch({ t: 'deleted', runId: e.runId });
       for (const fn of listeners) fn(e);
     });
     void (async () => {

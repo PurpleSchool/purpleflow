@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
+  Globe, Trash2,
   ArrowRight, ChevronDown, CircleAlert, FileText, Image as ImageIcon, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageAttempt, StageId } from '@psflow/core';
@@ -12,13 +14,14 @@ import { MODE_ICON } from '../components/ModeIcon';
 import { activeClock, ms } from '../lib/clock';
 import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
+import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/DiffReview';
 import { Button, Empty, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
-import { cost, duration, shortPath, tokens, usageTotal, when } from '../lib/format';
+import { duration, shortPath, tokens, usageTotal, when } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 
-type View = 'timeline' | 'log';
+type View = 'timeline' | 'log' | 'browser';
 
 /** Заголовок попытки в файле лога (orchestrator STAGE_TITLES). */
 const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализация', finish: 'Завершение' };
@@ -51,6 +54,19 @@ export function RunScreen({ runId }: { runId: string }) {
   const [descOpen, setDescOpen] = useState(false);
   /** Идёт обратная анимация: детали гаснут, гант разворачивается — потом панель размонтируется. */
   const [closing, setClosing] = useState(false);
+  const preview = usePreview(runId);
+  const agentScreen = useAgentScreen(runId);
+  /** Команды проекта: у прогонов до вкладки «Браузер» команда запуска не сохранена в run.json. */
+  const [projectRun, setProjectRun] = useState(false);
+  const projectPath = run?.projectPath;
+  useEffect(() => {
+    if (!projectPath) return;
+    let alive = true;
+    void window.psflow.core.getProjectConfig(projectPath).then((c) => alive && setProjectRun(Boolean(c?.runCommand && c.appUrl))).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [projectPath]);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const close = () => {
     if (!drawer || closing) return;
@@ -164,6 +180,11 @@ export function RunScreen({ runId }: { runId: string }) {
         setComment('');
         setLineComments([]);
       }
+      // Решение на гейте принято — детали (план, дифф) сворачиваются, снова виден весь таймлайн.
+      if (['approve', 'reject', 'cancel', 'accept'].includes(name)) {
+        setView('timeline');
+        close();
+      }
     } catch (e) {
       setError(cleanErr(e));
     } finally {
@@ -171,6 +192,13 @@ export function RunScreen({ runId }: { runId: string }) {
     }
   };
   const dispatch = window.psflow.core.dispatch;
+  const agentLive = Boolean(agentScreen.frame) || (run.status === 'running' && run.next === 'visual');
+  const canRunApp = projectRun || Boolean(run.runCommand && run.appUrl) || preview.state.status !== 'idle';
+  const openApp = () => {
+    setView('browser');
+    setDrawer(null);
+    if (preview.state.status === 'idle' || preview.state.status === 'failed') void preview.start();
+  };
 
   const live = run.status === 'running' || run.status === 'waiting';
   const resumable = run.status === 'stopped';
@@ -194,7 +222,9 @@ export function RunScreen({ runId }: { runId: string }) {
       onApprove={() => act('approve', () => dispatch({ type: 'gate.approve', runId, comment }))}
       onReject={() => act('reject', () => dispatch({ type: 'gate.reject', runId, comment, lineComments }))}
       onCancel={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}
+      onAccept={gate === 'limit' ? () => act('accept', () => dispatch({ type: 'gate.accept', runId })) : undefined}
       onOpenAccept={() => open(gate === 'gate1' ? 'gate1' : 'gate2')}
+      onOpenApp={gate === 'gate2' && canRunApp && view !== 'browser' ? openApp : undefined}
       diffShown={gate === 'gate1' ? showPlan : showDiff}
     />
   );
@@ -228,7 +258,8 @@ export function RunScreen({ runId }: { runId: string }) {
           </div>
         </div>
         <div className="run-actions">
-          <Button tone="quiet" icon={<FolderOpen size={16} />} title="Открыть worktree" onClick={() => void window.psflow.openPath(run.worktreePath)} />
+          <Button tone="quiet" icon={<FolderOpen size={16} />} title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'} onClick={() => void window.psflow.openPath(run.worktreePath)} />
+          <DeleteRun run={run} runId={runId} />
           {resumable && !gate && (
             <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
               Продолжить
@@ -242,6 +273,7 @@ export function RunScreen({ runId }: { runId: string }) {
         </div>
       </header>
 
+      <div className="run-body">
       <Metrics run={run} />
 
       <section className="run-main">
@@ -249,10 +281,15 @@ export function RunScreen({ runId }: { runId: string }) {
           <PillTabs<View>
             className="tabs"
             value={view}
-            onChange={(v) => { setView(v); if (v === 'log') { setDrawer(null); setClosing(false); } }}
+            onChange={(v) => { setView(v); if (v !== 'timeline') { setDrawer(null); setClosing(false); } }}
             items={[
               { id: 'timeline', label: 'Таймлайн' },
               { id: 'log', label: 'Лог' },
+              {
+                id: 'browser',
+                label: 'Браузер',
+                extra: agentScreen.frame ? <span className="tab-dot is-live" title="Агент работает в браузере" /> : preview.state.status === 'ready' ? <span className="tab-dot is-ok" /> : preview.state.status === 'starting' ? <span className="tab-live" /> : undefined,
+              },
             ]}
           />
           <span className="grow" />
@@ -265,6 +302,12 @@ export function RunScreen({ runId }: { runId: string }) {
 
         <div className="tab-body">
           <div className={`pane ${view === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
+          {/* Браузер не размонтируем при переключении вкладок — страница и её состояние сохраняются. */}
+          {/* Пока идёт визуальная проверка — экран браузера агента; потом — своё приложение для ручной проверки. */}
+          {view === 'browser' && agentLive && <div className="pane pane-browser"><AgentScreen screen={agentScreen} /></div>}
+          {(view === 'browser' || preview.state.status === 'ready') && (
+            <div className={`pane pane-browser ${view === 'browser' && !agentLive ? '' : 'is-hidden'}`}><BrowserPane preview={preview} canRun={canRunApp} /></div>
+          )}
           {view === 'timeline' && (
             <div className={`split ${drawer && !closing ? 'is-open' : ''} ${showDiff && !closing ? 'is-wide' : ''}`}>
               <div className="split-left scroll">
@@ -279,7 +322,7 @@ export function RunScreen({ runId }: { runId: string }) {
                       <span className={`drawer-icon st-${nodeState(run, drawer)}`}>{STAGE_ICON[drawer]}</span>
                       <div className="drawer-title">
                         <strong>{stageDef.title}</strong>
-                        <span>{stageDef.actor}{stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
+                        <span>{drawer === 'visual' ? 'claude' : stageDef.role ? run.agents?.[stageDef.role] ?? stageDef.actor : stageDef.actor}{drawer === 'visual' ? (attempt?.model && attempt.model !== 'claude' ? ` · ${attempt.model}` : '') : stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
                       </div>
                       {tries.length > 1 && (
                         <PillTabs<string>
@@ -301,7 +344,7 @@ export function RunScreen({ runId }: { runId: string }) {
                       {slice && attempt && <AgentOutput key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} attempt={attempt} />}
                       {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
                       {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
-                      {drawer === 'visual' && <VisualView run={run} runId={runId} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
+                      {drawer === 'visual' && <VisualView key={`visual-${attempt?.attempt ?? 0}`} run={run} runId={runId} attempt={attempt} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
                       {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
                       {showDiff && (
                         diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
@@ -322,6 +365,51 @@ export function RunScreen({ runId }: { runId: string }) {
         {gateBar}
         {!gate && error && <div className="gatebar"><span className="actionbar-error">{error}</span></div>}
       </section>
+      </div>
+    </div>
+  );
+}
+
+/** Удаление прогона с подтверждением: worktree и данные приложения, ветка — по выбору. */
+function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
+  const [open, setOpen] = useState(false);
+  const [withBranch, setWithBranch] = useState(Boolean(run.merged) || run.status === 'cancelled');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await window.psflow.core.dispatch({ type: 'run.delete', runId, deleteBranch: withBranch });
+    } catch (e) {
+      setError(cleanErr(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="delete-run">
+      <Button tone="quiet" icon={<Trash2 size={16} />} title="Удалить прогон" onClick={() => setOpen(!open)} />
+      {open && (
+        <>
+          <div className="pop-backdrop" onClick={() => !busy && setOpen(false)} />
+          <div className="pop delete-pop" role="dialog" aria-label="Удалить прогон">
+            <strong>Удалить прогон?</strong>
+            <p>
+              {run.status === 'running' ? 'Прогон ещё идёт — он будет остановлен. ' : run.status === 'waiting' ? 'Прогон ждёт вашего решения — он будет закрыт без него. ' : ''}
+              {run.workspace === 'branch' ? 'Удалятся лог, скриншоты и запись в истории. Файлы проекта не трогаем.' : 'Удалятся рабочая копия прогона (worktree), лог, скриншоты и запись в истории. Ваш проект не изменится.'}
+            </p>
+            <label className="check">
+              <input type="checkbox" checked={withBranch} onChange={(e) => setWithBranch(e.target.checked)} />
+              <span>Удалить и ветку <code>{run.branch}</code>{run.merged ? ' (уже влита)' : run.commit ? ' — в ней коммит с результатом' : ''}</span>
+            </label>
+            {error && <p className="pop-error">{error}</p>}
+            <div className="pop-actions">
+              <Button tone="quiet" disabled={busy} onClick={() => setOpen(false)}>Отмена</Button>
+              <Button tone="danger" icon={<Trash2 size={14} />} busy={busy} onClick={() => void remove()}>Удалить</Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -424,11 +512,7 @@ function Attachments({ runId, count }: { runId: string; count: number }) {
           <button key={i} className="imgdrop-thumb" onClick={() => setBig(u)} title="Открыть"><img src={u} alt={`Изображение ${i + 1}`} /></button>
         ))}
       </div>
-      {big && (
-        <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label="Изображение">
-          <img src={big} alt="" />
-        </div>
-      )}
+      {big && <Lightbox src={big} onClose={() => setBig(null)} />}
     </>
   );
 }
@@ -439,7 +523,6 @@ function Metrics({ run }: { run: RunFile }) {
   const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
   const humanMs = run.attempts.filter((a) => isGate(a.stage)).reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : now) - Date.parse(a.startedAt)), 0);
   const total = usageTotal(run.totals);
-  const c = cost(run.totals);
   return (
     <dl className="metrics-row">
       <div className="stat" title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}>
@@ -449,7 +532,6 @@ function Metrics({ run }: { run: RunFile }) {
       <div className="stat"><dt>Ждали вас</dt><dd><Num animate={false} text={ms(humanMs)} /></dd></div>
       <div className="stat"><dt>Запусков стадий</dt><dd><Num text={String(runs)} /></dd></div>
       <div className="stat" title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
-      <div className="stat"><dt>Стоимость</dt><dd><Num text={c ?? '—'} /></dd></div>
       <div className="stat"><dt>Попытки реализации</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
     </dl>
   );
@@ -488,34 +570,76 @@ function ReproView({ run, kind }: { run: RunFile; kind: 'bug' | 'baseline' }) {
 }
 
 /** Визуальная проверка: вердикт и галерея скриншотов. */
-function VisualView({ run, runId, idx }: { run: RunFile; runId: string; idx: number }) {
-  const v = run.visuals?.[idx];
+function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: string; idx: number; attempt?: StageAttempt }) {
+  const running = attempt?.status === 'running';
+  // Результат — только у завершённой попытки; у упавшей (сбой агента) или идущей — сразу лог.
+  const v = running || (attempt && attempt.status === 'failed' && !run.visuals?.[idx]) ? undefined : run.visuals?.[idx];
   const [urls, setUrls] = useState<Record<string, string>>({});
-  const [big, setBig] = useState<string | null>(null);
+  const [big, setBig] = useState<number | null>(null);
+  const [tab, setTab] = useState<'result' | 'server' | 'log'>(v ? 'result' : 'log');
   useEffect(() => {
     let alive = true;
     if (!v) return;
     void Promise.all(v.shots.map(async (s) => [s.file, await window.psflow.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
-      if (alive) setUrls(Object.fromEntries(pairs.filter((p): p is [string, string] => Boolean(p[1]))));
+      // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
+      if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
     });
     return () => { alive = false; };
   }, [runId, v]);
-  if (!v) return <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">Приложение запустится после зелёных проверок.</Empty>;
-  const items = [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))];
+  const slice: LogSlice | null = attempt ? { title: 'Визуальная проверка', attempt: attempt.attempt, stage: 'visual', live: running } : null;
+  if (!v && !slice) return <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">Приложение запустится после ревью.</Empty>;
+  const items = v ? [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [];
+  const shown = v ? tab : 'log';
+  const shotUrls = v ? v.shots.map((s) => urls[s.file]).filter(Boolean) : [];
   return (
-    <div className="scroll">
-      <div className="review">
-        <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>
-          <span className="verdict-mark">{v.blocking.length ? v.blocking.length : <CircleCheck size={22} />}</span>
-          <div>
-            <strong>{v.blocking.length ? `Видимых проблем: ${v.blocking.length}` : 'В браузере всё выглядит верно'}</strong>
-            <p>{v.url} · скриншотов: {v.shots.length} · заметок: {v.notes.length}</p>
-          </div>
+    <div className="agent-out">
+      {v && (
+        <div className="agent-out-tabs">
+          <PillTabs<'result' | 'server' | 'log'>
+            className="tabs small"
+            value={shown}
+            onChange={setTab}
+            items={[
+              { id: 'result', label: 'Результат' },
+              ...(v.serverOutput ? [{ id: 'server' as const, label: 'Вывод сервера' }] : []),
+              { id: 'log', label: 'Лог' },
+            ]}
+          />
         </div>
+      )}
+      {shown === 'log' && slice ? (
+        <div className="pane-log"><LiveLog runId={runId} slice={slice} /></div>
+      ) : shown === 'server' && v?.serverOutput ? (
+        <div className="agent-result scroll tab-enter"><ServerOutput command={v.command} output={v.serverOutput} /></div>
+      ) : v ? (
+    <div className="agent-result scroll tab-enter">
+      <div className="review">
+        {v.unverified ? (
+          <div className="verdict is-warn">
+            <span className="verdict-mark">!</span>
+            <div>
+              <strong>Проверить не удалось</strong>
+              <p>{v.unverified}</p>
+              <p className="muted">Это не ошибка реализации — задача не вернулась исполнителю. Проверьте сами во вкладке «Браузер»; тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.</p>
+            </div>
+          </div>
+        ) : null}
+        {v.unverified && v.serverOutput && /error|Missing script|EADDRINUSE|ECONNREFUSED/i.test(v.serverOutput) && (
+          <button className="link server-link" onClick={() => setTab('server')}>В выводе сервера есть ошибки — открыть</button>
+        )}
+        {!v.unverified && (
+          <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>
+            <span className="verdict-mark">{v.blocking.length ? v.blocking.length : <CircleCheck size={22} />}</span>
+            <div>
+              <strong>{v.blocking.length ? `Видимых проблем: ${v.blocking.length}` : 'В браузере всё выглядит верно'}</strong>
+              <p>{v.url} · скриншотов: {v.shots.length} · заметок: {v.notes.length}</p>
+            </div>
+          </div>
+        )}
         <div className="shots">
           {v.shots.map((s) => (
             <figure key={s.file} className="shot">
-              <button onClick={() => urls[s.file] && setBig(urls[s.file])}>{urls[s.file] ? <img src={urls[s.file]} alt={s.caption} /> : <span className="spinner" />}</button>
+              <button onClick={() => urls[s.file] && setBig(shotUrls.indexOf(urls[s.file]))}>{urls[s.file] ? <img src={urls[s.file]} alt={s.caption} /> : urls[s.file] === '' ? <span className="muted shot-gone">Скриншот удалён</span> : <span className="spinner" />}</button>
               <figcaption>{s.caption}</figcaption>
             </figure>
           ))}
@@ -531,8 +655,36 @@ function VisualView({ run, runId, idx }: { run: RunFile; runId: string; idx: num
           </ul>
         )}
       </div>
-      {big && <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label="Скриншот"><img src={big} alt="" /></div>}
     </div>
+      ) : null}
+      {big !== null && shotUrls[big] && <Lightbox src={shotUrls[big]} caption={v?.shots.find((s) => urls[s.file] === shotUrls[big])?.caption} onClose={() => setBig(null)} onPrev={big > 0 ? () => setBig(big - 1) : undefined} onNext={big < shotUrls.length - 1 ? () => setBig(big + 1) : undefined} />}
+    </div>
+  );
+}
+
+/** Просмотр изображения на всё окно (через портал — не зависит от прокрутки и анимаций панели). ←/→ — соседние, Esc — закрыть. */
+function Lightbox({ src, caption, onClose, onPrev, onNext }: { src: string; caption?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') onPrev?.();
+      else if (e.key === 'ArrowRight') onNext?.();
+      else return;
+      // Esc и стрелки не должны дойти до экрана прогона (там они закрывают детали и листают стадии).
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose, onPrev, onNext]);
+  return createPortal(
+    <div className="lightbox" onClick={onClose} role="dialog" aria-label="Изображение">
+      <img src={src} alt={caption ?? ''} onClick={(e) => e.stopPropagation()} />
+      {caption && <p className="lightbox-caption">{caption}</p>}
+      {onPrev && <button className="lightbox-nav is-prev" onClick={(e) => { e.stopPropagation(); onPrev(); }} aria-label="Предыдущий">‹</button>}
+      {onNext && <button className="lightbox-nav is-next" onClick={(e) => { e.stopPropagation(); onNext(); }} aria-label="Следующий">›</button>}
+    </div>,
+    document.body,
   );
 }
 
@@ -595,16 +747,40 @@ function TestsView({ run, idx }: { run: RunFile; idx: number }) {
         {!checks.length && <p className="muted">{t.output}</p>}
         {checks.map((c, i) => (
           <section key={i} className="check-block">
-            <div className={`tests-head ${c.passed ? 'is-ok' : 'is-bad'}`}>
-              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.passed ? 'ok' : 'красные'}</strong>
+            <div className={`tests-head ${c.passed ? 'is-ok' : c.preexisting ? 'is-old' : 'is-bad'}`}>
+              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.passed ? 'ok' : c.preexisting ? 'красные и до задачи' : 'красные'}</strong>
               <span className="mono">{c.command}</span>
               <span className="muted">код {c.exitCode ?? '—'} · {(c.durationMs / 1000).toFixed(1)} с{c.timedOut ? ' · таймаут' : ''}</span>
             </div>
+            {c.preexisting && (
+              <p className="check-old">
+                Проверка была красной ещё до правок агента, новых ошибок не появилось ({c.preexisting.before ?? '?'} → {c.preexisting.after ?? '?'}). Не блокирует — старые ошибки лучше чинить отдельной задачей.
+              </p>
+            )}
             <pre className="output">{stripAnsi(c.output) || 'нет вывода'}</pre>
           </section>
         ))}
       </div>
     </div>
+  );
+}
+
+/** Вывод команды запуска: строки с ошибками подсвечены, частые причины — подсказкой. */
+function ServerOutput({ command, output }: { command?: string; output: string }) {
+  const lines = stripAnsi(output).split(/\r?\n/).filter((l) => l.trim()).slice(-30);
+  const bad = (l: string) => /error|ERR!|Missing script|not found|EADDRINUSE|ECONNREFUSED|Cannot find|failed/i.test(l);
+  const missing = output.match(/Missing script: "([^"]+)"/);
+  const inUse = /EADDRINUSE|address already in use|Another next dev server/i.test(output);
+  return (
+    <section className="server-out">
+      <header>
+        <strong>Вывод команды запуска</strong>
+        {command && <code>{command}</code>}
+      </header>
+      {missing && <p className="server-hint">В одном из package.json нет скрипта «{missing[1]}» — исправьте «Запуск приложения» в командах проекта (например, у NestJS это обычно <code>start:dev</code>).</p>}
+      {inUse && <p className="server-hint">Порт или каталог уже заняты другим запущенным сервером — остановите его или смените порт в команде запуска.</p>}
+      <pre className="output">{lines.map((l, i) => <span key={i} className={bad(l) ? 'is-err' : undefined}>{l}{'\n'}</span>)}</pre>
+    </section>
   );
 }
 
@@ -639,6 +815,8 @@ function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
 function GateBar(props: {
   gate: StageId; comment: string; setComment: (s: string) => void; lineCount: number; busy: string | null; error: string | null;
   onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; diffShown: boolean;
+  onOpenApp?: () => void;
+  onAccept?: () => void;
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
   const [open, setOpen] = useState(false);
@@ -667,11 +845,13 @@ function GateBar(props: {
       )}
       <div className="gate-actions">
         {error && <span className="actionbar-error">{error}</span>}
+        {props.onOpenApp && <Button tone="quiet" icon={<Globe size={14} />} onClick={props.onOpenApp}>Проверить в браузере</Button>}
         {!props.diffShown && gate !== 'limit' && <Button tone="quiet" onClick={props.onOpenAccept}>{gate === 'gate1' ? 'Открыть план' : 'Открыть дифф'}</Button>}
         {gate === 'gate1' && <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Отменить задачу</Button>}
         {gate === 'limit' ? (
           <>
             <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Остановить</Button>
+            {props.onAccept && <Button tone="ghost" icon={<ClipboardCheck size={14} />} busy={busy === 'accept'} onClick={props.onAccept} title="Посмотреть дифф и решить самому — без новых попыток">К приёмке как есть</Button>}
             <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>Ещё попытка</Button>
           </>
         ) : (

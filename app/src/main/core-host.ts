@@ -1,7 +1,7 @@
 // Ядро оркестратора в отдельном utilityProcess: окно не подвисает ни от агентов, ни от git.
 import path from 'node:path';
 import {
-  Git, Orchestrator, detectProjectCommands, killAll, loadLoginShellEnv, which, type CoreSettings,
+  Git, Orchestrator, checkCommand, detectProjectCommands, findEnvFiles, killAll, loadLoginShellEnv, which, type CoreSettings,
 } from '@psflow/core';
 import type { CoreApi, HostMessage, HostRequest } from '../shared/ipc';
 
@@ -29,11 +29,17 @@ function api(c: Orchestrator): CoreApi {
     getProjectConfig: async (dir) => c.getProjectConfig(dir),
     suggestMode: (task) => c.suggestMode(task),
     getVisualShot: async (id, file) => c.getVisualShot(id, file),
+    checkCommands: async (dir, cmds) => Object.fromEntries(Object.entries(cmds).map(([k, v]) => [k, v.trim() ? checkCommand(dir, v) : []])),
+    getStorage: () => c.getStorage(),
+    cleanStorage: (id) => c.cleanStorage(id),
+    startPreview: (id) => c.startPreview(id),
+    stopPreview: (id) => c.stopPreview(id),
+    getPreview: async (id) => c.getPreview(id),
     saveProjectConfig: async (dir, cfg) => c.saveProjectConfig(dir, cfg),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
       const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);
-      return { ...detectProjectCommands(dir), isRepo, name: path.basename(dir) };
+      return { ...detectProjectCommands(dir), envFiles: findEnvFiles(dir), isRepo, name: path.basename(dir) };
     },
   };
 }

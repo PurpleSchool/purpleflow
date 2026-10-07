@@ -34,6 +34,8 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
       '-c', 'model_providers.psflow.wire_api=responses',
     );
   }
+  // Исполнителю и планировщику на codex нужна сеть (зависимости, openspec) — в песочнице workspace-write она выключена по умолчанию.
+  if (o.sandbox === 'workspace-write') args.push('-c', 'sandbox_workspace_write.network_access=true');
   if (o.model) args.push('-m', o.model);
   if (extra.schemaFile) args.push('--output-schema', extra.schemaFile);
   // --image=… по одному: иначе многозначный -i проглотит завершающий «-» (промпт из stdin).

@@ -59,6 +59,24 @@ function toolResultText(content: unknown): string {
   return '';
 }
 
+/** Последние осмысленные строки вывода: сообщения об ошибках из событий, без длинных base64 и JSON. */
+function readableTail(stdout: string): string {
+  const lines = stdout.split('\n').slice(-40);
+  const out: string[] = [];
+  for (const l of lines) {
+    try {
+      const ev = JSON.parse(l) as { type?: string; error?: unknown; message?: unknown; result?: unknown };
+      const msg = ev.error ?? (ev.type === 'error' ? ev.message : undefined) ?? (ev.type === 'result' ? ev.result : undefined);
+      if (typeof msg === 'string') out.push(msg);
+      else if (msg) out.push(JSON.stringify(msg).slice(0, 300));
+    } catch {
+      const t = l.trim();
+      if (t && !/^[A-Za-z0-9+/=]{80,}$/.test(t) && t.length < 600) out.push(t);
+    }
+  }
+  return out.slice(-5).join('\n');
+}
+
 export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   let usage = emptyUsage();
   let finalText = '';
@@ -118,9 +136,13 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   if (r.timedOut) return { ok: false, text: finalText, usage, error: `claude: превышен таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
   if (r.spawnError) return { ok: false, text: '', usage, error: `claude не запустился: ${r.spawnError}` };
   if (resultError || r.code !== 0 || !gotResult) {
-    const raw = [resultError, r.stderr, gotResult ? '' : r.stdout.slice(-2000)].filter(Boolean).join('\n');
+    // Хвост stdout — это JSON-события; в них бывают картинки в base64 (ответ Read на скриншот), они не должны вытеснять причину.
+    const tail = gotResult ? '' : readableTail(r.stdout);
+    const raw = [resultError, r.stderr.trim(), tail].filter(Boolean).join('\n');
+    if (r.stderr.trim()) out(c.coral(clip(r.stderr, 2000)) + '\n');
     const auth = o.proxy?.baseUrl ? 'proxy' : (o.claudeAuth ?? 'login');
-    return { ok: false, text: finalText, usage, error: explainError('claude', raw || `код выхода ${r.code}`, auth) };
+    const why = raw ? explainError('claude', raw, auth) : `claude: завершился без ответа (код выхода ${r.code ?? '—'}${r.signal ? `, сигнал ${r.signal}` : ''})`;
+    return { ok: false, text: finalText, usage, error: why };
   }
   return { ok: true, text: finalText, usage };
 }

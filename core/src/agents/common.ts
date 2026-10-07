@@ -89,6 +89,7 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
   if (/enotfound|econnrefused|etimedout|network|fetch failed|connection error|getaddrinfo/.test(t)) {
     return `${agent}: нет соединения с прокси PurpleSchool. Проверьте сеть.`;
   }
-  const line = raw.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400);
+  // Длинные строки без пробелов — base64 картинок и прочий бинарный мусор, причину они не объясняют.
+  const line = raw.trim().split('\n').filter((l) => l.trim() && !/^[A-Za-z0-9+/=]{80,}$/.test(l.trim())).slice(-3).join(' ').slice(0, 400);
   return `${agent}: ${line || 'завершился с ошибкой без сообщения'}`;
 }

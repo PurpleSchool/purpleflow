@@ -64,9 +64,9 @@ const OVERRIDE: Partial<Record<Mode, Partial<Record<StageId, Partial<StageDef>>>
 export function stagesFor(mode: Mode = 'task', visual = false): StageDef[] {
   const v: StageId[] = visual ? ['visual'] : [];
   const ids: StageId[] =
-    mode === 'quick' ? ['implement', 'tests', ...v, 'review', 'gate2', 'finish']
-    : mode === 'refactor' ? ['baseline', 'plan', 'gate1', 'implement', 'tests', ...v, 'review', 'gate2', 'finish']
-    : ['plan', 'gate1', 'implement', 'tests', ...v, 'review', 'gate2', 'finish'];
+    mode === 'quick' ? ['implement', 'tests', 'review', ...v, 'gate2', 'finish']
+    : mode === 'refactor' ? ['baseline', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish']
+    : ['plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
   return ids.map((id) => ({ ...BASE[id], ...OVERRIDE[mode]?.[id] }));
 }
 
@@ -95,7 +95,9 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   if (run.status === 'finished') return 'done';
   const cur = order(run, run.next);
   const me = order(run, stage);
-  if (stage === run.next) {
+  // «Попытки исчерпаны» рисуется в строке приёмки — там и показываем, что ждём человека.
+  const nextRow = run.next === 'limit' ? 'gate2' : run.next;
+  if (stage === nextRow) {
     if (run.status === 'waiting') return 'waiting';
     if (run.status === 'running') return 'active';
     if (a?.status === 'failed') return 'failed';
