@@ -1,5 +1,5 @@
 import type {
-  ConnectionCheck, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AiCommands, ConnectionCheck, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -46,6 +46,9 @@ export interface CoreApi {
   isDriving(id: string): Promise<boolean>;
   listBranches(id: string): Promise<{ branches: string[]; current: string | null }>;
   getAttachment(id: string, index: number): Promise<string | null>;
+  detectCommandsAI(dir: string): Promise<AiCommands>;
+  getProjectConfig(dir: string): Promise<ProjectConfig | null>;
+  saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
 }
 
 export type CoreMethod = keyof CoreApi;

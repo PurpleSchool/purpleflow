@@ -1047,3 +1047,63 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .imgdrop-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: rgba(10, 11, 13, 0.82); color: var(--text-1); opacity: 0; transition: opacity 0.2s var(--ease); }
 .imgdrop-thumb:hover .imgdrop-del, .imgdrop-del:focus-visible { opacity: 1; }
 .imgdrop-error { flex-basis: 100%; margin: 0; padding: 0 var(--s-2); color: var(--err); font-size: var(--fs-12); }
+
+/* ——— Новая задача: шаги, команды, адаптивность ——— */
+.topbar .stepper { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: 4px; list-style: none; border-radius: var(--r-pill); background: var(--bg-3); }
+.stepper li + li::before { content: ''; display: inline-block; width: 18px; height: 1px; background: var(--line-3); vertical-align: middle; margin-right: var(--s-2); }
+.stepper li { display: flex; align-items: center; }
+.stepper button { display: inline-flex; align-items: center; gap: var(--s-2); height: 34px; padding: 0 var(--s-4) 0 6px; border-radius: var(--r-pill); color: var(--text-3); font-size: var(--fs-13); font-weight: 500; transition: background 0.3s var(--ease), color 0.3s var(--ease); }
+.stepper button span { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 11px/1 var(--font-code); background: var(--bg-5); color: var(--text-2); }
+.stepper .is-on button { background: var(--bg-5); color: var(--text-1); }
+.stepper .is-on button span { background: var(--accent); color: #fff; }
+.stepper .is-done button span { background: var(--ok); color: #0b1a13; }
+.stepper button:disabled { opacity: 0.45; }
+.step-enter { animation: stepIn 0.45s var(--ease) both; }
+@keyframes stepIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+
+.commands .cmd-list { display: flex; flex-direction: column; gap: 6px; }
+.cmd-row { display: grid; grid-template-columns: 40px minmax(140px, 200px) minmax(0, 1fr); gap: var(--s-4); align-items: start; padding: var(--s-4); border-radius: var(--r-l); background: var(--bg-2); transition: opacity 0.3s var(--ease); }
+.cmd-row.is-loading { opacity: 0.5; }
+.cmd-row.is-loading .input { background: linear-gradient(90deg, var(--bg-1), var(--bg-4), var(--bg-1)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.cmd-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--bg-5); color: var(--text-2); }
+.cmd-label { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+.cmd-label strong { font-weight: 500; }
+.cmd-label span { font-size: var(--fs-12); color: var(--text-3); }
+.cmd-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cmd-note { font-size: var(--fs-12); color: var(--text-3); line-height: 1.5; animation: tabIn 0.35s var(--ease) both; }
+.cmd-foot { margin: 0; font-size: var(--fs-12); color: var(--text-4); }
+.check-block { display: flex; flex-direction: column; gap: var(--s-2); }
+.check-block + .check-block { margin-top: var(--s-4); }
+
+/* Адаптивность: контент по центру с разумной шириной, на узком окне — одна колонка */
+.newtask { max-width: 1440px; margin: 0 auto; width: 100%; grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 380px); }
+.screen > .topbar { max-width: calc(1440px + var(--page-x) * 2); margin: 0 auto; width: 100%; }
+.screen > .actionbar { max-width: calc(1440px + var(--page-x) * 2); margin: 0 auto; width: 100%; }
+.task-input { min-height: clamp(160px, 28vh, 320px); }
+@media (max-width: 1100px) {
+  .newtask { grid-template-columns: minmax(0, 1fr); }
+  .newtask-aside { order: 2; }
+  .newtask-aside .route { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 var(--s-6); }
+  .newtask-aside .route::before { display: none; }
+}
+@media (max-width: 760px) {
+  :root { --page-x: 20px; }
+  .topbar { flex-wrap: wrap; }
+  .cmd-row { grid-template-columns: 40px minmax(0, 1fr); }
+  .cmd-field { grid-column: 1 / -1; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Вкладки страницы слева под заголовком */
+.page-tabs { flex: none; max-width: calc(1440px + var(--page-x) * 2); width: 100%; margin: calc(var(--s-4) * -1) auto var(--s-6); padding: 0 var(--page-x); }
+.page-tabs .tabs { margin: 0; }
+.tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--wait); }
+.cmd-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-3) var(--s-5); border-radius: var(--r-l); background: var(--bg-3); text-align: left; font-size: var(--fs-12); transition: background 0.25s var(--ease); }
+.cmd-summary:hover { background: var(--bg-4); }
+.cmd-summary code { font-size: 11.5px; }
+.cmd-unsaved { color: var(--wait); }
+.cmd-edit { color: var(--text-1); font-weight: 500; }
+.cmd-actions { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+.cmd-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-size: var(--fs-13); }
+.newtask { max-width: calc(1440px + var(--page-x) * 2); }

@@ -13,7 +13,7 @@ import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
 import { Prompts } from './prompts.js';
 import { RunStore } from './store.js';
 import type {
-  ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AiCommands, CheckResult, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -35,7 +35,7 @@ export const STAGE_TITLES: Record<StageId, string> = {
   plan: 'План',
   gate1: 'Утверждение плана',
   implement: 'Реализация',
-  tests: 'Тесты',
+  tests: 'Проверки',
   review: 'Ревью',
   gate2: 'Приёмка',
   limit: 'Нужно решение',
@@ -259,6 +259,7 @@ export class Orchestrator {
       baseCommit: base,
       testCommand: input.testCommand.trim(),
       setupCommand: input.setupCommand?.trim() || undefined,
+      lintCommand: input.lintCommand?.trim() || undefined,
       prepared: !input.setupCommand?.trim(),
       models: { ...s.models },
       status: 'running',
@@ -494,30 +495,51 @@ export class Orchestrator {
   private async stageTests(run: RunFile) {
     const s = this.opts.getSettings();
     const attempt = this.begin(run, 'tests');
-    let result: TestResult;
-    if (!run.testCommand) {
-      result = { at: new Date().toISOString(), command: '', passed: true, exitCode: 0, durationMs: 0, output: 'Команда тестов не задана — стадия пропущена.' };
-      this.log(run, c.amber(result.output) + '\n');
-    } else {
-      this.log(run, c.sky(`$ ${run.testCommand}`) + '\n');
-      const r = await this.shell(run, run.testCommand, s.testTimeoutMin);
+    const plan: { kind: CheckResult['kind']; command: string }[] = [];
+    if (run.lintCommand) plan.push({ kind: 'lint', command: run.lintCommand });
+    if (run.testCommand) plan.push({ kind: 'test', command: run.testCommand });
+    const name = { lint: 'линтер', test: 'тесты' };
+
+    const checks: CheckResult[] = [];
+    for (const p of plan) {
+      this.log(run, c.sky(`$ ${p.command}`) + c.dim(`  # ${name[p.kind]}`) + '\n');
+      const r = await this.shell(run, p.command, s.testTimeoutMin);
       this.checkStop(run);
       const output = (r.stdout + (r.stderr ? '\n' + r.stderr : '')).trim();
-      result = {
-        at: new Date().toISOString(),
-        command: run.testCommand,
-        passed: r.code === 0 && !r.timedOut,
+      const check: CheckResult = {
+        kind: p.kind,
+        command: p.command,
+        passed: r.code === 0 && !r.timedOut && !r.spawnError,
         exitCode: r.code,
         durationMs: r.durationMs,
-        output: output.length > MAX_TEST_OUTPUT ? '…\n' + output.slice(-MAX_TEST_OUTPUT) : output,
+        output: r.spawnError ? `Не удалось запустить: ${r.spawnError}` : output.length > MAX_TEST_OUTPUT ? '…\n' + output.slice(-MAX_TEST_OUTPUT) : output,
         timedOut: r.timedOut || undefined,
       };
-      if (r.spawnError) result.output = `Не удалось запустить: ${r.spawnError}`;
+      checks.push(check);
+      this.log(run, (check.passed ? c.mint(`✓ ${name[p.kind]}: ok`) : c.coral(`✗ ${name[p.kind]}: код ${check.exitCode}${check.timedOut ? ', таймаут' : ''}`)) + '\n');
     }
+
+    const failed = checks.filter((x) => !x.passed);
+    const result: TestResult = checks.length
+      ? {
+          at: new Date().toISOString(),
+          command: checks.map((x) => x.command).join(' && '),
+          passed: failed.length === 0,
+          exitCode: failed[0]?.exitCode ?? 0,
+          durationMs: checks.reduce((n, x) => n + x.durationMs, 0),
+          output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n'),
+          timedOut: checks.some((x) => x.timedOut) || undefined,
+          checks,
+        }
+      : { at: new Date().toISOString(), command: '', passed: true, exitCode: 0, durationMs: 0, output: 'Команды линтера и тестов не заданы — проверки пропущены.', checks: [] };
+    if (!checks.length) this.log(run, c.amber(result.output) + '\n');
+
     run.tests.push(result);
     this.emit({ type: 'tests.result', runId: run.id, result });
-    this.log(run, (result.passed ? c.mint('✓ тесты зелёные') : c.coral(`✗ тесты красные (код ${result.exitCode}${result.timedOut ? ', таймаут' : ''})`)) + '\n');
-    this.end(run, attempt, result.passed ? 'done' : 'failed', result.passed ? 'Зелёные' : `Красные, код ${result.exitCode}`);
+    const summary = !checks.length ? 'Пропущены'
+      : failed.length ? `Красные: ${failed.map((x) => name[x.kind]).join(' и ')}`
+      : checks.map((x) => name[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
+    this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
 
     if (result.passed) {
       run.next = 'review';
@@ -526,9 +548,63 @@ export class Orchestrator {
     }
     run.feedback = {
       source: 'tests',
-      text: `Тесты не прошли. Команда: \`${run.testCommand}\`, код выхода ${result.exitCode}${result.timedOut ? ' (таймаут)' : ''}.\n\nВывод:\n\`\`\`\n${result.output}\n\`\`\``,
+      text: failed.map((x) => `${x.kind === 'lint' ? 'Линтер' : 'Тесты'} не прошли. Команда: \`${x.command}\`, код выхода ${x.exitCode}${x.timedOut ? ' (таймаут)' : ''}.\n\nВывод:\n\`\`\`\n${x.output}\n\`\`\``).join('\n\n'),
     };
-    this.nextImplementOrLimit(run, `Тесты красные после ${run.implAttemptsUsed} попыток реализации.`);
+    this.nextImplementOrLimit(run, `Проверки красные после ${run.implAttemptsUsed} попыток реализации.`);
+  }
+
+  /** Сохранённые команды проекта (null — ещё не настраивали). */
+  getProjectConfig(repo: string): ProjectConfig | null {
+    return this.store.readProjects()[path.resolve(repo)] ?? null;
+  }
+
+  saveProjectConfig(repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>): ProjectConfig {
+    const full: ProjectConfig = {
+      setupCommand: cfg.setupCommand.trim(),
+      lintCommand: cfg.lintCommand.trim(),
+      testCommand: cfg.testCommand.trim(),
+      notes: cfg.notes,
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.writeProject(path.resolve(repo), full);
+    return full;
+  }
+
+  /**
+   * Нейросеть осматривает проект (только чтение: Read/Glob/Grep) и предлагает команды
+   * подготовки, линтера и тестов. Работает в папке проекта, ничего не меняя.
+   */
+  async detectCommandsAI(dir: string): Promise<AiCommands> {
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude']);
+    const res = await runClaude({
+      bin: tools.claude,
+      cwd: dir,
+      env: this.opts.env,
+      prompt: this.prompts.raw('detect-commands.md'),
+      model: s.models.executor || undefined,
+      timeoutMs: 3 * 60_000,
+      group: `detect-${Date.now()}`,
+      onOutput: () => {},
+      proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      claudeAuth: s.claudeAuth,
+      tools: ['Read', 'Glob', 'Grep'],
+    });
+    if (!res.ok) throw new Error(res.error ?? 'Не удалось определить команды');
+    const a = res.text.indexOf('{');
+    const b = res.text.lastIndexOf('}');
+    try {
+      const j = JSON.parse(res.text.slice(a, b + 1));
+      const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+      return {
+        setupCommand: str(j.setup),
+        lintCommand: str(j.lint),
+        testCommand: str(j.test),
+        notes: { setup: str(j.notes?.setup), lint: str(j.notes?.lint), test: str(j.notes?.test) },
+      };
+    } catch {
+      throw new Error(`Нейросеть ответила не в формате JSON: ${res.text.slice(0, 300)}`);
+    }
   }
 
   private async stageReview(run: RunFile) {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RunFile, RunSummary } from './types.js';
+import type { ProjectConfig, RunFile, RunSummary } from './types.js';
 
 interface IndexEntry {
   id: string;
@@ -111,6 +111,25 @@ export class RunStore {
   writePids(group: string, pids: number[]): void {
     if (pids.length) writeAtomic(this.pidFile(group), JSON.stringify(pids));
     else fs.rmSync(this.pidFile(group), { force: true });
+  }
+
+  private projectsFile(): string {
+    return path.join(this.dataDir, 'projects.json');
+  }
+
+  /** Настройки проектов по абсолютному пути корня репозитория. */
+  readProjects(): Record<string, ProjectConfig> {
+    try {
+      return JSON.parse(fs.readFileSync(this.projectsFile(), 'utf8')) as Record<string, ProjectConfig>;
+    } catch {
+      return {};
+    }
+  }
+
+  writeProject(repo: string, cfg: ProjectConfig): void {
+    const all = this.readProjects();
+    all[repo] = cfg;
+    writeAtomic(this.projectsFile(), JSON.stringify(all, null, 2));
   }
 
   logFile(id: string): string {

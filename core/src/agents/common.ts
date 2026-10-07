@@ -16,6 +16,8 @@ export interface AgentRunOptions {
   addDirs?: string[];
   /** Изображения, прикреплённые к промпту (codex -i). */
   images?: string[];
+  /** Ограничить набор инструментов агента (например, только чтение). */
+  tools?: string[];
 }
 
 export interface AgentResult {

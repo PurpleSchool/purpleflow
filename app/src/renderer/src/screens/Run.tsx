@@ -515,16 +515,22 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
 
 function TestsView({ run, idx }: { run: RunFile; idx: number }) {
   const t = run.tests[idx];
-  if (!t) return <Empty icon={<Sparkles />} title="Тесты ещё не запускались" />;
+  if (!t) return <Empty icon={<Sparkles />} title="Проверки ещё не запускались" />;
+  const checks = t.checks?.length ? t.checks : t.command ? [{ kind: 'test' as const, command: t.command, passed: t.passed, exitCode: t.exitCode, durationMs: t.durationMs, output: t.output, timedOut: t.timedOut }] : [];
   return (
     <div className="scroll">
       <div className="tests">
-        <div className={`tests-head ${t.passed ? 'is-ok' : 'is-bad'}`}>
-          <strong>{t.passed ? 'Зелёные' : 'Красные'}</strong>
-          <span className="mono">{t.command || 'команда не задана'}</span>
-          <span className="muted">код {t.exitCode ?? '—'} · {(t.durationMs / 1000).toFixed(1)} с{t.timedOut ? ' · таймаут' : ''}</span>
-        </div>
-        <pre className="output">{stripAnsi(t.output)}</pre>
+        {!checks.length && <p className="muted">{t.output}</p>}
+        {checks.map((c, i) => (
+          <section key={i} className="check-block">
+            <div className={`tests-head ${c.passed ? 'is-ok' : 'is-bad'}`}>
+              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.passed ? 'ok' : 'красные'}</strong>
+              <span className="mono">{c.command}</span>
+              <span className="muted">код {c.exitCode ?? '—'} · {(c.durationMs / 1000).toFixed(1)} с{c.timedOut ? ' · таймаут' : ''}</span>
+            </div>
+            <pre className="output">{stripAnsi(c.output) || 'нет вывода'}</pre>
+          </section>
+        ))}
       </div>
     </div>
   );

@@ -90,9 +90,10 @@ function createWindow() {
   const isMac = process.platform === 'darwin';
   material = materialFor(publicSettings().windowGlass);
   win = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 1080,
+    // PSFLOW_WIN=ШxВ — размер окна для скриншотов адаптивной вёрстки.
+    width: Number(process.env.PSFLOW_WIN?.split('x')[0]) || 1440,
+    height: Number(process.env.PSFLOW_WIN?.split('x')[1]) || 920,
+    minWidth: process.env.PSFLOW_WIN ? 600 : 900,
     minHeight: 680,
     show: false,
     backgroundColor: material === 'none' ? OPAQUE_BG : '#00000000',

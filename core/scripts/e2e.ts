@@ -86,7 +86,7 @@ if (resumeRun) {
 } else {
   const image = arg('image');
   const attachments = image ? [{ name: path.basename(image), data: new Uint8Array(fs.readFileSync(image)) }] : undefined;
-  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', attachments } }));
+  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', lintCommand: arg('lint'), attachments } }));
 }
 console.log(t(), 'run', runId);
 if (stopAfter) {

@@ -63,7 +63,19 @@ export interface StageAttempt {
   model?: string;
 }
 
+export interface CheckResult {
+  kind: 'lint' | 'test';
+  command: string;
+  passed: boolean;
+  exitCode: number | null;
+  durationMs: number;
+  output: string;
+  timedOut?: boolean;
+}
+
 export interface TestResult {
+  /** Отдельные проверки стадии: линтер и тесты. Верхние поля — сводка по ним. */
+  checks?: CheckResult[];
   at: string;
   command: string;
   passed: boolean;
@@ -119,6 +131,7 @@ export interface RunFile {
   baseCommit: string;
   testCommand: string;
   setupCommand?: string;
+  lintCommand?: string;
   /** Команда подготовки (установка зависимостей) уже выполнена в worktree. */
   prepared?: boolean;
   models: Record<Role, string>;
@@ -186,6 +199,7 @@ export interface StartRunInput {
   task: string;
   testCommand: string;
   setupCommand?: string;
+  lintCommand?: string;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
 }
@@ -219,5 +233,23 @@ export interface ConnectionCheck {
 export interface ProjectCommands {
   testCommand: string;
   setupCommand: string;
+  lintCommand: string;
   detectedFrom: string | null;
+}
+
+/** Команды проекта, сохранённые один раз и подставляемые в каждую задачу. */
+export interface ProjectConfig {
+  setupCommand: string;
+  lintCommand: string;
+  testCommand: string;
+  notes: { setup: string; lint: string; test: string };
+  updatedAt: string;
+}
+
+/** Команды, которые нашла нейросеть, с пояснением, откуда они взяты. */
+export interface AiCommands {
+  setupCommand: string;
+  lintCommand: string;
+  testCommand: string;
+  notes: { setup: string; lint: string; test: string };
 }

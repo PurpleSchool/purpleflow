@@ -5,7 +5,7 @@ import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type Agent
  * claude -p (stdin) --output-format stream-json --verbose.
  * Флаги сверены с claude 2.1.x, см. README.
  */
-export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs'>): string[] {
+export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools'>): string[] {
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -19,6 +19,7 @@ export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | '
   if (o.model) args.push('--model', o.model);
   if (o.systemPrompt) args.push('--append-system-prompt', o.systemPrompt);
   for (const d of o.addDirs ?? []) args.push('--add-dir', d);
+  if (o.tools) args.push('--tools', o.tools.join(','));
   return args;
 }
 

@@ -14,7 +14,7 @@ export const STAGES: StageDef[] = [
   { id: 'plan', title: 'План', actor: 'claude', role: 'planner', hint: 'Изменение OpenSpec: proposal, tasks, дельты спецификаций' },
   { id: 'gate1', title: 'Утверждение плана', actor: 'человек', gate: true, hint: 'Принять, вернуть с комментарием или отменить' },
   { id: 'implement', title: 'Реализация', actor: 'claude', role: 'executor', hint: 'Выполняет tasks.md в отдельной worktree' },
-  { id: 'tests', title: 'Тесты', actor: 'оркестратор', hint: 'Команда тестов проекта' },
+  { id: 'tests', title: 'Проверки', actor: 'оркестратор', hint: 'Линтер и тесты проекта' },
   { id: 'review', title: 'Ревью', actor: 'codex', role: 'reviewer', hint: 'Другая модель сверяет дифф с планом' },
   { id: 'gate2', title: 'Приёмка', actor: 'человек', gate: true, hint: 'Дифф, замечания ревью и ваши замечания' },
   { id: 'finish', title: 'Архив и коммит', actor: 'оркестратор', hint: 'openspec archive и коммит в ветку psflow/…' },

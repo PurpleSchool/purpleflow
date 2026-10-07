@@ -17,15 +17,18 @@ export function detectProjectCommands(dir: string): ProjectCommands {
     const hasDeps = Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length > 0;
     const install = pm === 'npm' ? (has('package-lock.json') ? 'npm ci' : 'npm install') : `${pm} install`;
     const test = pkg.scripts?.test ? (pm === 'npm' ? 'npm test' : `${pm} test`) : '';
-    return { testCommand: test, setupCommand: hasDeps ? install : '', detectedFrom: 'package.json' };
+    const lintScript = ['lint', 'eslint', 'check'].find((k) => pkg.scripts?.[k]);
+    const lint = lintScript ? (pm === 'npm' ? `npm run ${lintScript}` : `${pm} run ${lintScript}`) : '';
+    return { testCommand: test, setupCommand: hasDeps ? install : '', lintCommand: lint, detectedFrom: 'package.json' };
   }
-  if (has('go.mod')) return { testCommand: 'go test ./...', setupCommand: '', detectedFrom: 'go.mod' };
+  if (has('go.mod')) return { testCommand: 'go test ./...', setupCommand: '', lintCommand: 'go vet ./...', detectedFrom: 'go.mod' };
   if (has('pyproject.toml')) {
     const text = fs.readFileSync(path.join(dir, 'pyproject.toml'), 'utf8');
-    if (text.includes('[tool.poetry')) return { testCommand: 'poetry run pytest', setupCommand: 'poetry install', detectedFrom: 'pyproject.toml' };
-    if (has('uv.lock')) return { testCommand: 'uv run pytest', setupCommand: 'uv sync', detectedFrom: 'pyproject.toml' };
-    return { testCommand: 'python -m pytest', setupCommand: '', detectedFrom: 'pyproject.toml' };
+    const lintCommand = text.includes('[tool.ruff') ? 'ruff check .' : '';
+    if (text.includes('[tool.poetry')) return { testCommand: 'poetry run pytest', setupCommand: 'poetry install', lintCommand: lintCommand && `poetry run ${lintCommand}`, detectedFrom: 'pyproject.toml' };
+    if (has('uv.lock')) return { testCommand: 'uv run pytest', setupCommand: 'uv sync', lintCommand: lintCommand && `uv run ${lintCommand}`, detectedFrom: 'pyproject.toml' };
+    return { testCommand: 'python -m pytest', setupCommand: '', lintCommand, detectedFrom: 'pyproject.toml' };
   }
-  if (has('Cargo.toml')) return { testCommand: 'cargo test', setupCommand: '', detectedFrom: 'Cargo.toml' };
-  return { testCommand: '', setupCommand: '', detectedFrom: null };
+  if (has('Cargo.toml')) return { testCommand: 'cargo test', setupCommand: '', lintCommand: 'cargo clippy -- -D warnings', detectedFrom: 'Cargo.toml' };
+  return { testCommand: '', setupCommand: '', lintCommand: '', detectedFrom: null };
 }
