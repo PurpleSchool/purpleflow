@@ -35,6 +35,7 @@ function api(c: Orchestrator): CoreApi {
     refreshProfile: (dir) => c.refreshProfile(dir),
     prReady: (id) => c.prReady(id),
     getPrStatus: (id) => c.getPrStatus(id),
+    getPrDetails: (id) => c.getPrDetails(id),
     getStorage: () => c.getStorage(),
     cleanStorage: (id) => c.cleanStorage(id),
     startPreview: (id) => c.startPreview(id),

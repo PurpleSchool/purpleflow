@@ -144,6 +144,8 @@ export interface LineComment {
   file: string;
   line: number;
   text: string;
+  /** Начало текста, к которому оставлено замечание (для плана — пункт или абзац). */
+  quote?: string;
 }
 
 export interface GateDecision {
@@ -236,6 +238,10 @@ export interface RunFile {
   pr?: { url: string; number: number; base: string; createdAt: string };
   /** Ветка psflow/<id> влита человеком из приложения. */
   merged?: { into: string; commit: string; at: string };
+  /** Доработка по замечаниям PR: номер текущего круга (первый — исходная реализация) и коммит, от которого считается дифф круга. */
+  prRound?: number;
+  roundBase?: string;
+  prRounds?: { round: number; at: string; items: PrFollowupItem[]; note?: string; commit?: string }[];
 }
 
 export interface RunSummary {
@@ -311,6 +317,7 @@ export type CoreCommand =
   | { type: 'run.pr'; runId: string; base: string }
   /** Влить открытый PR (gh pr merge --merge). */
   | { type: 'run.prMerge'; runId: string }
+  | { type: 'run.prFollowup'; runId: string; items: PrFollowupItem[]; note?: string }
   /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку psflow/<id>. */
   | { type: 'run.delete'; runId: string; deleteBranch: boolean };
 
@@ -463,7 +470,46 @@ export interface PrStatus {
   blocked: boolean;
   review: string | null;
   checks: { total: number; passed: number; failed: number; pending: number };
+  /** Упавшие проверки CI: название и ссылка (для GitHub Actions — на job с логом). */
+  failedChecks?: { name: string; url: string | null }[];
   mergeCommit: string | null;
+}
+
+/** Замечание в PR: обсуждение в коде, итог ревью, общий комментарий или упавшая проверка CI. */
+export interface PrComment {
+  id: string;
+  kind: 'thread' | 'review' | 'comment' | 'check';
+  author: string;
+  body: string;
+  at: string;
+  url?: string;
+  path?: string;
+  line?: number;
+  /** Обсуждение в коде закрыто как решённое или устарело после новых коммитов. */
+  resolved?: boolean;
+  outdated?: boolean;
+  /** Ответы в обсуждении (первое сообщение — body). */
+  replies?: { author: string; body: string; at: string }[];
+  /** Состояние ревью: APPROVED, CHANGES_REQUESTED, COMMENTED. */
+  state?: string;
+}
+
+export interface PrDetails {
+  title: string;
+  status: PrStatus;
+  comments: PrComment[];
+  fetchedAt: string;
+}
+
+/** Что отработать в круге доработки по PR. */
+export interface PrFollowupItem {
+  id: string;
+  kind: PrComment['kind'];
+  author: string;
+  body: string;
+  path?: string;
+  line?: number;
+  url?: string;
 }
 
 export interface ClarifyQuestion {

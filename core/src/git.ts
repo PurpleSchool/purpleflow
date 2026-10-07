@@ -52,6 +52,33 @@ export class Git {
     await this.git(repo, ['worktree', 'add', '-b', branch, worktreePath, base], 120_000);
   }
 
+  /** Worktree на уже существующей ветке (рабочая копия прогона удалена, а ветка осталась). */
+  async addWorktreeAt(repo: string, worktreePath: string, branch: string): Promise<void> {
+    fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+    await this.git(repo, ['worktree', 'prune']).catch(() => undefined);
+    await this.git(repo, ['worktree', 'add', worktreePath, branch], 120_000);
+  }
+
+  async checkout(dir: string, branch: string): Promise<void> {
+    await this.git(dir, ['checkout', branch]);
+  }
+
+  /** Подтянуть чужие коммиты в ветку PR (предложения ревьюера, правки на GitHub) — только перемоткой. */
+  async pullFastForward(dir: string, branch: string): Promise<'updated' | 'same' | 'diverged' | 'no-remote'> {
+    const before = await this.head(dir);
+    try {
+      await this.git(dir, ['fetch', 'origin', branch], 120_000);
+    } catch {
+      return 'no-remote';
+    }
+    try {
+      await this.git(dir, ['merge', '--ff-only', 'FETCH_HEAD']);
+    } catch {
+      return 'diverged';
+    }
+    return (await this.head(dir)) === before ? 'same' : 'updated';
+  }
+
   /** Текущая ветка рабочей копии (null — detached HEAD). */
   async currentBranch(dir: string): Promise<string | null> {
     const r = await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: dir, env: this.env });

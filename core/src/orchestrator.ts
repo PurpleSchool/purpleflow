@@ -7,7 +7,7 @@ import { runClaude } from './agents/claude.js';
 import { runCodex } from './agents/codex.js';
 import { addUsage, c, crlf, emptyUsage, type AgentResult } from './agents/common.js';
 import { detectTools, prependPath, which } from './env.js';
-import { createPr, mergePr, prReadiness, prStatus, pushBranch } from './github.js';
+import { createPr, failedJobLog, mergePr, prComments, prReadiness, prStatus, pushBranch } from './github.js';
 import { Git } from './git.js';
 import { makeChangeId, makeTitle } from './ids.js';
 import { OpenSpec } from './openspec.js';
@@ -20,7 +20,7 @@ import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js'
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
-  AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, PrFollowupItem, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -129,6 +129,9 @@ export class Orchestrator {
       case 'run.prMerge':
         await this.mergePrOf(cmd.runId);
         return { runId: cmd.runId };
+      case 'run.prFollowup':
+        await this.prFollowup(cmd.runId, cmd.items, cmd.note);
+        return { runId: cmd.runId };
       case 'run.delete':
         await this.deleteRun(cmd.runId, cmd.deleteBranch);
         return { runId: cmd.runId };
@@ -185,7 +188,7 @@ export class Orchestrator {
     const skip = (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p);
     // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
     if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
-    return git.diff(r.worktreePath, r.baseCommit, skip);
+    return git.diff(r.worktreePath, this.diffBase(r), skip);
   }
 
   /**
@@ -358,6 +361,89 @@ export class Orchestrator {
       this.save(r);
     }
     return st;
+  }
+
+  /** PR с замечаниями — по запросу со вкладки «Pull Request» (без фонового опроса). */
+  async getPrDetails(id: string): Promise<PrDetails | null> {
+    const r = this.mustLoad(id);
+    const gh = this.ghBin();
+    if (!r.pr || !gh) return null;
+    const [status, c] = await Promise.all([this.getPrStatus(id), prComments(gh, r.projectPath, this.opts.env, r.pr.url)]);
+    if (!status) return null;
+    const checks = (status.failedChecks ?? []).map((x, i) => ({
+      id: `check:${x.name}:${i}`, kind: 'check' as const, author: 'CI', body: x.name, at: new Date().toISOString(), url: x.url ?? undefined,
+    }));
+    return { title: c.title, status, comments: [...checks, ...c.comments], fetchedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Доработка по замечаниям PR — новый круг в том же прогоне: реализация → проверки → ревью → приёмка → коммит и push в ветку PR.
+   * Запускается только человеком.
+   */
+  private async prFollowup(id: string, items: PrFollowupItem[], note?: string) {
+    const r = this.mustLoad(id);
+    if (!r.pr) throw new Error('У прогона нет PR');
+    if (r.status !== 'finished') throw new Error('Доработку можно начать, когда прогон завершён');
+    if (r.merged) throw new Error('PR уже влит — для новых правок создайте новую задачу');
+    if (!items.length && !note?.trim()) throw new Error('Выберите замечания или опишите, что доработать');
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+
+    // Рабочая копия: worktree могли удалить при очистке, в режиме «ветка» проект мог уйти на другую ветку.
+    if (r.workspace === 'branch') {
+      const cur = await git.currentBranch(r.projectPath);
+      if (cur !== r.branch) {
+        const dirty = await git.dirtyFiles(r.projectPath);
+        if (dirty.length) throw new Error(`В проекте есть незакоммиченные изменения (${dirty.length}) — закоммитьте или уберите их, чтобы переключиться на ${r.branch}`);
+        await git.checkout(r.projectPath, r.branch);
+      }
+    } else if (r.worktreeRemoved || !fs.existsSync(r.worktreePath)) {
+      await git.addWorktreeAt(r.projectPath, r.worktreePath, r.branch);
+      r.worktreeRemoved = undefined;
+      this.copyEnvFiles(r);
+    }
+    const pulled = await git.pullFastForward(r.worktreePath, r.branch);
+    if (pulled === 'diverged') throw new Error(`Ветка ${r.branch} на GitHub разошлась с локальной — подтяните изменения вручную (git pull) и повторите`);
+
+    // Логи упавших проверок CI — исполнителю, чтобы не гадать, что сломалось.
+    const gh = this.ghBin();
+    const lines: string[] = [];
+    for (const it of items) {
+      if (it.kind === 'check') {
+        const log = gh && it.url ? await failedJobLog(gh, r.projectPath, this.opts.env, it.url).catch(() => null) : null;
+        lines.push(`- Упала проверка CI «${it.body}»${it.url ? ` (${it.url})` : ''}${log ? `. Хвост лога:\n\`\`\`\n${log}\n\`\`\`` : ''}`);
+      } else {
+        const where = it.path ? `${it.path}${it.line ? `:${it.line}` : ''}` : it.kind === 'review' ? 'итог ревью' : 'комментарий к PR';
+        lines.push(`- ${where} — @${it.author}: ${it.body.trim()}`);
+      }
+    }
+    const round = (r.prRound ?? 1) + 1;
+    r.prRound = round;
+    r.roundBase = await git.head(r.worktreePath);
+    r.prRounds = [...(r.prRounds ?? []), { round, at: new Date().toISOString(), items, note: note?.trim() || undefined }];
+    r.feedback = {
+      source: 'human',
+      text: [
+        `Задача уже сделана и отправлена в Pull Request #${r.pr.number}${r.archivedPath ? ' (изменение OpenSpec в архиве — tasks.md не трогай)' : ''}. Ревьюеры оставили замечания — отработай только их, остальное не переделывай.`,
+        'Если замечание — вопрос или с ним нельзя согласиться, не меняй код, а объясни это в отчёте.',
+        lines.length ? `Замечания:\n${lines.join('\n')}` : '',
+        note?.trim() ? `Комментарий человека:\n${note.trim()}` : '',
+      ].filter(Boolean).join('\n\n'),
+    };
+    r.status = 'running';
+    r.next = 'implement';
+    r.finishedAt = undefined;
+    r.message = undefined;
+    r.implAttemptsLimit = r.implAttemptsUsed + 3;
+    this.log(r, '\n' + c.violet(c.bold(`━━ Доработка по PR #${r.pr.number} · круг ${round}`)) + '\n' + c.dim(`замечаний: ${items.length}${pulled === 'updated' ? ' · подтянуты новые коммиты из ветки PR' : ''}`) + '\n');
+    this.save(r);
+    this.emit({ type: 'run.updated', run: r });
+    void this.drive(r);
+  }
+
+  /** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
+  private diffBase(run: RunFile): string {
+    return run.prRound && run.roundBase ? run.roundBase : run.baseCommit;
   }
 
   private async mergePrOf(id: string) {
@@ -1011,12 +1097,15 @@ export class Orchestrator {
 
   /** После прогона: уроки из правок человека, ревью, визуальной проверки и сбоев проверок. В фоне, не задерживает коммит. */
   private async learn(run: RunFile) {
-    const human = run.gates.filter((g) => (g.decision === 'reject' || g.decision === 'fix') && (g.comment || g.lineComments?.length))
+    // Круг по PR: уроки только из его замечаний — прошлые круги уже разобраны.
+    const since = run.prRound ? run.prRounds?.at(-1)?.at ?? '' : '';
+    const prItems = run.prRound ? (run.prRounds?.at(-1)?.items ?? []).filter((i) => i.kind !== 'check').map((i) => `- ревьюер PR @${i.author}: ${i.path ? `${i.path} — ` : ''}${i.body.slice(0, 400)}`) : [];
+    const human = run.gates.filter((g) => g.at >= since && (g.decision === 'reject' || g.decision === 'fix') && (g.comment || g.lineComments?.length))
       .map((g) => `- человек (${g.gate === 'gate1' ? 'план' : 'приёмка'}): ${g.comment ?? ''}${g.lineComments?.length ? ' ' + g.lineComments.map((l) => `[${l.file}:${l.line}] ${l.text}`).join('; ') : ''}`);
-    const review = run.reviews.flatMap((r) => [...r.blocking, ...r.notes]).slice(0, 12).map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
+    const review = run.reviews.filter((r) => r.at >= since).flatMap((r) => [...r.blocking, ...r.notes]).slice(0, 12).map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
     const visual = (run.visuals ?? []).flatMap((v) => [...(v.unverified ? [`- визуальная проверка не смогла проверить: ${v.unverified}`] : []), ...v.blocking.map((b) => `- визуальная проверка: ${b.message}`)]);
     const failed = run.tests.filter((t) => !t.passed).slice(0, 3).map((t) => `- проверки упали: ${(t.checks ?? []).filter((x) => !x.passed && !x.preexisting).map((x) => x.command).join(', ')}`);
-    const digest = [...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
+    const digest = [...prItems, ...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
     if (!digest.trim()) return;
     const known = this.knowledgeOf(run.projectPath).lessons ?? [];
     const s = this.opts.getSettings();
@@ -1368,7 +1457,7 @@ export class Orchestrator {
   private async reviewOrAccept(run: RunFile): Promise<StageId> {
     if (modeOf(run) !== 'quick') return 'review';
     const tools = await this.tools(['git']);
-    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
+    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
     const lines = diff.split('\n').filter((l) => /^[+-][^+-]/.test(l)).length;
     if (lines <= QUICK_REVIEW_LINES) {
       this.log(run, c.dim(`Дифф ${lines} строк — ревью пропущено (быстрая правка).`) + '\n');
@@ -1571,7 +1660,7 @@ export class Orchestrator {
       cast = live?.cast ?? null;
       const docs = await this.getChangeDocs(run.id);
       const tg = await this.tools(['git']);
-      const changed = await new Git(tg.git, this.opts.env).changedFiles(run.worktreePath, run.baseCommit);
+      const changed = await new Git(tg.git, this.opts.env).changedFiles(run.worktreePath, this.diffBase(run));
       const prompt = this.prompts.render('visual.md', {
         url,
         dir,
@@ -1694,7 +1783,7 @@ export class Orchestrator {
     const tools = await this.tools(['git']);
     const attempt = this.begin(run, 'review', run.models.reviewer);
     const git = new Git(tools.git, this.opts.env);
-    let diff = await git.diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
+    let diff = await git.diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
     if (diff.length > MAX_DIFF) diff = diff.slice(0, MAX_DIFF) + '\n… (дифф обрезан, остальное смотри через git diff)';
     const docs = await this.getChangeDocs(run.id);
     const lastTest = run.tests[run.tests.length - 1];
@@ -1775,7 +1864,11 @@ export class Orchestrator {
         // Скопированные файлы окружения — секреты разработчика, в коммит не попадают даже без .gitignore.
         ...this.envFilesOf(run),
       ];
-      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`, exclude);
+      const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
+      const message = round
+        ? `psflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
+        : `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
+      sha = await git.commitAll(run.worktreePath, message, exclude);
     } catch (e) {
       // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
       run.status = 'running';
@@ -1785,6 +1878,21 @@ export class Orchestrator {
     }
     run.commit = sha;
     this.save(run);
+    // Круг доработки по PR: правки сразу уходят в ветку PR.
+    const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
+    if (round && run.roundBase && sha !== run.roundBase) {
+      this.log(run, c.sky(`$ git push origin ${run.branch}`) + '\n');
+      try {
+        await pushBranch(tools.git, run.worktreePath, run.branch, this.opts.env);
+        round.commit = sha;
+        this.save(run);
+        this.log(run, c.mint(`✓ правки отправлены в PR #${run.pr!.number}`) + '\n');
+      } catch (e) {
+        run.message = `Коммит есть, но push не прошёл: ${(e as Error).message}. Отправьте вручную: git push origin ${run.branch}`;
+        this.save(run);
+        this.log(run, c.amber(`! ${run.message}`) + '\n');
+      }
+    }
     this.log(run, sha === run.baseCommit
       ? c.amber(`! изменений нет — коммит в ${run.branch} не создан`) + '\n'
       : c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
@@ -1912,7 +2020,7 @@ export class Orchestrator {
     if (!f) return '';
     const source = { validator: 'валидатор OpenSpec', tests: 'тесты', review: 'ревьюер', human: 'человек' }[f.source];
     const lines = f.lineComments?.length
-      ? '\nЗамечания на строках:\n' + f.lineComments.map((l) => `- ${l.file}:${l.line} — ${l.text}`).join('\n')
+      ? '\nЗамечания на строках:\n' + f.lineComments.map((l) => `- ${l.file}:${l.line}${l.quote ? ` («${l.quote}»)` : ''} — ${l.text}`).join('\n')
       : '';
     return this.prompts.render('feedback.md', { source, text: f.text, lineComments: lines });
   }

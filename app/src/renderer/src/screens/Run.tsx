@@ -14,14 +14,16 @@ import { MODE_ICON } from '../components/ModeIcon';
 import { activeClock, ms } from '../lib/clock';
 import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
+import { CommentableMarkdown } from '../components/CommentableMarkdown';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/DiffReview';
+import { PrPane, onPrRefreshed } from '../components/PrPane';
 import { Button, Empty, Input, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
 import { duration, shortPath, tokens, usageTotal, when } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 
-type View = 'timeline' | 'log' | 'browser';
+type View = 'timeline' | 'log' | 'browser' | 'pr';
 
 /** Заголовок попытки в файле лога (orchestrator STAGE_TITLES). */
 const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализация', finish: 'Завершение', clarify: 'Уточнение' };
@@ -305,6 +307,7 @@ export function RunScreen({ runId }: { runId: string }) {
                 label: 'Браузер',
                 extra: agentScreen.frame ? <span className="tab-dot is-live" title="Агент работает в браузере" /> : preview.state.status === 'ready' ? <span className="tab-dot is-ok" /> : preview.state.status === 'starting' ? <span className="tab-live" /> : undefined,
               },
+              ...(run.pr ? [{ id: 'pr' as const, label: 'Pull Request', extra: run.prRound && run.status !== 'finished' ? <span className="tab-live" /> : undefined }] : []),
             ]}
           />
           <span className="grow" />
@@ -323,6 +326,7 @@ export function RunScreen({ runId }: { runId: string }) {
           {(view === 'browser' || preview.state.status === 'ready') && (
             <div className={`pane pane-browser ${view === 'browser' && !agentLive ? '' : 'is-hidden'}`}><BrowserPane preview={preview} canRun={canRunApp} /></div>
           )}
+          {view === 'pr' && run.pr && <div className="pane"><PrPane run={run} runId={runId} onStarted={() => setView('timeline')} /></div>}
           {view === 'timeline' && (
             <div className={`split ${drawer && !closing ? 'is-open' : ''} ${showDiff && !closing ? 'is-wide' : ''}`}>
               <div className="split-left scroll">
@@ -355,7 +359,7 @@ export function RunScreen({ runId }: { runId: string }) {
                     </header>
                     <div className="drawer-body">
                       {showPlan && run.mode === 'bug' && run.repro && <ReproView run={run} kind="bug" />}
-                      {showPlan && <PlanView docs={docs} run={run} />}
+                      {showPlan && <PlanView docs={docs} run={run} comments={lineComments} onComments={setLineComments} editable={gate === 'gate1'} />}
                       {slice && attempt && <AgentOutput key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} attempt={attempt} />}
                       {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
                       {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
@@ -548,19 +552,16 @@ function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
     void window.psflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
   }, [runId, run.merged, run.pr]);
 
-  // Открытый PR: статус проверок CI — сразу и раз в 30 секунд, пока окно на экране.
+  // Открытый PR: статус проверок CI — при открытии прогона и после обновления на вкладке «Pull Request», без фонового опроса.
   useEffect(() => {
     if (!run.pr) return;
     let alive = true;
-    const load = () => {
-      if (document.hidden) return;
-      void window.psflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
-    };
+    const load = () => void window.psflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
     load();
-    const t = setInterval(load, 30_000);
+    const off = onPrRefreshed(runId, (st) => alive && setPr(st));
     return () => {
       alive = false;
-      clearInterval(t);
+      off();
     };
   }, [runId, run.pr?.url]);
 
@@ -843,8 +844,13 @@ function Lightbox({ src, caption, onClose, onPrev, onNext }: { src: string; capt
   );
 }
 
-function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
+function PlanView({ docs, run, comments, onComments, editable }: { docs: ChangeDocs | null; run: RunFile; comments: LineComment[]; onComments: (c: LineComment[]) => void; editable: boolean }) {
   const [specOpen, setSpecOpen] = useState<string | null>(null);
+  // Путь от корня рабочей копии — так планировщик сразу найдёт файл.
+  const at = (f: string) => `openspec/changes/${run.changeId}/${f}`;
+  const doc = (f: string, source: string, className?: string) => (
+    <CommentableMarkdown file={at(f)} source={source} comments={comments} onComments={onComments} editable={editable} className={className} />
+  );
   if (!docs) return <div className="center"><span className="spinner big" /></div>;
   if (!docs.proposal && !docs.tasks) {
     return <Empty icon={<Sparkles />} title="План ещё пишется">Планировщик создаёт изменение <code>{run.changeId}</code>. Ход работы — в логе этой попытки ниже, когда она закончится, здесь появятся файлы.</Empty>;
@@ -856,7 +862,7 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
       <div className="plan">
         <article className="doc bezel">
           <header className="doc-head"><span>proposal.md</span><span className="mono muted">{run.changeId}</span></header>
-          <Markdown source={docs.proposal} />
+          {doc('proposal.md', docs.proposal)}
         </article>
         <article className="doc bezel">
           <header className="doc-head">
@@ -868,10 +874,10 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
               </span>
             )}
           </header>
-          <Markdown source={docs.tasks} className="tasks" />
+          {doc('tasks.md', docs.tasks, 'tasks')}
         </article>
         {docs.design && (
-          <article className="doc bezel"><header className="doc-head"><span>design.md</span></header><Markdown source={docs.design} /></article>
+          <article className="doc bezel"><header className="doc-head"><span>design.md</span></header>{doc('design.md', docs.design)}</article>
         )}
         {docs.specs.length > 0 && (
           <article className="doc bezel">
@@ -882,7 +888,7 @@ function PlanView({ docs, run }: { docs: ChangeDocs | null; run: RunFile }) {
                   <span className="mono">{s.path}</span>
                   <span className="muted">{specOpen === s.path ? 'свернуть' : 'показать'}</span>
                 </button>
-                {specOpen === s.path && <Markdown source={s.content} className="spec-md" />}
+                {(specOpen === s.path || comments.some((c) => c.file === at(s.path))) && doc(s.path, s.content, 'spec-md')}
               </div>
             ))}
           </article>
@@ -984,7 +990,7 @@ function GateBar(props: {
       <div className="gate-text">
         <strong>{title}</strong>
         <span>
-          {gate === 'gate1' && (props.diffShown ? 'Проверьте proposal и tasks выше.' : 'Откройте план и проверьте proposal и tasks.')}
+          {gate === 'gate1' && (props.diffShown ? (lineCount ? `Замечаний к плану: ${lineCount}. Они уйдут планировщику при возврате.` : 'Проверьте proposal и tasks. Наведите на пункт и нажмите значок, чтобы оставить замечание.') : 'Откройте план и проверьте proposal и tasks.')}
           {gate === 'gate2' && (props.diffShown ? `Замечаний на строках: ${lineCount}. Они уйдут исполнителю при возврате.` : 'Посмотрите дифф и замечания ревьюера.')}
           {gate === 'limit' && 'Можно дать исполнителю ещё одну попытку с вашим комментарием.'}
         </span>

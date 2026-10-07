@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -65,6 +65,7 @@ export interface CoreApi {
   refreshProfile(dir: string): Promise<ProjectKnowledge>;
   prReady(id: string): Promise<string | null>;
   getPrStatus(id: string): Promise<PrStatus | null>;
+  getPrDetails(id: string): Promise<PrDetails | null>;
   getStorage(): Promise<StorageItem[]>;
   cleanStorage(id: StorageItem['id']): Promise<number>;
   startPreview(id: string): Promise<PreviewState>;
