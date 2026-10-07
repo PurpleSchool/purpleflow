@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Globe, Trash2,
+  Clock3, MessageCircleQuestion, GitPullRequest, Globe, Trash2, Wrench,
   ArrowRight, ChevronDown, CircleAlert, FileText, Image as ImageIcon, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
-import type { DiffFile, LineComment, RunFile, StageAttempt, StageId } from '@psflow/core';
+import type { DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline, useNow } from '../components/Timeline';
@@ -16,7 +16,7 @@ import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Termina
 import { Markdown } from '../components/Markdown';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/DiffReview';
-import { Button, Empty, StatusPill, TextArea } from '../components/ui';
+import { Button, Empty, Input, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
 import { duration, shortPath, tokens, usageTotal, when } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
@@ -24,7 +24,7 @@ import type { ChangeDocs } from '../../../shared/ipc';
 type View = 'timeline' | 'log' | 'browser';
 
 /** Заголовок попытки в файле лога (orchestrator STAGE_TITLES). */
-const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализация', finish: 'Завершение' };
+const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализация', finish: 'Завершение', clarify: 'Уточнение' };
 
 /** Строка ганта, в которой сейчас прогон (или итоговая — для завершённого). */
 function currentStage(run: RunFile): StageId {
@@ -99,7 +99,7 @@ export function RunScreen({ runId }: { runId: string }) {
     gateKey.current = key;
     if (run.status === 'waiting') {
       setView('timeline');
-      setDrawer(run.next === 'limit' ? 'gate2' : run.next);
+      setDrawer(run.next === 'limit' ? 'gate2' : run.next === 'gate0' ? 'clarify' : run.next);
       setAttemptNo(null);
     }
   }, [run]);
@@ -181,7 +181,7 @@ export function RunScreen({ runId }: { runId: string }) {
         setLineComments([]);
       }
       // Решение на гейте принято — детали (план, дифф) сворачиваются, снова виден весь таймлайн.
-      if (['approve', 'reject', 'cancel', 'accept'].includes(name)) {
+      if (['approve', 'reject', 'cancel', 'accept', 'fix', 'skip'].includes(name)) {
         setView('timeline');
         close();
       }
@@ -207,11 +207,25 @@ export function RunScreen({ runId }: { runId: string }) {
   const stageDef = drawer ? runStages(run).find((x) => x.id === drawer) : undefined;
   const testIdx = Math.min(run.tests.length - 1, attemptIdx < 0 ? run.tests.length - 1 : attemptIdx);
   const reviewIdx = Math.min(run.reviews.length - 1, attemptIdx < 0 ? run.reviews.length - 1 : attemptIdx);
-  const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer]
+  const clarifyQuestions = drawer === 'clarify' && run.clarify?.questions.length ? run.clarify : null;
+  const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer] && !clarifyQuestions
     ? { title: LOG_TITLE[drawer]!, attempt: attempt.attempt, stage: drawer, live: attempt.status === 'running' }
     : undefined;
 
-  const gateBar = gate && (
+  const gateBar = gate === 'gate0' ? (
+    <div className="gatebar is-gate">
+      <div className="gate-sign" aria-hidden><MessageCircleQuestion size={17} /></div>
+      <div className="gate-text">
+        <strong>Вопросы перед планом</strong>
+        <span>Ответьте выше — ответы получат все стадии. Можно продолжить и без них: планировщик решит сам.</span>
+      </div>
+      <div className="gate-actions">
+        {error && <span className="actionbar-error">{error}</span>}
+        <Button tone="quiet" busy={busy === 'cancel'} onClick={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}>Отменить задачу</Button>
+        <Button tone="ghost" busy={busy === 'skip'} onClick={() => act('skip', () => dispatch({ type: 'gate.answer', runId, answers: [] }))}>Продолжить без ответов</Button>
+      </div>
+    </div>
+  ) : gate && (
     <GateBar
       gate={gate}
       comment={comment}
@@ -223,6 +237,7 @@ export function RunScreen({ runId }: { runId: string }) {
       onReject={() => act('reject', () => dispatch({ type: 'gate.reject', runId, comment, lineComments }))}
       onCancel={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}
       onAccept={gate === 'limit' ? () => act('accept', () => dispatch({ type: 'gate.accept', runId })) : undefined}
+      onFix={gate === 'gate2' ? () => act('fix', () => dispatch({ type: 'gate.fix', runId, comment, lineComments })) : undefined}
       onOpenAccept={() => open(gate === 'gate1' ? 'gate1' : 'gate2')}
       onOpenApp={gate === 'gate2' && canRunApp && view !== 'browser' ? openApp : undefined}
       diffShown={gate === 'gate1' ? showPlan : showDiff}
@@ -260,14 +275,14 @@ export function RunScreen({ runId }: { runId: string }) {
         <div className="run-actions">
           <Button tone="quiet" icon={<FolderOpen size={16} />} title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'} onClick={() => void window.psflow.openPath(run.worktreePath)} />
           <DeleteRun run={run} runId={runId} />
-          {resumable && !gate && (
+          {(resumable || run.status === 'queued') && !gate && (
             <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
-              Продолжить
+              {run.status === 'queued' || run.workspacePending ? 'Запустить сейчас' : 'Продолжить'}
             </Button>
           )}
-          {live && (
+          {(live || run.status === 'queued') && (
             <Button tone="danger" icon={<CircleStop size={15} />} busy={busy === 'stop'} onClick={() => act('stop', () => dispatch({ type: 'run.stop', runId }))}>
-              Стоп
+              {run.status === 'queued' ? 'Снять с очереди' : 'Стоп'}
             </Button>
           )}
         </div>
@@ -346,12 +361,13 @@ export function RunScreen({ runId }: { runId: string }) {
                       {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
                       {drawer === 'visual' && <VisualView key={`visual-${attempt?.attempt ?? 0}`} run={run} runId={runId} attempt={attempt} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
                       {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
+                      {clarifyQuestions && <ClarifyView run={run} runId={runId} waiting={run.next === 'gate0' && (run.status === 'waiting' || run.status === 'stopped')} onDone={close} />}
                       {showDiff && (
                         diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
                         : !diff ? <div className="center"><span className="spinner big" /></div>
                         : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
                       )}
-                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && (
+                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && !clarifyQuestions && (
                         <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
                       )}
                     </div>
@@ -414,8 +430,79 @@ function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
   );
 }
 
+/** Вопросы планировщика до плана: варианты ответа кнопками или свой текст. */
+function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; runId: string; waiting: boolean; onDone: () => void }) {
+  const qs = run.clarify?.questions ?? [];
+  const given = run.clarify?.answers ?? [];
+  const [answers, setAnswers] = useState<string[]>(() => qs.map((q) => given.find((a) => a.q === q.q)?.a ?? ''));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await window.psflow.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
+      onDone();
+    } catch (e) {
+      setError(cleanErr(e));
+      setBusy(false);
+    }
+  };
+  const filled = answers.filter((a) => a.trim()).length;
+  return (
+    <div className="scroll">
+      <div className="clarify">
+        {!waiting && (
+          <p className="muted">{run.clarify?.skipped ? 'Продолжили без ответов — планировщик решал сам.' : given.length ? `Ответы отправлены: ${given.length} из ${qs.length}.` : 'На вопросы не ответили.'}</p>
+        )}
+        {qs.map((q, i) => (
+          <section key={i} className="clarify-q">
+            <strong><span className="clarify-n">{i + 1}</span>{q.q}</strong>
+            {q.why && <p className="muted">{q.why}</p>}
+            {q.options?.length ? (
+              <div className="clarify-options">
+                {q.options.map((o) => (
+                  <button key={o} className={`clarify-opt ${answers[i] === o ? 'is-on' : ''}`} disabled={!waiting} onClick={() => setAnswers(answers.map((a, j) => (j === i ? (a === o ? '' : o) : a)))}>
+                    <i aria-hidden />
+                    <span>{o}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <Input
+              placeholder={q.options?.length ? 'или свой ответ' : 'Ваш ответ'}
+              value={q.options?.includes(answers[i]) ? '' : answers[i]}
+              disabled={!waiting}
+              onChange={(e) => setAnswers(answers.map((a, j) => (j === i ? e.target.value : a)))}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && filled) void send(); }}
+            />
+          </section>
+        ))}
+        {waiting && (
+          <div className="clarify-actions">
+            {error && <span className="actionbar-error">{error}</span>}
+            <span className="muted">Пустые вопросы планировщик решит сам</span>
+            <Button tone="primary" busy={busy} disabled={!filled} onClick={() => void send()}>Ответить и продолжить</Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Banner({ run, runId }: { run: RunFile; runId: string }) {
   if (run.status === 'finished') return null;
+  if (run.status === 'queued') {
+    return (
+      <div className="banner b-quiet">
+        <Clock3 size={18} />
+        <div>
+          <strong>В очереди</strong>
+          <p>Начнётся сам, когда освободится место — лимит одновременных прогонов задаётся в «Настройки → Модели». «Запустить сейчас» — без очереди.</p>
+        </div>
+      </div>
+    );
+  }
   if (run.status === 'cancelled') return <div className="banner b-quiet"><X size={18} /><div><strong>Прогон отменён</strong></div></div>;
   if (run.status === 'stopped' && run.message) {
     const failed = run.attempts.some((a) => a.status === 'failed' && a.error === run.message);
@@ -447,28 +534,85 @@ function Banner({ run, runId }: { run: RunFile; runId: string }) {
 function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   const [branches, setBranches] = useState<string[]>([]);
   const [target, setTarget] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'merge' | 'pr' | 'prMerge' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [prWhy, setPrWhy] = useState<string | null | undefined>(undefined);
+  const [pr, setPr] = useState<PrStatus | null>(null);
 
   useEffect(() => {
-    if (run.merged) return;
+    if (run.merged || run.pr) return;
     void window.psflow.core.listBranches(runId).then((b) => {
       setBranches(b.branches);
       setTarget((t) => t || b.current || b.branches[0] || '');
     }).catch((e) => setError(cleanErr(e)));
-  }, [runId, run.merged]);
+    void window.psflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
+  }, [runId, run.merged, run.pr]);
 
-  const merge = async () => {
-    setBusy(true);
+  // Открытый PR: статус проверок CI — сразу и раз в 30 секунд, пока окно на экране.
+  useEffect(() => {
+    if (!run.pr) return;
+    let alive = true;
+    const load = () => {
+      if (document.hidden) return;
+      void window.psflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [runId, run.pr?.url]);
+
+  const act = async (kind: 'merge' | 'pr' | 'prMerge') => {
+    setBusy(kind);
     setError(null);
     try {
-      await window.psflow.core.dispatch({ type: 'run.merge', runId, target });
+      if (kind === 'merge') await window.psflow.core.dispatch({ type: 'run.merge', runId, target });
+      else if (kind === 'pr') await window.psflow.core.dispatch({ type: 'run.pr', runId, base: target });
+      else {
+        await window.psflow.core.dispatch({ type: 'run.prMerge', runId });
+        setPr(await window.psflow.core.getPrStatus(runId));
+      }
     } catch (e) {
       setError(cleanErr(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
+
+  if (run.pr) {
+    const c = pr?.checks;
+    const ciState = !pr ? 'loading' : !c?.total ? 'none' : c.failed ? 'failed' : c.pending ? 'pending' : 'ok';
+    const ciText = !pr ? '…' : !c?.total ? 'без проверок CI' : c.failed ? `проверки: ${c.failed} упало` : c.pending ? `проверки идут ${c.passed}/${c.total}` : `проверки ✓ ${c.passed}/${c.total}`;
+    const merged = pr?.state === 'MERGED' || Boolean(run.merged);
+    return (
+      <span className="merge-inline">
+        <a className={`chip pr-chip ci-${ciState}`} href={run.pr.url} target="_blank" rel="noreferrer" title="Открыть PR на GitHub">
+          <GitPullRequest size={12} /> PR #{run.pr.number} → {run.pr.base}
+          {!merged && <span className="pr-ci">· {ciText}</span>}
+        </a>
+        {merged ? (
+          <span className="chip merged"><GitMerge size={12} /> PR влит</span>
+        ) : pr?.state === 'CLOSED' ? (
+          <span className="chip">PR закрыт</span>
+        ) : (
+          <Button
+            tone="approve"
+            className="merge-btn"
+            icon={<GitMerge size={14} />}
+            busy={busy === 'prMerge'}
+            disabled={!pr || pr.conflicts || ciState === 'failed' || ciState === 'pending'}
+            title={pr?.conflicts ? 'Конфликт с базовой веткой — разрешите на GitHub' : ciState === 'failed' ? 'Проверки CI упали' : ciState === 'pending' ? 'Ждём проверки CI' : pr?.blocked ? 'GitHub может потребовать ревью или обязательные проверки' : 'gh pr merge --merge'}
+            onClick={() => void act('prMerge')}
+          >
+            Влить PR
+          </Button>
+        )}
+        {error && <span className="merge-error" title={error}>{error}</span>}
+      </span>
+    );
+  }
 
   if (run.merged) {
     return (
@@ -480,15 +624,26 @@ function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   return (
     <span className="merge-inline">
       <ArrowRight size={14} className="muted" />
-      <label className="select" title="Ветка, в которую влить результат">
+      <label className="select" title="Ветка, в которую влить результат или открыть PR">
         <span>в</span>
-        <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy || !branches.length}>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy !== null || !branches.length}>
           {!branches.length && <option value="">ветки не найдены</option>}
           {branches.map((b) => <option key={b} value={b}>{b}</option>)}
         </select>
         <ChevronDown size={13} />
       </label>
-      <Button tone="approve" className="merge-btn" icon={<GitMerge size={14} />} busy={busy} disabled={!target} onClick={() => void merge()}>
+      <Button
+        tone="ghost"
+        className="merge-btn"
+        icon={<GitPullRequest size={14} />}
+        busy={busy === 'pr'}
+        disabled={!target || prWhy !== null || busy !== null}
+        title={prWhy ?? 'Отправить ветку на GitHub и открыть Pull Request с описанием из прогона'}
+        onClick={() => void act('pr')}
+      >
+        Создать PR
+      </Button>
+      <Button tone="approve" className="merge-btn" icon={<GitMerge size={14} />} busy={busy === 'merge'} disabled={!target || busy !== null} onClick={() => void act('merge')} title="Влить локально, без GitHub">
         Влить
       </Button>
       {error && <span className="merge-error" title={error}>{error}</span>}
@@ -817,6 +972,7 @@ function GateBar(props: {
   onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; diffShown: boolean;
   onOpenApp?: () => void;
   onAccept?: () => void;
+  onFix?: () => void;
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
   const [open, setOpen] = useState(false);
@@ -838,7 +994,7 @@ function GateBar(props: {
           className="gate-comment"
           rows={2}
           autoFocus={open}
-          placeholder={gate === 'limit' ? 'Подсказка исполнителю (необязательно)' : 'Что доработать'}
+          placeholder={gate === 'limit' ? 'Подсказка исполнителю (необязательно)' : gate === 'gate2' ? 'Что поправить — например: «кнопку сделать синей», «добавить пустое состояние»' : 'Что доработать'}
           value={comment}
           onChange={(e) => setComment(e.target.value)}
         />
@@ -857,11 +1013,32 @@ function GateBar(props: {
         ) : (
           <>
             {needsComment && !open && lineCount === 0 ? (
-              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)}>Вернуть с комментарием</Button>
+              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)}>{gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}</Button>
             ) : (
-              <Button tone="ghost" icon={<RotateCcw size={14} />} busy={busy === 'reject'} disabled={!comment.trim() && lineCount === 0} onClick={props.onReject}>
-                Вернуть{lineCount ? ` (+${lineCount})` : ''}
-              </Button>
+              <>
+                {gate === 'gate2' && props.onFix && (
+                  <Button
+                    tone="ghost"
+                    icon={<Wrench size={14} />}
+                    busy={busy === 'fix'}
+                    disabled={!comment.trim() && lineCount === 0}
+                    onClick={props.onFix}
+                    title="Небольшая правка в той же ветке: реализация → проверки → снова приёмка, без ревью и визуальной проверки"
+                  >
+                    Поправить{lineCount ? ` (+${lineCount})` : ''}
+                  </Button>
+                )}
+                <Button
+                  tone="ghost"
+                  icon={<RotateCcw size={14} />}
+                  busy={busy === 'reject'}
+                  disabled={!comment.trim() && lineCount === 0}
+                  onClick={props.onReject}
+                  title={gate === 'gate2' ? 'Полный круг: реализация → проверки → ревью → визуальная проверка' : undefined}
+                >
+                  {gate === 'gate2' ? 'Вернуть на доработку' : `Вернуть${lineCount ? ` (+${lineCount})` : ''}`}
+                </Button>
+              </>
             )}
             <Button tone="approve" icon={<CircleCheck size={15} />} busy={busy === 'approve'} onClick={props.onApprove}>
               {gate === 'gate1' ? 'Принять план' : 'Принять'}

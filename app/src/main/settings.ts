@@ -11,6 +11,7 @@ interface StoredSettings {
   agents: Record<Role, AgentKind>;
   agentTimeoutMin: number;
   testTimeoutMin: number;
+  maxParallel: number;
   onboarded: boolean;
   windowGlass: boolean;
   /** Системные уведомления, когда прогон ждёт решения, готов или упал. */
@@ -26,6 +27,7 @@ const DEFAULTS: StoredSettings = {
   models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '' },
   agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
   agentTimeoutMin: 30,
+  maxParallel: 2,
   testTimeoutMin: 10,
   onboarded: false,
   windowGlass: true,
@@ -87,6 +89,7 @@ export function publicSettings(): PublicSettings {
     agents: s.agents,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
+    maxParallel: s.maxParallel,
     onboarded: s.onboarded,
     windowGlass: s.windowGlass,
     notify: s.notify,
@@ -107,6 +110,7 @@ export function coreSettings(): CoreSettings {
     claudeAuth: s.claudeAuth,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
+    maxParallel: s.maxParallel,
   };
 }
 
@@ -128,6 +132,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   }
   if (patch.agentTimeoutMin !== undefined) s.agentTimeoutMin = patch.agentTimeoutMin;
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
+  if (patch.maxParallel !== undefined) s.maxParallel = patch.maxParallel;
   if (patch.onboarded !== undefined) s.onboarded = patch.onboarded;
   if (patch.windowGlass !== undefined) s.windowGlass = patch.windowGlass;
   if (patch.notify !== undefined) s.notify = patch.notify;

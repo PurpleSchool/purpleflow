@@ -27,6 +27,8 @@ export const MODES: ModeDef[] = [
 
 const BASE: Record<StageId, StageDef> = {
   baseline: { id: 'baseline', title: 'Базовые проверки', actor: 'оркестратор', hint: 'Линтер и тесты зелёные до начала — эталон поведения' },
+  clarify: { id: 'clarify', title: 'Уточнение', actor: 'claude', role: 'planner', hint: 'Вопросы по задаче, если она неоднозначна — иначе сразу к плану' },
+  gate0: { id: 'gate0', title: 'Ответы на вопросы', actor: 'человек', gate: true, hint: '' },
   plan: { id: 'plan', title: 'План', actor: 'claude', role: 'planner', hint: 'Изменение OpenSpec: proposal, tasks, дельты спецификаций' },
   gate1: { id: 'gate1', title: 'Утверждение плана', actor: 'человек', gate: true, hint: 'Принять, вернуть с комментарием или отменить' },
   implement: { id: 'implement', title: 'Реализация', actor: 'claude', role: 'executor', hint: 'Выполняет tasks.md на ветке прогона' },
@@ -65,12 +67,17 @@ export function stagesFor(mode: Mode = 'task', visual = false): StageDef[] {
   const v: StageId[] = visual ? ['visual'] : [];
   const ids: StageId[] =
     mode === 'quick' ? ['implement', 'tests', 'review', ...v, 'gate2', 'finish']
-    : mode === 'refactor' ? ['baseline', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish']
-    : ['plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    : mode === 'refactor' ? ['baseline', 'clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish']
+    : ['clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
   return ids.map((id) => ({ ...BASE[id], ...OVERRIDE[mode]?.[id] }));
 }
 
-export const runStages = (run: Pick<RunFile, 'mode' | 'visual'>) => stagesFor((run.mode ?? 'task') as Mode, Boolean(run.visual));
+/** Стадии прогона. У прогонов до появления «Уточнения» этой строки нет — не показываем пустую. */
+export const runStages = (run: Pick<RunFile, 'mode' | 'visual'> & { attempts?: RunFile['attempts'] }) => {
+  const all = stagesFor((run.mode ?? 'task') as Mode, Boolean(run.visual));
+  const old = run.attempts?.length && !run.attempts.some((a) => a.stage === 'clarify');
+  return old ? all.filter((s) => s.id !== 'clarify') : all;
+};
 
 /** Стадии обычной задачи — для мест, где режим не важен. */
 export const STAGES: StageDef[] = stagesFor('task');
@@ -82,7 +89,7 @@ export type NodeState = 'idle' | 'active' | 'waiting' | 'done' | 'failed' | 'sto
 
 function order(run: RunFile, id: StageId): number {
   const ids = runStages(run).map((s) => s.id);
-  return id === 'limit' ? ids.indexOf('gate2') - 0.5 : ids.indexOf(id);
+  return id === 'limit' ? ids.indexOf('gate2') - 0.5 : id === 'gate0' ? ids.indexOf('clarify') + 0.5 : ids.indexOf(id);
 }
 
 export function lastAttempt(run: RunFile, stage: StageId): StageAttempt | undefined {
@@ -96,7 +103,7 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   const cur = order(run, run.next);
   const me = order(run, stage);
   // «Попытки исчерпаны» рисуется в строке приёмки — там и показываем, что ждём человека.
-  const nextRow = run.next === 'limit' ? 'gate2' : run.next;
+  const nextRow = run.next === 'limit' ? 'gate2' : run.next === 'gate0' ? 'clarify' : run.next;
   if (stage === nextRow) {
     if (run.status === 'waiting') return 'waiting';
     if (run.status === 'running') return 'active';

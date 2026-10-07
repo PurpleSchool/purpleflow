@@ -18,6 +18,10 @@ export interface AgentRunOptions {
   images?: string[];
   /** Ограничить набор инструментов агента (например, только чтение). */
   tools?: string[];
+  /** claude: начать сессию с этим ID (она сохраняется, чтобы продолжить её в следующей попытке). */
+  sessionId?: string;
+  /** claude: продолжить сохранённую сессию. */
+  resume?: string;
 }
 
 export interface AgentResult {

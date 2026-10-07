@@ -30,6 +30,11 @@ function api(c: Orchestrator): CoreApi {
     suggestMode: (task) => c.suggestMode(task),
     getVisualShot: async (id, file) => c.getVisualShot(id, file),
     checkCommands: async (dir, cmds) => Object.fromEntries(Object.entries(cmds).map(([k, v]) => [k, v.trim() ? checkCommand(dir, v) : []])),
+    getKnowledge: async (dir) => c.getKnowledge(dir),
+    saveKnowledge: async (dir, k) => c.saveKnowledge(dir, k),
+    refreshProfile: (dir) => c.refreshProfile(dir),
+    prReady: (id) => c.prReady(id),
+    getPrStatus: (id) => c.getPrStatus(id),
     getStorage: () => c.getStorage(),
     cleanStorage: (id) => c.cleanStorage(id),
     startPreview: (id) => c.startPreview(id),
@@ -60,6 +65,7 @@ port.on('message', async (e: { data: HostRequest }) => {
   }
   if (msg.kind === 'settings') {
     settings = msg.settings as CoreSettings;
+    core?.settingsChanged();
     return;
   }
   if (msg.kind === 'shutdown') {

@@ -25,3 +25,12 @@ test('explainError: base64 картинки не попадает в сообщ�
   const b64 = 'iVBORw0KGgo'.padEnd(400, 'A');
   assert.equal(explainError('claude', `Request too large\n${b64}`), 'claude: Request too large');
 });
+
+test('parseQuestions: JSON с вопросами, не больше 4, пустой — без вопросов', async () => {
+  const { parseQuestions } = await import('./orchestrator.js');
+  const qs = parseQuestions('ок\n{"questions":[{"q":"Где показывать?","options":["Шапка","Сайдбар"],"why":"Меняет компонент"},{"q":"x"}]}');
+  assert.equal(qs.length, 1);
+  assert.deepEqual(qs[0].options, ['Шапка', 'Сайдбар']);
+  assert.deepEqual(parseQuestions('{"questions":[]}'), []);
+  assert.deepEqual(parseQuestions('нет json'), []);
+});

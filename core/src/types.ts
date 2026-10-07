@@ -37,13 +37,15 @@ export interface CoreSettings {
    * (ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL из окружения игнорируются), 'env' — ключ из окружения.
    */
   claudeAuth?: 'login' | 'env';
+  /** Сколько прогонов агенты ведут одновременно (остальные ждут в очереди). По умолчанию 2. */
+  maxParallel?: number;
   /** Таймаут одной стадии агента, минуты. */
   agentTimeoutMin: number;
   /** Таймаут команды тестов, минуты. */
   testTimeoutMin: number;
 }
 
-export type StageId = 'baseline' | 'plan' | 'gate1' | 'implement' | 'tests' | 'visual' | 'review' | 'gate2' | 'limit' | 'finish';
+export type StageId = 'baseline' | 'clarify' | 'gate0' | 'plan' | 'gate1' | 'implement' | 'tests' | 'visual' | 'review' | 'gate2' | 'limit' | 'finish';
 
 /** Режим работы: какие стадии и правила применяются к задаче. */
 export type RunMode = 'quick' | 'bug' | 'task' | 'epic' | 'refactor';
@@ -70,9 +72,10 @@ export interface VisualResult {
   serverOutput?: string;
 }
 
-export type GateId = 'gate1' | 'gate2' | 'limit';
+export type GateId = 'gate0' | 'gate1' | 'gate2' | 'limit';
 
-export type RunStatus = 'running' | 'waiting' | 'stopped' | 'cancelled' | 'finished';
+/** queued — ждёт свободного места: одновременно агенты ведут не больше maxParallel прогонов. */
+export type RunStatus = 'queued' | 'running' | 'waiting' | 'stopped' | 'cancelled' | 'finished';
 
 export type AttemptStatus = 'running' | 'done' | 'failed' | 'stopped';
 
@@ -146,7 +149,7 @@ export interface LineComment {
 export interface GateDecision {
   gate: GateId;
   at: string;
-  decision: 'approve' | 'reject' | 'cancel' | 'accept';
+  decision: 'approve' | 'reject' | 'cancel' | 'accept' | 'fix';
   comment?: string;
   lineComments?: LineComment[];
 }
@@ -173,6 +176,14 @@ export interface RunFile {
   lintCommand?: string;
   /** Режим (у старых прогонов отсутствует — считается «задачей»). */
   mode?: RunMode;
+  /** Рабочая копия ещё не создана (прогон в очереди) — run.json живёт только в данных приложения. */
+  workspacePending?: boolean;
+  /** Уточнение до плана: вопросы планировщика и ответы человека (они дописываются к задаче для всех стадий). */
+  clarify?: { questions: ClarifyQuestion[]; answers?: { q: string; a: string }[]; skipped?: boolean };
+  /** Сессия claude исполнителя: следующие попытки продолжают её и получают только замечания. */
+  executorSession?: string;
+  /** Идёт быстрая правка с приёмки: после зелёных проверок — сразу обратно на приёмку. */
+  quickFix?: boolean;
   /** Где шла работа; у старых прогонов — worktree. */
   workspace?: Workspace;
   /** Ветка, на которой была рабочая копия до прогона в режиме «ветка». */
@@ -221,6 +232,8 @@ export interface RunFile {
   titleFromPlan?: boolean;
   /** Рабочая копия удалена при очистке хранилища: run.json живёт только в данных приложения. */
   worktreeRemoved?: boolean;
+  /** Pull Request ветки прогона на GitHub. */
+  pr?: { url: string; number: number; base: string; createdAt: string };
   /** Ветка psflow/<id> влита человеком из приложения. */
   merged?: { into: string; commit: string; at: string };
 }
@@ -288,8 +301,16 @@ export type CoreCommand =
   | { type: 'gate.cancel'; runId: string }
   /** Попытки исчерпаны: человек принимает как есть и идёт на приёмку. */
   | { type: 'gate.accept'; runId: string }
+  /** Ответы на вопросы уточнения (пустой список — продолжить без ответов). */
+  | { type: 'gate.answer'; runId: string; answers: { q: string; a: string }[] }
+  /** Приёмка: небольшая правка в той же ветке — потом только проверки и снова приёмка, без ревью и визуальной. */
+  | { type: 'gate.fix'; runId: string; comment: string; lineComments?: LineComment[] }
   | { type: 'run.stop'; runId: string }
   | { type: 'run.merge'; runId: string; target: string }
+  /** Отправить ветку на GitHub и открыть Pull Request в base. */
+  | { type: 'run.pr'; runId: string; base: string }
+  /** Влить открытый PR (gh pr merge --merge). */
+  | { type: 'run.prMerge'; runId: string }
   /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку psflow/<id>. */
   | { type: 'run.delete'; runId: string; deleteBranch: boolean };
 
@@ -329,6 +350,8 @@ export interface ProjectConfig {
   /** Файлы окружения (не в git), которые копируются в worktree прогона: apps/api/.env… */
   envFiles?: string[];
   workspace?: Workspace;
+  /** Знания о проекте для всех агентов: профиль (стек, структура, соглашения) и уроки прошлых прогонов. */
+  knowledge?: ProjectKnowledge;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
 }
@@ -376,4 +399,35 @@ export interface StorageItem {
   count: number;
   /** Подпись кнопки очистки; нет — только показываем. */
   clean?: string;
+}
+
+/** Состояние Pull Request и проверок CI. */
+export interface PrStatus {
+  url: string;
+  number: number;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  draft: boolean;
+  mergeable: boolean;
+  conflicts: boolean;
+  /** Слияние заблокировано правилами ветки (нужно ревью, обязательные проверки). */
+  blocked: boolean;
+  review: string | null;
+  checks: { total: number; passed: number; failed: number; pending: number };
+  mergeCommit: string | null;
+}
+
+export interface ClarifyQuestion {
+  q: string;
+  /** Варианты ответа, если их можно предложить; человек может ответить своим текстом. */
+  options?: string[];
+  /** Почему это важно для плана — одной фразой. */
+  why?: string;
+}
+
+export interface ProjectKnowledge {
+  /** Профиль проекта в Markdown: стек, структура, ключевые модули, соглашения, тесты. */
+  profile?: string;
+  profileAt?: string;
+  /** Уроки прошлых прогонов: короткие правила, которые пригодятся следующим. */
+  lessons?: { text: string; at: string; runId?: string }[];
 }

@@ -15,11 +15,11 @@ export interface Bar {
   tip: string;
 }
 
-const GATES: StageId[] = ['gate1', 'gate2', 'limit'];
+const GATES: StageId[] = ['gate0', 'gate1', 'gate2', 'limit'];
 export const isGate = (s: StageId) => GATES.includes(s);
 
 /** «limit» — вопрос человеку после попыток; рисуем в строке приёмки, это тоже решение человека. */
-export const rowOf = (s: StageId): StageId => (s === 'limit' ? 'gate2' : s);
+export const rowOf = (s: StageId): StageId => (s === 'limit' ? 'gate2' : s === 'gate0' ? 'clarify' : s);
 
 /** Полоски попыток одной стадии на общей шкале прогона (паузы после ошибок вырезаны). */
 export function stageBars(run: RunFile, clock: ActiveClock, stage: StageId, now: number, minWidth = 0.8): Bar[] {

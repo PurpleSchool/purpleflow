@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["questions"],
+  "properties": {
+    "questions": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["q", "options", "why"],
+        "properties": {
+          "q": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" }, "maxItems": 4 },
+          "why": { "type": "string" }
+        }
+      }
+    }
+  }
+}

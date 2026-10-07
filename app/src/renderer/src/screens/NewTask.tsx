@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Check, FileLock2, KeyRound, Minus, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
-import type { CommandIssue, ProjectCommands, Workspace } from '@psflow/core';
+import { Check, FileLock2, KeyRound, Minus, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert, X, Layers, FolderTree, Workflow, BookText, FlaskConical, Play, PencilLine, FileText, Lightbulb } from 'lucide-react';
+import type { CommandIssue, ProjectCommands, ProjectKnowledge, Workspace } from '@psflow/core';
 import { Button, Input, TextArea, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
+import { Markdown } from '../components/Markdown';
 import { useStore } from '../lib/store';
 import { ImageDrop, type PickedImage } from '../components/ImageDrop';
 import { MODES, stagesFor, type Mode } from '../lib/stages';
@@ -10,7 +11,7 @@ import { MODE_ICON } from '../components/ModeIcon';
 import { shortPath } from '../lib/format';
 
 type Project = ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; path: string };
-type Tab = 'task' | 'commands';
+type Tab = 'task' | 'commands' | 'knowledge';
 type Cmd = 'setup' | 'lint' | 'test' | 'run' | 'url';
 
 const LAST_PROJECT = 'psflow.lastProject';
@@ -149,10 +150,14 @@ export function NewTaskScreen() {
     return () => clearTimeout(t);
   }, [project?.path, project?.isRepo, cmds.setup, cmds.lint, cmds.test, cmds.run]);
 
-  const busyRun = state.runs.find((r) => r.status === 'running');
+  // Одновременно агенты ведут не больше maxParallel прогонов — остальные встают в очередь.
+  const active = state.runs.filter((r) => r.status === 'running').length;
+  const limit = state.settings?.maxParallel ?? 2;
+  const willQueue = active >= limit;
+  const queuedCount = state.runs.filter((r) => r.status === 'queued').length;
   // Визуальная проверка всегда видна в маршруте и включается переключателем прямо в нём.
   const route = stagesFor(mode, true);
-  const canStart = Boolean(project?.isRepo && task.trim().length > 5) && !busyRun;
+  const canStart = Boolean(project?.isRepo && task.trim().length > 5);
   const edit = (k: Cmd, v: string) => {
     setCmds({ ...cmds, [k]: v });
     setNotes({ ...notes, [k]: v ? 'указано вручную' : '' });
@@ -220,11 +225,12 @@ export function NewTaskScreen() {
               disabled: !project?.isRepo,
               extra: project?.isRepo && saved !== 'saved' ? <span className="tab-dot" title="Не сохранены" /> : undefined,
             },
+            { id: 'knowledge', label: 'Знания о проекте', disabled: !project?.isRepo },
           ]}
         />
       </div>
       <div className="scroll">
-        <div className="newtask">
+        <div className={`newtask ${tab === 'knowledge' ? 'is-single' : ''}`}>
           <div className="newtask-main step-enter" key={tab}>
             {tab === 'task' ? (
               <>
@@ -283,7 +289,10 @@ export function NewTaskScreen() {
                   <ImageDrop images={images} onChange={setImages} />
                 </div>
               </>
+            ) : tab === 'knowledge' && project?.isRepo ? (
+              <KnowledgeView repo={project.path} name={project.name} />
             ) : (
+              <>
               <section className="panel commands">
                 <header className="panel-head">
                   <div>
@@ -347,9 +356,11 @@ export function NewTaskScreen() {
                   )}
                 </div>
               </section>
+              </>
             )}
           </div>
 
+          {tab !== 'knowledge' && (
           <aside className="newtask-aside">
             <h3>Как пойдёт: {MODES.find((m) => m.id === mode)?.title.toLowerCase()}</h3>
             <ol className="route">
@@ -413,13 +424,14 @@ export function NewTaskScreen() {
               </p>
             </div>
           </aside>
+          )}
         </div>
       </div>
       <footer className="actionbar">
         {error && <span className="actionbar-error">{error}</span>}
-        {busyRun && !error && <span className="muted">Сейчас идёт «{busyRun.title}». Дождитесь гейта или остановите его — в прототипе один прогон за раз.</span>}
+        {willQueue && !error && <span className="muted">Сейчас идут {active} из {limit} прогонов{queuedCount ? `, в очереди ${queuedCount}` : ''} — этот встанет в очередь и начнётся сам.</span>}
         <span className="grow" />
-        <Button tone="primary" busy={busy} disabled={!canStart} onClick={() => void start()}>Запустить прогон</Button>
+        <Button tone="primary" busy={busy} disabled={!canStart} onClick={() => void start()}>{willQueue ? "Поставить в очередь" : "Запустить прогон"}</Button>
       </footer>
     </div>
   );
@@ -457,6 +469,138 @@ function CmdRow({ icon, title, hint, placeholder, value, note, onChange, loading
           </span>
         )) : note && <span className="cmd-note" title={note}>{note}</span>}
       </div>
+    </div>
+  );
+}
+
+const DOC_ICON: [RegExp, ReactNode][] = [
+  [/стек/i, <Layers key="i" size={16} />],
+  [/структур/i, <FolderTree key="i" size={16} />],
+  [/устроен|архитект/i, <Workflow key="i" size={16} />],
+  [/соглашен|стиль/i, <BookText key="i" size={16} />],
+  [/тест/i, <FlaskConical key="i" size={16} />],
+  [/запуск|окружен/i, <Play key="i" size={16} />],
+];
+
+/** Профиль по разделам «## Заголовок» — каждый раздел отдельной карточкой; без разделов — одна карточка. */
+function splitProfile(md: string): { title: string; body: string }[] {
+  const parts = md.split(/^##\s+/m).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2 && !/^##\s/m.test(md)) return md.trim() ? [{ title: 'Профиль', body: md.trim() }] : [];
+  return parts.map((p) => {
+    const nl = p.indexOf('\n');
+    return nl < 0 ? { title: p, body: '' } : { title: p.slice(0, nl).trim(), body: p.slice(nl + 1).trim() };
+  });
+}
+
+/** Вкладка «Знания о проекте»: профиль набором документов и уроки прошлых прогонов. */
+function KnowledgeView({ repo, name }: { repo: string; name: string }) {
+  const [k, setK] = useState<ProjectKnowledge | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [profile, setProfile] = useState('');
+  const [busy, setBusy] = useState<'save' | 'refresh' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void window.psflow.core.getKnowledge(repo).then((x) => {
+      if (!alive) return;
+      setK(x);
+      setProfile(x.profile ?? '');
+      setEditing(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [repo]);
+  const run = async (kind: 'save' | 'refresh', fn: () => Promise<ProjectKnowledge>) => {
+    setBusy(kind);
+    setError(null);
+    try {
+      const x = await fn();
+      setK(x);
+      setProfile(x.profile ?? '');
+      setEditing(false);
+    } catch (e) {
+      setError(cleanErr(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  if (!k) return <div className="center"><span className="spinner big" /></div>;
+  const docs = splitProfile(k.profile ?? '');
+  const lessons = k.lessons ?? [];
+  const removeLesson = (i: number) => void run('save', () => window.psflow.core.saveKnowledge(repo, { ...k, lessons: lessons.filter((_, j) => j !== i) }));
+  return (
+    <div className="knowledge-view">
+      <section className="panel knowledge-intro">
+        <header className="panel-head">
+          <div>
+            <h2>Знания о проекте {name}</h2>
+            <p>Получают все агенты — чтобы не изучать проект с нуля в каждом прогоне. Профиль собирается сам перед первым планом, уроки добавляются после прогонов: из ваших правок, замечаний ревью и сбоев проверок.</p>
+          </div>
+          <div className="knowledge-actions">
+            {k.profile && !editing && <Button tone="quiet" icon={<PencilLine size={15} />} onClick={() => setEditing(true)}>Редактировать</Button>}
+            <Button tone="ghost" icon={<Sparkles size={15} />} busy={busy === 'refresh'} disabled={busy !== null} onClick={() => void run('refresh', () => window.psflow.core.refreshProfile(repo))}>
+              {busy === 'refresh' ? 'Изучаю проект…' : k.profile ? 'Пересобрать профиль' : 'Изучить проект'}
+            </Button>
+          </div>
+        </header>
+        {k.profileAt && <p className="muted knowledge-date">Профиль собран {new Date(k.profileAt).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · уроков: {lessons.length}</p>}
+        {error && <p className="inline-error">{error}</p>}
+      </section>
+
+      {editing ? (
+        <section className="panel">
+          <TextArea rows={22} className="mono knowledge-profile" value={profile} onChange={(e) => setProfile(e.target.value)} />
+          <div className="cmd-actions">
+            <p className="cmd-foot">Разделы — заголовками «## Стек», «## Структура»… — каждый станет отдельной карточкой.</p>
+            <span className="grow" />
+            <Button tone="quiet" onClick={() => { setProfile(k.profile ?? ''); setEditing(false); }}>Отмена</Button>
+            <Button tone="primary" busy={busy === 'save'} onClick={() => void run('save', () => window.psflow.core.saveKnowledge(repo, { ...k, profile }))}>Сохранить</Button>
+          </div>
+        </section>
+      ) : docs.length ? (
+        <div className="doc-grid">
+          {docs.map((d, i) => (
+            <article key={d.title + i} className="kdoc" style={{ animationDelay: `${i * 0.04}s` }}>
+              <header>
+                <span className="kdoc-icon">{DOC_ICON.find(([re]) => re.test(d.title))?.[1] ?? <FileText size={16} />}</span>
+                <strong>{d.title}</strong>
+              </header>
+              <Markdown source={d.body} className="kdoc-md" />
+            </article>
+          ))}
+        </div>
+      ) : (
+        <section className="panel knowledge-empty-card">
+          <span className="browser-empty-icon"><Sparkles size={22} /></span>
+          <strong>Профиль ещё не собран</strong>
+          <p>Соберётся сам перед первым планом в этом проекте — или нажмите «Изучить проект».</p>
+        </section>
+      )}
+
+      <article className="kdoc kdoc-lessons">
+        <header>
+          <span className="kdoc-icon"><Lightbulb size={16} /></span>
+          <strong>Уроки прошлых прогонов</strong>
+          <span className="muted">{lessons.length || ''}</span>
+        </header>
+        {lessons.length ? (
+          <ul className="lessons">
+            {[...lessons].reverse().map((l, ri) => {
+              const i = lessons.length - 1 - ri;
+              return (
+                <li key={`${l.at}-${i}`}>
+                  <span>{l.text}</span>
+                  <time className="muted">{new Date(l.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</time>
+                  <button className="lesson-del" title="Удалить урок" onClick={() => removeLesson(i)}><X size={14} /></button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="muted knowledge-empty">Появятся после прогонов, где были ваши правки, замечания ревью или упавшие проверки.</p>
+        )}
+      </article>
     </div>
   );
 }

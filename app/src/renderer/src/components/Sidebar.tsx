@@ -8,7 +8,7 @@ import { MODES } from '../lib/stages';
 const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
 
 const STATUS_WORD: Record<RunSummary['status'], string> = {
-  running: 'идёт', waiting: 'ждёт вас', stopped: 'остановлен', cancelled: 'отменён', finished: 'готово',
+  queued: 'в очереди', running: 'идёт', waiting: 'ждёт вас', stopped: 'остановлен', cancelled: 'отменён', finished: 'готово',
 };
 
 /** Прогоны по группам: сначала ждущие решения человека, остальные — по дням. */

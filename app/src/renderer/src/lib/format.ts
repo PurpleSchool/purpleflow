@@ -37,6 +37,7 @@ export function when(iso: string): string {
 }
 
 export const STATUS_LABEL: Record<RunStatus, string> = {
+  queued: 'В очереди',
   running: 'Идёт',
   waiting: 'Ждёт решения',
   stopped: 'Остановлен',

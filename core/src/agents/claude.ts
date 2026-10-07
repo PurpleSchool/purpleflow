@@ -5,7 +5,7 @@ import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type Agent
  * claude -p (stdin) --output-format stream-json --verbose.
  * Флаги сверены с claude 2.1.x, см. README.
  */
-export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools'>): string[] {
+export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume'>): string[] {
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -14,8 +14,11 @@ export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | '
     // Только настройки проекта: пользовательские хуки, плагины и env из ~/.claude не вмешиваются в прогон.
     '--setting-sources', 'project,local',
     '--strict-mcp-config',
-    '--no-session-persistence',
   ];
+  // Сессию сохраняем только исполнителю — чтобы следующая попытка продолжила её, а не читала проект заново.
+  if (o.resume) args.push('--resume', o.resume);
+  else if (o.sessionId) args.push('--session-id', o.sessionId);
+  else args.push('--no-session-persistence');
   if (o.model) args.push('--model', o.model);
   if (o.systemPrompt) args.push('--append-system-prompt', o.systemPrompt);
   for (const d of o.addDirs ?? []) args.push('--add-dir', d);

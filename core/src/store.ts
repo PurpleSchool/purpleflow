@@ -59,7 +59,7 @@ export class RunStore {
    * иначе рабочая копия пользователя остаётся грязной. Дальше — только копия в данных приложения.
    */
   static inProject(run: RunFile): boolean {
-    if (run.worktreeRemoved) return false;
+    if (run.worktreeRemoved || run.workspacePending) return false;
     return !(run.workspace === 'branch' && (run.mode === 'quick' || run.commit));
   }
 

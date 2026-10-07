@@ -6,7 +6,8 @@ import path from 'node:path';
 import { runClaude } from './agents/claude.js';
 import { runCodex } from './agents/codex.js';
 import { addUsage, c, crlf, emptyUsage, type AgentResult } from './agents/common.js';
-import { detectTools, prependPath } from './env.js';
+import { detectTools, prependPath, which } from './env.js';
+import { createPr, mergePr, prReadiness, prStatus, pushBranch } from './github.js';
 import { Git } from './git.js';
 import { makeChangeId, makeTitle } from './ids.js';
 import { OpenSpec } from './openspec.js';
@@ -18,7 +19,7 @@ import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js'
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
-  AgentKind, Role, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AgentKind, Role, PrStatus, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -37,6 +38,8 @@ const MAX_DIFF = 160_000;
 const RUN_JSON_GLOB = 'openspec/changes/**/run.json';
 
 export const STAGE_TITLES: Record<StageId, string> = {
+  clarify: 'Уточнение',
+  gate0: 'Ответы на вопросы',
   plan: 'План',
   gate1: 'Утверждение плана',
   implement: 'Реализация',
@@ -107,11 +110,23 @@ export class Orchestrator {
       case 'gate.accept':
         await this.decide(cmd.runId, 'accept');
         return { runId: cmd.runId };
+      case 'gate.fix':
+        await this.decide(cmd.runId, 'fix', cmd.comment, cmd.lineComments);
+        return { runId: cmd.runId };
+      case 'gate.answer':
+        await this.answer(cmd.runId, cmd.answers);
+        return { runId: cmd.runId };
       case 'run.stop':
         await this.stop(cmd.runId);
         return { runId: cmd.runId };
       case 'run.merge':
         await this.merge(cmd.runId, cmd.target);
+        return { runId: cmd.runId };
+      case 'run.pr':
+        await this.openPr(cmd.runId, cmd.base);
+        return { runId: cmd.runId };
+      case 'run.prMerge':
+        await this.mergePrOf(cmd.runId);
         return { runId: cmd.runId };
       case 'run.delete':
         await this.deleteRun(cmd.runId, cmd.deleteBranch);
@@ -123,11 +138,12 @@ export class Orchestrator {
   async recover(): Promise<void> {
     for (const s of this.store.list()) {
       // Агенты и тесты, пережившие аварийный выход приложения, не должны писать в worktree параллельно с повтором стадии.
-      const orphans = [...this.store.readPids(s.id), ...this.store.readPids(`${s.id}:server`)];
+      const orphans = [...this.store.readPids(s.id), ...this.store.readPids(`${s.id}:server`), ...this.store.readPids(`${s.id}:preview`)];
       if (orphans.length) {
         await Promise.all(orphans.map(killPid));
         this.store.writePids(s.id, []);
         this.store.writePids(`${s.id}:server`, []);
+        this.store.writePids(`${s.id}:preview`, []);
       }
       if (s.status !== 'running' || s.missing) continue;
       const r = this.store.load(s.id);
@@ -139,6 +155,7 @@ export class Orchestrator {
       r.message = 'Прервано: приложение было закрыто. Нажмите «Продолжить», чтобы повторить текущую стадию.';
       this.store.save(r);
     }
+    void this.pump();
   }
 
   // ——— Запросы для UI ———
@@ -199,6 +216,7 @@ export class Orchestrator {
     for (const dir of [this.attachmentsDir(id), path.join(this.opts.dataDir, 'visual', id)]) fs.rmSync(dir, { recursive: true, force: true });
     this.store.forget(id);
     this.emit({ type: 'run.deleted', runId: id });
+    void this.pump();
   }
 
   // ——— Хранилище: сколько места занимают данные и что можно почистить ———
@@ -266,6 +284,88 @@ export class Orchestrator {
     }
     const after = (await this.getStorage()).find((x) => x.id === id)?.bytes ?? 0;
     return Math.max(0, before - after);
+  }
+
+  // ——— Pull Request на GitHub ———
+
+  private ghBin(): string | null {
+    return which('gh', this.opts.env);
+  }
+
+  /** null — PR создать можно; иначе причина, почему нет (нет gh, origin не на GitHub…). */
+  async prReady(id: string): Promise<string | null> {
+    const r = this.mustLoad(id);
+    const tools = await this.tools(['git']);
+    return prReadiness(this.ghBin(), tools.git, r.projectPath, this.opts.env);
+  }
+
+  private async openPr(id: string, base: string) {
+    const r = this.mustLoad(id);
+    if (r.status !== 'finished') throw new Error('PR можно открыть только для завершённого прогона');
+    if (r.pr) throw new Error(`PR уже открыт: ${r.pr.url}`);
+    if (!base.trim()) throw new Error('Выберите ветку, в которую открыть PR');
+    const tools = await this.tools(['git']);
+    const gh = this.ghBin();
+    const why = await prReadiness(gh, tools.git, r.projectPath, this.opts.env);
+    if (why || !gh) throw new Error(why ?? 'Нет gh');
+    this.log(r, c.sky(`$ git push -u origin ${r.branch}`) + '\n');
+    await pushBranch(tools.git, r.projectPath, r.branch, this.opts.env);
+    const bodyFile = path.join(os.tmpdir(), `psflow-pr-${r.id}.md`);
+    fs.writeFileSync(bodyFile, await this.prBody(r));
+    try {
+      const pr = await createPr(gh, r.projectPath, this.opts.env, { base, head: r.branch, title: r.title, bodyFile });
+      r.pr = { ...pr, base, createdAt: new Date().toISOString() };
+      this.save(r);
+      this.log(r, c.mint(`✓ PR #${pr.number}: ${pr.url}`) + '\n');
+    } finally {
+      fs.rmSync(bodyFile, { force: true });
+    }
+  }
+
+  /** Описание PR: задача, итог исполнителя, план, проверки, ревью и визуальная проверка — из прогона. */
+  private async prBody(r: RunFile): Promise<string> {
+    const docs = await this.getChangeDocs(r.id).catch(() => null);
+    const impl = [...r.attempts].reverse().find((a) => a.stage === 'implement' && a.output)?.output;
+    const lastTest = r.tests.at(-1);
+    const review = r.reviews.at(-1);
+    const visual = r.visuals?.at(-1);
+    const parts: string[] = [`## Задача\n\n${r.task}`];
+    if (impl) parts.push(`## Что сделано\n\n${impl.slice(0, 4000)}`);
+    if (docs?.proposal) parts.push(`## План (OpenSpec \`${r.changeId}\`)\n\n${docs.proposal.replace(/^#\s+.*\n+/, '').slice(0, 4000)}`);
+    if (lastTest?.checks?.length) {
+      parts.push(`## Проверки\n\n${lastTest.checks.map((x) => `- ${x.kind === 'lint' ? 'Линтер' : 'Тесты'}: ${x.passed ? '✅' : x.preexisting ? '⚠️ красные и до задачи, новых ошибок нет' : '❌'} \`${x.command}\``).join('\n')}`);
+    }
+    if (review) {
+      const notes = review.notes.map((n) => `- ${n.file ? `\`${n.file}${n.line ? ':' + n.line : ''}\` — ` : ''}${n.message}`).join('\n');
+      parts.push(`## Ревью (${r.agents?.reviewer ?? 'codex'})\n\n${review.blocking.length ? `Блокирующих: ${review.blocking.length}` : 'Блокирующих замечаний нет.'}${notes ? `\n\nЗаметки:\n${notes}` : ''}`);
+    }
+    if (visual) {
+      parts.push(`## Визуальная проверка\n\n${visual.unverified ? `⚠️ Проверить не удалось: ${visual.unverified}` : visual.blocking.length ? `Проблем: ${visual.blocking.length}` : '✅ В браузере всё выглядит верно'}${visual.shots.length ? `\n\nСкриншоты (${visual.shots.length}) — в PurpleFlow:\n${visual.shots.map((s) => `- ${s.caption}`).join('\n')}` : ''}`);
+    }
+    parts.push(`---\nСделано в PurpleFlow · режим «${modeOf(r)}» · прогон \`${r.id.slice(0, 8)}\``);
+    return parts.join('\n\n');
+  }
+
+  async getPrStatus(id: string): Promise<PrStatus | null> {
+    const r = this.mustLoad(id);
+    const gh = this.ghBin();
+    if (!r.pr || !gh) return null;
+    const st = await prStatus(gh, r.projectPath, this.opts.env, r.pr.url);
+    // Влили на GitHub (из приложения или руками) — отмечаем у прогона.
+    if (st.state === 'MERGED' && !r.merged) {
+      r.merged = { into: r.pr.base, commit: st.mergeCommit ?? '', at: new Date().toISOString() };
+      this.save(r);
+    }
+    return st;
+  }
+
+  private async mergePrOf(id: string) {
+    const r = this.mustLoad(id);
+    const gh = this.ghBin();
+    if (!r.pr || !gh) throw new Error('У прогона нет PR');
+    await mergePr(gh, r.projectPath, this.opts.env, r.pr.url);
+    this.log(r, c.mint(`✓ PR #${r.pr.number} влит в ${r.pr.base}`) + '\n');
+    await this.getPrStatus(id);
   }
 
   /** Ветки репозитория пользователя для слияния результата. */
@@ -372,28 +472,15 @@ export class Orchestrator {
     const changeId = makeChangeId(input.task);
     const branch = `psflow/${changeId}`;
     const workspace = input.workspace ?? 'worktree';
-    let worktreePath: string;
-    let originalBranch: string | undefined;
     if (workspace === 'branch') {
-      // Режим «ветка»: работаем прямо в проекте. Чужие незакоммиченные правки попали бы в коммит прогона — поэтому только с чистой копией.
-      const dirty = await git.dirtyFiles(repo);
-      if (dirty.length) {
-        throw new Error(`В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`);
-      }
-      originalBranch = (await git.currentBranch(repo)) ?? undefined;
-      await git.checkoutNewBranch(repo, branch, base);
-      worktreePath = repo;
-    } else {
-      worktreePath = path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
-      await git.addWorktree(repo, worktreePath, branch, base);
+      // В режиме «ветка» прогон занимает рабочую копию проекта целиком — второй в том же проекте ей бы помешал.
+      const busy = this.runsWithFiles().find((r) => r.workspace === 'branch' && path.resolve(r.projectPath) === path.resolve(repo) && ['running', 'waiting', 'queued'].includes(r.status));
+      if (busy) throw new Error(`В режиме «Ветка» в проекте уже идёт «${busy.title}». Дождитесь его или выберите отдельную копию (worktree).`);
     }
-
+    const worktreePath = workspace === 'branch' ? repo : path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
     const mode = input.mode ?? 'task';
-    if (mode !== 'quick') {
-      const openspec = new OpenSpec(tools.openspec, this.opts.env);
-      await openspec.ensureInit(worktreePath, 'init');
-    }
     const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim());
+    const queued = this.activeCount() >= this.maxParallel();
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
@@ -413,7 +500,7 @@ export class Orchestrator {
       lintCommand: input.lintCommand?.trim() || undefined,
       mode,
       workspace,
-      originalBranch,
+      workspacePending: true,
       visual: visual || undefined,
       // Команда запуска нужна и визуальной стадии, и ручной проверке во вкладке «Браузер».
       runCommand: input.runCommand?.trim() || undefined,
@@ -424,7 +511,7 @@ export class Orchestrator {
       prepared: workspace === 'branch' || !input.setupCommand?.trim(),
       models: { ...s.models },
       agents: { ...DEFAULT_AGENTS, ...s.agents },
-      status: 'running',
+      status: queued ? 'queued' : 'running',
       next: MODE_FIRST[mode],
       attempts: [],
       planRetries: 0,
@@ -438,17 +525,101 @@ export class Orchestrator {
       createdAt: now,
       updatedAt: now,
     };
-    this.save(run);
-    this.copyEnvFiles(run);
-    this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${branch} от ${base.slice(0, 8)}\n${workspace === 'branch' ? `рабочая копия проекта ${repo} (была ветка ${originalBranch ?? 'detached HEAD'})` : `worktree ${worktreePath}`}\n`));
+    if (queued) {
+      this.save(run);
+      this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nв очереди: одновременно идут ${this.activeCount()} из ${this.maxParallel()} — начнётся, когда освободится место\n`));
+      return run.id;
+    }
+    try {
+      await this.prepareWorkspace(run);
+    } catch (e) {
+      // Рабочую копию создать не удалось (грязная копия, ветка уже есть…) — прогона нет, ошибка уходит в окно.
+      this.store.forget(run.id);
+      throw e;
+    }
     void this.drive(run);
     return run.id;
+  }
+
+  /** Рабочая копия прогона: worktree или новая ветка в проекте, OpenSpec, файлы окружения. Для очереди — в момент старта. */
+  private async prepareWorkspace(run: RunFile) {
+    const tools = await this.tools(['git', 'openspec']);
+    const git = new Git(tools.git, this.opts.env);
+    if (run.workspace === 'branch') {
+      // Чужие незакоммиченные правки попали бы в коммит прогона — поэтому только с чистой копией.
+      const dirty = await git.dirtyFiles(run.projectPath);
+      if (dirty.length) {
+        throw new Error(`В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`);
+      }
+      run.originalBranch = (await git.currentBranch(run.projectPath)) ?? undefined;
+      await git.checkoutNewBranch(run.projectPath, run.branch, run.baseCommit);
+    } else {
+      await git.addWorktree(run.projectPath, run.worktreePath, run.branch, run.baseCommit);
+    }
+    if (modeOf(run) !== 'quick') await new OpenSpec(tools.openspec, this.opts.env).ensureInit(run.worktreePath, 'init');
+    run.workspacePending = undefined;
+    this.save(run);
+    this.copyEnvFiles(run);
+    this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
+  }
+
+  // ——— Очередь: сколько прогонов агенты ведут одновременно ———
+
+  /** Настройки поменялись (например, лимит одновременных прогонов) — может, кого-то пора запустить из очереди. */
+  settingsChanged() {
+    void this.pump();
+  }
+
+  private maxParallel(): number {
+    return Math.max(1, Math.min(8, this.opts.getSettings().maxParallel ?? 2));
+  }
+
+  /** Прогоны, в которых сейчас работают агенты. Ожидание решения человека место не занимает. */
+  private activeCount(): number {
+    return this.store.list().filter((r) => r.status === 'running').length;
+  }
+
+  /** Запустить из очереди столько прогонов, сколько есть свободных мест (старые — первыми). */
+  private async pump() {
+    if (this.pumping) return;
+    this.pumping = true;
+    try {
+      while (this.activeCount() < this.maxParallel()) {
+        const next = this.store.list().filter((r) => r.status === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+        if (!next) break;
+        const run = this.store.load(next.id);
+        if (!run) break;
+        await this.launchQueued(run);
+      }
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  private pumping = false;
+
+  private async launchQueued(run: RunFile) {
+    run.status = 'running';
+    run.message = undefined;
+    this.save(run);
+    try {
+      if (run.workspacePending) await this.prepareWorkspace(run);
+    } catch (e) {
+      run.status = 'stopped';
+      run.message = `Не удалось начать прогон: ${(e as Error).message}`;
+      this.save(run);
+      this.emit({ type: 'run.finished', runId: run.id, status: 'stopped', message: run.message });
+      return;
+    }
+    void this.drive(run);
   }
 
   private async resume(id: string) {
     if (this.driving.has(id)) return;
     const r = this.mustLoad(id);
     if (r.status === 'finished' || r.status === 'cancelled') throw new Error('Прогон уже завершён');
+    // Из очереди или не начавшийся — «Запустить сейчас», без оглядки на лимит одновременных прогонов.
+    if (r.status === 'queued' || r.workspacePending) return this.launchQueued(r);
     await this.ensureOnBranch(r);
     r.message = undefined;
     if (r.next === 'plan') r.planRetries = 0;
@@ -493,9 +664,7 @@ export class Orchestrator {
     if (r.workspace === 'branch') await this.ensureOnBranch(r);
     this.copyEnvFiles(r);
 
-    const port = await freePort();
-    const url = appUrl.replaceAll('{port}', String(port));
-    const command = runCommand.replaceAll('{port}', String(port));
+    const { port, url, command } = await expandPorts(appUrl, runCommand);
     const group = `${id}:preview`;
     let output = '';
     let exited: number | null | undefined;
@@ -568,6 +737,13 @@ export class Orchestrator {
   private async stop(id: string) {
     const r = this.store.load(id);
     if (!r) return;
+    if (r.status === 'queued') {
+      r.status = 'stopped';
+      r.message = 'Снят с очереди. «Продолжить» запустит его сразу.';
+      this.save(r);
+      this.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message });
+      return;
+    }
     await killGroup(`${id}:server`);
     await this.stopPreview(id);
     if (this.driving.has(id)) {
@@ -584,7 +760,7 @@ export class Orchestrator {
     }
   }
 
-  private async decide(id: string, decision: 'approve' | 'reject' | 'cancel' | 'accept', comment?: string, lineComments?: LineComment[]) {
+  private async decide(id: string, decision: 'approve' | 'reject' | 'cancel' | 'accept' | 'fix', comment?: string, lineComments?: LineComment[]) {
     const r = this.mustLoad(id);
     // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
     await this.stopPreview(id);
@@ -599,6 +775,25 @@ export class Orchestrator {
     }
     r.message = undefined;
     const human = (text: string): Feedback => ({ source: 'human', text, lineComments: lineComments?.length ? lineComments : undefined });
+
+    if (decision === 'fix') {
+      if (gate !== 'gate2') throw new Error('Быстрая правка — только на приёмке');
+      if (!comment?.trim() && !lineComments?.length) throw new Error('Опишите, что поправить');
+      if (gateAttempt) gateAttempt.summary = 'Быстрая правка';
+      r.quickFix = true;
+      r.next = 'implement';
+      r.implAttemptsLimit = Math.max(r.implAttemptsLimit, r.implAttemptsUsed + 1);
+      r.feedback = {
+        source: 'human',
+        text: `Человек на приёмке просит небольшую правку. Сделай ровно это и ничего больше — остальная реализация уже принята, не переделывай её:\n${comment ?? ''}`,
+        lineComments: lineComments?.length ? lineComments : undefined,
+      };
+      this.log(r, c.violet('→ быстрая правка с приёмки: реализация → проверки → снова приёмка') + '\n');
+      r.status = 'running';
+      this.save(r);
+      void this.drive(r);
+      return;
+    }
 
     if (decision === 'accept') {
       if (gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
@@ -625,7 +820,11 @@ export class Orchestrator {
       return;
     }
 
-    if (gate === 'gate1') {
+    if (gate === 'gate0') {
+      // «Принять» без ответов — продолжить по задаче как есть.
+      if (r.clarify) r.clarify.skipped = true;
+      r.next = 'plan';
+    } else if (gate === 'gate1') {
       if (decision === 'approve') {
         r.next = 'implement';
         r.feedback = undefined;
@@ -673,6 +872,7 @@ export class Orchestrator {
         switch (run.next) {
           case 'baseline': await this.stageBaseline(run); break;
           case 'visual': await this.stageVisual(run); break;
+          case 'clarify': await this.stageClarify(run); break;
           case 'plan': await this.stagePlan(run); break;
           case 'implement': await this.stageImplement(run); break;
           case 'tests': await this.stageTests(run); break;
@@ -689,10 +889,162 @@ export class Orchestrator {
     } finally {
       this.driving.delete(run.id);
       this.stopping.delete(run.id);
+      // Место освободилось (гейт, конец, ошибка) — следующий из очереди.
+      void this.pump();
     }
   }
 
+  // ——— Уточнение задачи до плана ———
+
+  /** Задача с ответами на вопросы уточнения — её видят все стадии. */
+  private taskText(run: RunFile): string {
+    const a = run.clarify?.answers?.filter((x) => x.a.trim());
+    if (!a?.length) return run.task;
+    return `${run.task}\n\nУточнения от человека:\n${a.map((x) => `- ${x.q} — ${x.a}`).join('\n')}`;
+  }
+
+  private async stageClarify(run: RunFile) {
+    const attempt = this.begin(run, 'clarify', run.models.planner);
+    // Профиль проекта собирается один раз — дальше его получают все агенты.
+    await this.ensureProfile(run, attempt);
+    const prompt = this.prompts.render('clarify.md', { task: run.task, attachments: this.attachmentsBlock(run) });
+    const res = await this.runRole(run, 'planner', { prompt, readOnly: true, outputSchema: this.prompts.json<object>('clarify.schema.json') });
+    this.afterAgent(run, attempt, res);
+    const questions = parseQuestions(res.text);
+    if (!questions.length) {
+      this.end(run, attempt, 'done', 'Задача понятна — вопросов нет');
+      run.next = 'plan';
+      this.save(run);
+      return;
+    }
+    run.clarify = { questions };
+    this.log(run, c.amber(`? вопросы планировщика (${questions.length}):\n`) + questions.map((q, i) => `  ${i + 1}. ${q.q}${q.options?.length ? c.dim(` [${q.options.join(' / ')}]`) : ''}`).join('\n') + '\n');
+    this.end(run, attempt, 'done', `Вопросов: ${questions.length}`);
+    run.next = 'gate0';
+    this.save(run);
+  }
+
+  private async answer(id: string, answers: { q: string; a: string }[]) {
+    const r = this.mustLoad(id);
+    if (r.next !== 'gate0' || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт ответов на вопросы');
+    const clean = answers.map((x) => ({ q: x.q.trim(), a: x.a.trim() })).filter((x) => x.a);
+    r.clarify = { questions: r.clarify?.questions ?? [], answers: clean, skipped: clean.length ? undefined : true };
+    r.gates.push({ gate: 'gate0', at: new Date().toISOString(), decision: 'approve', comment: clean.map((x) => `${x.q} — ${x.a}`).join('\n') || undefined });
+    const gateAttempt = [...r.attempts].reverse().find((a) => a.stage === 'gate0' && a.status === 'running');
+    if (gateAttempt) Object.assign(gateAttempt, { status: 'done', endedAt: new Date().toISOString(), summary: clean.length ? `Ответов: ${clean.length}` : 'Без ответов' });
+    if (clean.length) this.log(r, c.mint('✓ ответы человека:\n') + clean.map((x) => `  • ${x.q} — ${x.a}`).join('\n') + '\n');
+    r.message = undefined;
+    r.next = 'plan';
+    r.status = 'running';
+    this.save(r);
+    void this.drive(r);
+  }
+
+  // ——— Знания о проекте: профиль и уроки прошлых прогонов ———
+
+  private knowledgeOf(repo: string): ProjectKnowledge {
+    return this.getProjectConfig(repo)?.knowledge ?? {};
+  }
+
+  private updateKnowledge(repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) {
+    const all = this.store.readProjects();
+    const key = path.resolve(repo);
+    const cfg: ProjectConfig = all[key] ?? { setupCommand: '', lintCommand: '', testCommand: '', notes: { setup: '', lint: '', test: '' }, updatedAt: new Date().toISOString() };
+    this.store.writeProject(key, { ...cfg, knowledge: fn(cfg.knowledge ?? {}) });
+  }
+
+  /** Блок для системного промпта агентов. */
+  private knowledgeBlock(run: RunFile): string {
+    const k = this.knowledgeOf(run.projectPath);
+    const lessons = k.lessons?.map((l) => `- ${l.text}`).join('\n');
+    if (!k.profile && !lessons) return '';
+    return `\n\n## Знания о проекте\n\nСобраны в прошлых прогонах — опирайся на них, но если код говорит иное, верь коду.${k.profile ? `\n\n### Профиль\n\n${k.profile.trim()}` : ''}${lessons ? `\n\n### Уроки прошлых прогонов\n\n${lessons}` : ''}`;
+  }
+
+  private async profileFor(repo: string, cwd: string, onOutput: (t: string) => void, group: string): Promise<AgentResult> {
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude']);
+    return runClaude({
+      bin: tools.claude, cwd, env: this.opts.env, prompt: this.prompts.raw('profile.md'),
+      model: this.claudeModel(s.agents, s.models) || undefined, timeoutMs: 10 * 60_000, group, onOutput,
+      proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, tools: ['Read', 'Glob', 'Grep'],
+    });
+  }
+
+  /** Профиль проекта — один раз, перед первым планом. Сбой не останавливает прогон. */
+  private async ensureProfile(run: RunFile, attempt: StageAttempt) {
+    if (this.knowledgeOf(run.projectPath).profile) return;
+    this.log(run, c.dim('Изучаю проект для профиля — один раз, дальше он достаётся всем агентам…') + '\n');
+    const res = await this.profileFor(run.projectPath, run.worktreePath, (t) => this.log(run, c.dim(t), false), run.id);
+    attempt.tokens = addUsage(attempt.tokens ?? emptyUsage(), res.usage);
+    run.totals = addUsage(run.totals, res.usage);
+    this.checkStop(run);
+    if (!res.ok || !res.text.trim()) {
+      this.log(run, c.amber(`! профиль проекта не собран: ${res.error ?? 'пустой ответ'} — продолжаю без него`) + '\n');
+      return;
+    }
+    this.updateKnowledge(run.projectPath, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
+    this.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Командах проекта»') + '\n');
+  }
+
+  /** Пересобрать профиль по кнопке в «Командах проекта». */
+  async refreshProfile(repo: string): Promise<ProjectKnowledge> {
+    const res = await this.profileFor(repo, repo, () => {}, `profile-${Date.now()}`);
+    if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Нейросеть вернула пустой профиль');
+    this.updateKnowledge(repo, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
+    return this.knowledgeOf(repo);
+  }
+
+  saveKnowledge(repo: string, k: ProjectKnowledge): ProjectKnowledge {
+    this.updateKnowledge(repo, () => ({
+      profile: k.profile?.trim() || undefined,
+      profileAt: k.profileAt,
+      lessons: k.lessons?.filter((l) => l.text.trim()).map((l) => ({ ...l, text: l.text.trim() })),
+    }));
+    return this.knowledgeOf(repo);
+  }
+
+  getKnowledge(repo: string): ProjectKnowledge {
+    return this.knowledgeOf(repo);
+  }
+
+  /** После прогона: уроки из правок человека, ревью, визуальной проверки и сбоев проверок. В фоне, не задерживает коммит. */
+  private async learn(run: RunFile) {
+    const human = run.gates.filter((g) => (g.decision === 'reject' || g.decision === 'fix') && (g.comment || g.lineComments?.length))
+      .map((g) => `- человек (${g.gate === 'gate1' ? 'план' : 'приёмка'}): ${g.comment ?? ''}${g.lineComments?.length ? ' ' + g.lineComments.map((l) => `[${l.file}:${l.line}] ${l.text}`).join('; ') : ''}`);
+    const review = run.reviews.flatMap((r) => [...r.blocking, ...r.notes]).slice(0, 12).map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
+    const visual = (run.visuals ?? []).flatMap((v) => [...(v.unverified ? [`- визуальная проверка не смогла проверить: ${v.unverified}`] : []), ...v.blocking.map((b) => `- визуальная проверка: ${b.message}`)]);
+    const failed = run.tests.filter((t) => !t.passed).slice(0, 3).map((t) => `- проверки упали: ${(t.checks ?? []).filter((x) => !x.passed && !x.preexisting).map((x) => x.command).join(', ')}`);
+    const digest = [...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
+    if (!digest.trim()) return;
+    const known = this.knowledgeOf(run.projectPath).lessons ?? [];
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude']).catch(() => null);
+    if (!tools) return;
+    const res = await runClaude({
+      bin: tools.claude, cwd: os.tmpdir(), env: this.opts.env,
+      prompt: this.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }),
+      model: this.claudeModel(s.agents, s.models) || undefined, timeoutMs: 3 * 60_000, group: `${run.id}:learn`, onOutput: () => {},
+      proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, tools: [],
+    }).catch(() => null);
+    if (!res?.ok) return;
+    let lessons: string[] = [];
+    try {
+      const j = JSON.parse(res.text.slice(res.text.indexOf('{'), res.text.lastIndexOf('}') + 1)) as { lessons?: unknown };
+      lessons = Array.isArray(j.lessons) ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5) : [];
+    } catch { return; }
+    const seen = new Set(known.map((l) => l.text.toLowerCase()));
+    const fresh = lessons.map((t) => t.trim()).filter((t) => !seen.has(t.toLowerCase()));
+    if (!fresh.length) return;
+    const at = new Date().toISOString();
+    // Не больше 40 уроков: старые уходят первыми.
+    this.updateKnowledge(run.projectPath, (k) => ({ ...k, lessons: [...(k.lessons ?? []), ...fresh.map((text) => ({ text, at, runId: run.id }))].slice(-40) }));
+    this.log(run, c.violet(`✦ уроки для следующих прогонов (+${fresh.length}):\n`) + fresh.map((t) => `  • ${t}`).join('\n') + '\n');
+  }
+
   private async stagePlan(run: RunFile) {
+    // Новый план — новая постановка: прошлая сессия исполнителя к нему не относится.
+    run.executorSession = undefined;
     const s = this.opts.getSettings();
     const tools = await this.tools(['openspec']);
     const attempt = this.begin(run, 'plan', run.models.planner);
@@ -709,7 +1061,7 @@ export class Orchestrator {
 
     const prompt = this.prompts.render('plan.md', {
       changeId: run.changeId,
-      task: run.task,
+      task: this.taskText(run),
       attachments: this.attachmentsBlock(run),
       testCommand: run.testCommand || 'не задана',
       feedback: this.feedbackBlock(run.feedback),
@@ -789,7 +1141,7 @@ export class Orchestrator {
     const attempt = this.begin(run, 'implement', run.models.executor);
     const prompt = this.prompts.render(this.tpl('implement', run), {
       changeId: run.changeId,
-      task: run.task,
+      task: this.taskText(run),
       attachments: this.attachmentsBlock(run),
       testCommand: run.testCommand || 'не задана',
       attempt: run.implAttemptsUsed,
@@ -797,12 +1149,30 @@ export class Orchestrator {
       feedback: this.phaseBlock(run) + this.feedbackBlock(run.feedback),
     });
     let res: AgentResult;
+    const systemPrompt = this.prompts.raw('executor.system.md') + this.modeRules('executor', run);
+    const onClaude = (run.agents?.executor ?? DEFAULT_AGENTS.executor) === 'claude';
     try {
-      res = await this.runRole(run, 'executor', {
-        prompt,
-        systemPrompt: this.prompts.raw('executor.system.md') + this.modeRules('executor', run),
-        openspec: true,
-      });
+      // Следующая попытка на claude продолжает сессию прошлой: только замечания, без повторного изучения проекта.
+      if (onClaude && run.executorSession) {
+        this.log(run, c.dim('продолжаю сессию исполнителя — в контексте прошлая попытка') + '\n');
+        const short = this.prompts.render('implement-continue.md', {
+          changeId: run.changeId,
+          testCommand: run.testCommand || 'не задана',
+          attempt: run.implAttemptsUsed,
+          limit: run.implAttemptsLimit,
+          feedback: this.phaseBlock(run) + this.feedbackBlock(run.feedback),
+        });
+        res = await this.runRole(run, 'executor', { prompt: short, systemPrompt, openspec: true, resume: run.executorSession });
+        if (!res.ok && !res.stopped && /no conversation|session|не найден/i.test(res.error ?? '')) {
+          // Сессия пропала (чистка ~/.claude, другой компьютер) — начинаем заново с полной постановкой.
+          this.log(run, c.dim('сессия не найдена — начинаю заново') + '\n');
+          run.executorSession = crypto.randomUUID();
+          res = await this.runRole(run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: run.executorSession });
+        }
+      } else {
+        if (onClaude) run.executorSession = crypto.randomUUID();
+        res = await this.runRole(run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: onClaude ? run.executorSession : undefined });
+      }
       this.afterAgent(run, attempt, res);
     } catch (e) {
       // Сбой агента (ключ, токены, таймаут) не тратит попытку реализации.
@@ -942,6 +1312,7 @@ export class Orchestrator {
       // Большая задача: следующий этап реализации со свежим запасом попыток.
       if (modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases) {
         run.phase = (run.phase ?? 1) + 1;
+        run.executorSession = undefined;
         run.implAttemptsUsed = 0;
         run.implAttemptsLimit = MODE_LIMIT.epic;
         this.log(run, c.violet(`→ этап ${run.phase} из ${run.phases}`) + '\n');
@@ -949,7 +1320,13 @@ export class Orchestrator {
         this.save(run);
         return;
       }
-      run.next = await this.reviewOrAccept(run);
+      if (run.quickFix) {
+        // Быстрая правка: ревью и визуальная проверка уже были — сразу к человеку.
+        run.quickFix = undefined;
+        run.next = 'gate2';
+      } else {
+        run.next = await this.reviewOrAccept(run);
+      }
       this.save(run);
       return;
     }
@@ -982,7 +1359,7 @@ export class Orchestrator {
       return;
     }
     this.end(run, attempt, 'done', 'Зелёные — эталон зафиксирован');
-    run.next = 'plan';
+    run.next = 'clarify';
     this.save(run);
   }
 
@@ -1103,9 +1480,7 @@ export class Orchestrator {
     const attempt = this.begin(run, 'visual', run.models.visual || this.claudeModel(run.agents, run.models) || 'claude');
     const dir = this.visualDir(run, attempt.attempt);
     fs.mkdirSync(dir, { recursive: true });
-    const port = await freePort();
-    const url = run.appUrl!.replaceAll('{port}', String(port));
-    const command = run.runCommand!.replaceAll('{port}', String(port));
+    const { port, url, command } = await expandPorts(run.appUrl!, run.runCommand!);
     const serverGroup = `${run.id}:server`;
     let cast: Screencast | null = null;
     /** Хвост вывода команды запуска — показать человеку, если проверить не удалось (упал API и т. п.). */
@@ -1151,7 +1526,7 @@ export class Orchestrator {
       const prompt = this.prompts.render('visual.md', {
         url,
         dir,
-        task: run.task,
+        task: this.taskText(run),
         attachments: this.attachmentsBlock(run),
         proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
         specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
@@ -1369,6 +1744,8 @@ export class Orchestrator {
     }
     this.emit({ type: 'run.updated', run });
     this.emit({ type: 'run.finished', runId: run.id, status: 'finished' });
+    // Уроки для следующих прогонов — в фоне, коммит уже сделан.
+    void this.learn(run).catch(() => undefined);
   }
 
   // ——— Вспомогательное ———
@@ -1385,6 +1762,7 @@ export class Orchestrator {
   }
 
   private gateMessage(run: RunFile): string | undefined {
+    if (run.next === 'gate0') return `У планировщика ${run.clarify?.questions.length ?? 0} ${(run.clarify?.questions.length ?? 0) === 1 ? 'вопрос' : 'вопроса'} по задаче — ответьте, чтобы план не строился на догадках.`;
     if (run.next === 'limit') return run.message ?? 'Попытки реализации исчерпаны. Дать ещё одну попытку?';
     if (run.next === 'gate1' && modeOf(run) === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
     if (run.next === 'gate1' && modeOf(run) === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
@@ -1504,13 +1882,16 @@ export class Orchestrator {
    */
   private async runRole(run: RunFile, role: Role, o: {
     prompt: string; systemPrompt?: string; openspec?: boolean; readOnly?: boolean; images?: string[]; outputSchema?: object;
+    sessionId?: string; resume?: string;
   }): Promise<AgentResult> {
     const agent = run.agents?.[role] ?? DEFAULT_AGENTS[role];
     const tools = await this.tools(o.openspec ? [agent, 'openspec'] : [agent]);
     const base = this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined);
     const model = run.models[role] || undefined;
+    // Знания о проекте (профиль и уроки) — всем ролям; в продолжении сессии они уже в контексте.
+    const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${this.knowledgeBlock(run)}` || undefined;
     if (agent === 'codex') {
-      return runCodex({ ...base, prompt: o.prompt, systemPrompt: o.systemPrompt, model, sandbox: o.readOnly ? 'read-only' : 'workspace-write', images: o.images, outputSchema: o.outputSchema });
+      return runCodex({ ...base, prompt: o.prompt, systemPrompt, model, sandbox: o.readOnly ? 'read-only' : 'workspace-write', images: o.images, outputSchema: o.outputSchema });
     }
     // claude не принимает изображения флагом — даём пути, он откроет их инструментом Read.
     const images = o.images?.filter((f) => fs.existsSync(f)) ?? [];
@@ -1519,10 +1900,12 @@ export class Orchestrator {
     return runClaude({
       ...base,
       prompt,
-      systemPrompt: o.systemPrompt,
+      systemPrompt,
       model,
       addDirs: dirs.length ? dirs : undefined,
       tools: o.readOnly ? ['Read', 'Glob', 'Grep'] : undefined,
+      sessionId: o.sessionId,
+      resume: o.resume,
     });
   }
 
@@ -1617,7 +2000,7 @@ export class Orchestrator {
 }
 
 function isGate(s: StageId): boolean {
-  return s === 'gate1' || s === 'gate2' || s === 'limit';
+  return s === 'gate0' || s === 'gate1' || s === 'gate2' || s === 'limit';
 }
 
 /** Название изменения от планировщика: первая строка proposal.md вида «# Название». */
@@ -1654,6 +2037,28 @@ export function errorCount(output: string): number | null {
   if (goFails) return goFails.length;
   const lines = text.split('\n').filter((l) => /\berror\b/i.test(l)).length;
   return lines || null;
+}
+
+/**
+ * Подставить свободные порты: {port} — порт приложения, {port:имя} — дополнительные (API, воркер…),
+ * у каждого прогона свои — параллельные прогоны не делят один порт и не ходят в чужой API.
+ */
+async function expandPorts(url: string, command: string): Promise<{ port: number; url: string; command: string }> {
+  const used = new Set<number>();
+  const take = async () => {
+    for (let i = 0; i < 20; i++) {
+      const p = await freePort();
+      if (!used.has(p)) return used.add(p), p;
+    }
+    throw new Error('Не нашлось свободных портов');
+  };
+  const port = await take();
+  const named = new Map<string, number>();
+  for (const m of `${url} ${command}`.matchAll(/\{port:([a-z0-9_-]+)\}/gi)) {
+    if (!named.has(m[1])) named.set(m[1], await take());
+  }
+  const fill = (t: string) => t.replace(/\{port:([a-z0-9_-]+)\}/gi, (_, n: string) => String(named.get(n))).replaceAll('{port}', String(port));
+  return { port, url: fill(url), command: fill(command) };
 }
 
 function freePort(): Promise<number> {
@@ -1696,6 +2101,27 @@ export function parseUnverified(text: string): string | null {
     return typeof j.unverified === 'string' && j.unverified.trim() ? j.unverified.trim().slice(0, 400) : null;
   } catch {
     return null;
+  }
+}
+
+/** Вопросы уточнения из ответа планировщика (не больше 4). */
+export function parseQuestions(text: string): ClarifyQuestion[] {
+  const a = text.indexOf('{');
+  const b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) return [];
+  try {
+    const j = JSON.parse(text.slice(a, b + 1)) as { questions?: unknown };
+    if (!Array.isArray(j.questions)) return [];
+    return j.questions
+      .filter((q): q is { q: string; options?: unknown; why?: unknown } => Boolean(q) && typeof (q as { q?: unknown }).q === 'string' && (q as { q: string }).q.trim().length > 3)
+      .slice(0, 4)
+      .map((q) => ({
+        q: q.q.trim(),
+        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string' && Boolean(o.trim())).slice(0, 4) : undefined,
+        why: typeof q.why === 'string' && q.why.trim() ? q.why.trim() : undefined,
+      }));
+  } catch {
+    return [];
   }
 }
 

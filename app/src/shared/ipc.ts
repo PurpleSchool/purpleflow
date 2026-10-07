@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, CommandIssue, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -10,6 +10,7 @@ export interface PublicSettings {
   agents: Record<Role, AgentKind>;
   agentTimeoutMin: number;
   testTimeoutMin: number;
+  maxParallel: number;
   onboarded: boolean;
   windowGlass: boolean;
   notify: boolean;
@@ -24,6 +25,7 @@ export interface SettingsPatch {
   agents?: Partial<Record<Role, AgentKind>>;
   agentTimeoutMin?: number;
   testTimeoutMin?: number;
+  maxParallel?: number;
   onboarded?: boolean;
   windowGlass?: boolean;
   notify?: boolean;
@@ -58,6 +60,11 @@ export interface CoreApi {
   getVisualShot(id: string, file: string): Promise<string | null>;
   /** Проверка команд без запуска: скрипты npm/pnpm/yarn есть в package.json нужной папки. */
   checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>>;
+  getKnowledge(dir: string): Promise<ProjectKnowledge>;
+  saveKnowledge(dir: string, k: ProjectKnowledge): Promise<ProjectKnowledge>;
+  refreshProfile(dir: string): Promise<ProjectKnowledge>;
+  prReady(id: string): Promise<string | null>;
+  getPrStatus(id: string): Promise<PrStatus | null>;
   getStorage(): Promise<StorageItem[]>;
   cleanStorage(id: StorageItem['id']): Promise<number>;
   startPreview(id: string): Promise<PreviewState>;

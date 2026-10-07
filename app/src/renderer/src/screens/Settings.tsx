@@ -38,6 +38,7 @@ export function SettingsScreen() {
   const [paths, setPaths] = useState<Partial<Record<ToolName, string>>>({});
   const [agentTimeout, setAgentTimeout] = useState(30);
   const [testTimeout, setTestTimeout] = useState(10);
+  const [parallel, setParallel] = useState(2);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -52,6 +53,7 @@ export function SettingsScreen() {
     setPaths(s.toolPaths);
     setAgentTimeout(s.agentTimeoutMin);
     setTestTimeout(s.testTimeoutMin);
+    setParallel(s.maxParallel ?? 2);
   }, [s]);
 
   if (!s) return null;
@@ -68,6 +70,7 @@ export function SettingsScreen() {
         toolPaths: paths,
         agentTimeoutMin: agentTimeout,
         testTimeoutMin: testTimeout,
+        maxParallel: parallel,
       });
       setKey('');
       setSaved(true);
@@ -297,6 +300,9 @@ export function SettingsScreen() {
               </Field>
               <Field label="Таймаут тестов, мин">
                 <Input type="number" min={1} value={testTimeout} onChange={(e) => setTestTimeout(Number(e.target.value) || 10)} />
+              </Field>
+              <Field label="Одновременно прогонов" hint="Остальные ждут в очереди. Ожидание вашего решения место не занимает.">
+                <Input type="number" min={1} max={8} value={parallel} onChange={(e) => setParallel(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} />
               </Field>
             </div>
           </section>
