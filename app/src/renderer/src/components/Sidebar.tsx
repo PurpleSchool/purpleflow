@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react';
+import { FolderGit2, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react';
 import type { RunSummary, ToolName } from '@psflow/core';
 import { useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
@@ -57,6 +57,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           {waiting > 0 && <span className="side-badge">{waiting}</span>}
         </button>
         <button className="side-icon" title="Новая задача" onClick={() => go({ name: 'new' })}><Plus size={17} /></button>
+        <button className="side-icon" title="Проекты" onClick={() => go({ name: 'projects' })}><FolderGit2 size={17} /></button>
       </div>
     );
   }
@@ -73,6 +74,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
       <button className={`side-new ${v.name === 'new' ? 'is-on' : ''}`} onClick={() => go({ name: 'new' })}>
         <Plus size={16} /> Новая задача
+      </button>
+      <button className={`side-link side-projects ${v.name === 'projects' || v.name === 'project' ? 'is-on' : ''}`} onClick={() => go({ name: 'projects' })}>
+        <FolderGit2 size={16} /> Проекты
       </button>
 
       <nav className="side-list" aria-label="Прогоны">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { useStore } from './lib/store';
 import { NewTaskScreen } from './screens/NewTask';
+import { ProjectScreen, ProjectsScreen } from './screens/Projects';
 import { RunScreen } from './screens/Run';
 import { SettingsScreen } from './screens/Settings';
 
@@ -10,7 +11,7 @@ const SIDEBAR_KEY = 'psflow.sidebarCollapsed';
 export function App() {
   const { state } = useStore();
   const v = state.view;
-  const viewKey = v.name === 'run' ? `run:${v.runId}` : v.name;
+  const viewKey = v.name === 'run' ? `run:${v.runId}` : v.name === 'project' ? `project:${v.path}` : v.name === 'new' ? `new:${v.project ?? ''}` : v.name;
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === '1';
@@ -53,7 +54,9 @@ export function App() {
         {/* Полоса сверху вместо заголовка окна: за неё окно перетаскивается. */}
         <div className="main-drag drag" aria-hidden />
         <div className="screen-enter" key={viewKey}>
-          {v.name === 'new' && <NewTaskScreen />}
+          {v.name === 'new' && <NewTaskScreen initialProject={v.project} />}
+          {v.name === 'projects' && <ProjectsScreen />}
+          {v.name === 'project' && <ProjectScreen path={v.path} initialTab={v.tab} />}
           {v.name === 'run' && <RunScreen runId={v.runId} />}
           {v.name === 'settings' && <SettingsScreen />}
         </div>

@@ -15,11 +15,12 @@ import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
 import { Prompts } from './prompts.js';
 import { RunStore } from './store.js';
 import { Screencast, findChrome, waitForCdp } from './screencast.js';
+import { projectStats } from './stats.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js';
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
-  AgentKind, Role, PrStatus, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -659,7 +660,7 @@ export class Orchestrator {
     const cfg = this.getProjectConfig(r.projectPath);
     const runCommand = cfg?.runCommand || r.runCommand;
     const appUrl = cfg?.appUrl || r.appUrl;
-    if (!runCommand || !appUrl) throw new Error('Задайте «Запуск приложения» и «Адрес» в командах проекта на экране «Новая задача».');
+    if (!runCommand || !appUrl) throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»).');
     if (!fs.existsSync(r.worktreePath)) throw new Error(`Рабочая копия прогона не найдена: ${r.worktreePath}`);
     if (r.workspace === 'branch') await this.ensureOnBranch(r);
     this.copyEnvFiles(r);
@@ -984,10 +985,10 @@ export class Orchestrator {
       return;
     }
     this.updateKnowledge(run.projectPath, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
-    this.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Командах проекта»') + '\n');
+    this.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Проекты → Знания о проекте»') + '\n');
   }
 
-  /** Пересобрать профиль по кнопке в «Командах проекта». */
+  /** Пересобрать профиль по кнопке в «Знаниях о проекте». */
   async refreshProfile(repo: string): Promise<ProjectKnowledge> {
     const res = await this.profileFor(repo, repo, () => {}, `profile-${Date.now()}`);
     if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Нейросеть вернула пустой профиль');
@@ -1376,6 +1377,52 @@ export class Orchestrator {
     return 'review';
   }
 
+  /** Проекты, с которыми работали: настроенные и те, где были прогоны. Сначала недавние. */
+  listProjects(): ProjectListItem[] {
+    const map = new Map<string, ProjectListItem>();
+    for (const [p, cfg] of Object.entries(this.store.readProjects())) {
+      map.set(p, { path: p, configured: true, exists: fs.existsSync(p), updatedAt: cfg.updatedAt, runs: 0, active: 0, lastRunAt: null });
+    }
+    for (const r of this.listRuns()) {
+      const p = path.resolve(r.projectPath);
+      const it = map.get(p) ?? { path: p, configured: false, exists: fs.existsSync(p), runs: 0, active: 0, lastRunAt: null };
+      it.runs++;
+      if (r.status === 'running' || r.status === 'waiting' || r.status === 'queued') it.active++;
+      if (!it.lastRunAt || r.createdAt > it.lastRunAt) it.lastRunAt = r.createdAt;
+      map.set(p, it);
+    }
+    const at = (x: ProjectListItem) => x.lastRunAt ?? x.updatedAt ?? '';
+    return [...map.values()].sort((a, b) => at(b).localeCompare(at(a)));
+  }
+
+  /** Состояние репозитория проекта для страницы «Обзор». */
+  async projectOverview(repo: string): Promise<ProjectOverview> {
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+    const [branch, dirty, remote, pr] = await Promise.all([
+      git.currentBranch(repo).catch(() => null),
+      git.dirtyFiles(repo).then((f) => f.length).catch(() => 0),
+      runProc(tools.git, ['remote', 'get-url', 'origin'], { cwd: repo, env: this.opts.env, timeoutMs: 10_000 }).then((x) => (x.code === 0 ? x.stdout.trim() : null)).catch(() => null),
+      prReadiness(this.ghBin(), tools.git, repo, this.opts.env).catch((e) => String((e as Error).message)),
+    ]);
+    return { branch, dirty, remote, prReady: pr };
+  }
+
+  /** Статистика по прогонам проекта. */
+  projectStats(repo: string): ProjectStats {
+    const root = path.resolve(repo);
+    const runs = this.listRuns()
+      .filter((r) => !r.missing && path.resolve(r.projectPath) === root)
+      .map((r) => this.store.load(r.id))
+      .filter((r): r is RunFile => Boolean(r));
+    return projectStats(runs);
+  }
+
+  /** Убрать проект из списка: команды и знания удаляются, прогоны остаются. */
+  forgetProject(repo: string): void {
+    this.store.removeProject(path.resolve(repo));
+  }
+
   /** Сохранённые команды проекта (null — ещё не настраивали). */
   getProjectConfig(repo: string): ProjectConfig | null {
     return this.store.readProjects()[path.resolve(repo)] ?? null;
@@ -1392,6 +1439,8 @@ export class Orchestrator {
       envFiles: cfg.envFiles?.map((f) => f.trim()).filter(Boolean),
       workspace: cfg.workspace,
       notes: cfg.notes,
+      // Знания собираются отдельно — сохранение команд их не трогает.
+      knowledge: cfg.knowledge ?? this.getProjectConfig(repo)?.knowledge,
       updatedAt: new Date().toISOString(),
     };
     this.store.writeProject(path.resolve(repo), full);

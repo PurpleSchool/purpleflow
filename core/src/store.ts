@@ -155,6 +155,12 @@ export class RunStore {
     writeAtomic(this.projectsFile(), JSON.stringify(all, null, 2));
   }
 
+  removeProject(repo: string): void {
+    const all = this.readProjects();
+    delete all[repo];
+    writeAtomic(this.projectsFile(), JSON.stringify(all, null, 2));
+  }
+
   logFile(id: string): string {
     return path.join(this.logsDir, `${id}.log`);
   }

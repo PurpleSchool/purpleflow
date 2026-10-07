@@ -356,6 +356,56 @@ export interface ProjectConfig {
   updatedAt: string;
 }
 
+/** Проект в списке «Проекты». */
+export interface ProjectListItem {
+  path: string;
+  /** Есть сохранённые команды проекта. */
+  configured: boolean;
+  /** Папка на месте. */
+  exists: boolean;
+  updatedAt?: string;
+  runs: number;
+  /** Идут, ждут решения или в очереди. */
+  active: number;
+  lastRunAt: string | null;
+}
+
+/** Статистика проекта для вкладки «Обзор». */
+export interface ProjectStats {
+  total: number;
+  finished: number;
+  active: number;
+  stopped: number;
+  cancelled: number;
+  /** Завершены без возврата плана или результата человеком. */
+  firstPass: number;
+  /** Медиана от постановки задачи до готового коммита. */
+  medianLeadMs: number | null;
+  /** Время работы агентов и время ожидания решений человека — по всем прогонам. */
+  agentMs: number;
+  waitMs: number;
+  avgImplAttempts: number | null;
+  /** Сколько раз работа возвращалась: человеком на плане и приёмке, красными проверками, ревью, визуальной проверкой. */
+  returns: { plan: number; acceptance: number; tests: number; review: number; visual: number };
+  byMode: { mode: RunMode; total: number; finished: number }[];
+  /** По дням за последние 4 недели. */
+  daily: { day: string; started: number; finished: number }[];
+  /** На каких стадиях прогоны останавливались. */
+  stops: { stage: StageId; count: number }[];
+  tokens: number;
+  merged: number;
+  prs: number;
+}
+
+export interface ProjectOverview {
+  branch: string | null;
+  /** Изменённых файлов в рабочей копии. */
+  dirty: number;
+  remote: string | null;
+  /** null — PR создать можно, иначе причина. */
+  prReady: string | null;
+}
+
 /** Команды, которые нашла нейросеть, с пояснением, откуда они взяты. */
 export interface AiCommands {
   setupCommand: string;

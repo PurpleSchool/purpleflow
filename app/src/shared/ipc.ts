@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -71,6 +71,10 @@ export interface CoreApi {
   stopPreview(id: string): Promise<void>;
   getPreview(id: string): Promise<PreviewState>;
   saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
+  listProjects(): Promise<ProjectListItem[]>;
+  projectOverview(dir: string): Promise<ProjectOverview>;
+  forgetProject(dir: string): Promise<void>;
+  projectStats(dir: string): Promise<ProjectStats>;
 }
 
 export type CoreMethod = keyof CoreApi;

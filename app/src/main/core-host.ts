@@ -41,6 +41,10 @@ function api(c: Orchestrator): CoreApi {
     stopPreview: (id) => c.stopPreview(id),
     getPreview: async (id) => c.getPreview(id),
     saveProjectConfig: async (dir, cfg) => c.saveProjectConfig(dir, cfg),
+    listProjects: async () => c.listProjects(),
+    projectOverview: (dir) => c.projectOverview(dir),
+    forgetProject: async (dir) => c.forgetProject(dir),
+    projectStats: async (dir) => c.projectStats(dir),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
       const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);

@@ -2,7 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useReducer,
 import type { CoreEvent, RunFile, RunSummary, ToolInfo, ToolName } from '@psflow/core';
 import type { PublicSettings } from '../../../shared/ipc';
 
-export type View = { name: 'new' } | { name: 'run'; runId: string } | { name: 'settings' };
+export type ProjectTab = 'overview' | 'commands' | 'knowledge';
+export type View =
+  | { name: 'new'; project?: string }
+  | { name: 'run'; runId: string }
+  | { name: 'settings' }
+  | { name: 'projects' }
+  | { name: 'project'; path: string; tab?: ProjectTab };
 
 interface State {
   view: View;

@@ -171,7 +171,7 @@ export function BrowserPane({ preview, canRun }: { preview: ReturnType<typeof us
               {canRun ? (
                 <Button tone="primary" icon={<Globe size={15} />} onClick={() => void start()}>Открыть приложение</Button>
               ) : (
-                <p className="muted">Задайте «Запуск приложения» и «Адрес» в командах проекта на экране «Новая задача».</p>
+                <p className="muted">Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»).</p>
               )}
             </>
           )}
