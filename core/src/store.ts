@@ -49,10 +49,26 @@ export class RunStore {
     return run.archivedPath ?? path.join(run.worktreePath, 'openspec', 'changes', run.changeId, 'run.json');
   }
 
+  /** Копия run.json в данных приложения: в режиме «ветка» основной файл пропадает, когда пользователь переключает ветку. */
+  private backupPath(id: string): string {
+    return path.join(this.dataDir, 'runs', `${id}.json`);
+  }
+
+  /**
+   * В режиме «ветка» run.json в проекте живёт только до коммита прогона (и вовсе не пишется в быстрой правке):
+   * иначе рабочая копия пользователя остаётся грязной. Дальше — только копия в данных приложения.
+   */
+  static inProject(run: RunFile): boolean {
+    return !(run.workspace === 'branch' && (run.mode === 'quick' || run.commit));
+  }
+
   save(run: RunFile): void {
     run.updatedAt = new Date().toISOString();
-    const file = RunStore.runJsonPath(run);
-    writeAtomic(file, JSON.stringify(run, null, 2) + '\n');
+    const json = JSON.stringify(run, null, 2) + '\n';
+    fs.mkdirSync(path.join(this.dataDir, 'runs'), { recursive: true });
+    writeAtomic(this.backupPath(run.id), json);
+    const file = RunStore.inProject(run) ? RunStore.runJsonPath(run) : this.backupPath(run.id);
+    if (file !== this.backupPath(run.id)) writeAtomic(file, json);
     const index = this.readIndex();
     const entry = index.find((e) => e.id === run.id);
     if (entry) entry.runJsonPath = file;
@@ -63,7 +79,7 @@ export class RunStore {
   load(id: string): RunFile | null {
     const entry = this.readIndex().find((e) => e.id === id);
     if (!entry) return null;
-    return this.readFile(entry.runJsonPath);
+    return this.readFile(entry.runJsonPath) ?? this.readFile(this.backupPath(id));
   }
 
   private readFile(file: string): RunFile | null {
@@ -76,7 +92,7 @@ export class RunStore {
 
   list(): RunSummary[] {
     return this.readIndex().map((e) => {
-      const r = this.readFile(e.runJsonPath);
+      const r = this.readFile(e.runJsonPath) ?? this.readFile(this.backupPath(e.id));
       if (!r) {
         return {
           id: e.id, title: 'run.json не найден', changeId: '', projectPath: '', branch: '', status: 'stopped',

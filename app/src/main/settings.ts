@@ -26,6 +26,12 @@ const DEFAULTS: StoredSettings = {
   claudeAuth: 'login',
 };
 
+/**
+ * Адрес прокси PurpleSchool. В интерфейсе вводится только токен; адрес можно переопределить
+ * переменной PSFLOW_PROXY_URL или старым полем baseUrl в settings.json.
+ */
+const PURPLESCHOOL_PROXY = process.env.PSFLOW_PROXY_URL || 'https://proxy.purpleschool.ru';
+
 const file = () => path.join(app.getPath('userData'), 'settings.json');
 
 let cache: StoredSettings | null = null;
@@ -79,9 +85,11 @@ export function publicSettings(): PublicSettings {
 
 export function coreSettings(): CoreSettings {
   const s = load();
+  const apiKey = decryptKey(s.proxy.apiKeyEnc);
   return {
     toolPaths: s.toolPaths,
-    proxy: { baseUrl: s.proxy.baseUrl.trim(), codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey: decryptKey(s.proxy.apiKeyEnc) },
+    // Есть токен — агенты идут через прокси PurpleSchool; нет — через собственный вход claude и codex.
+    proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey },
     models: s.models,
     claudeAuth: s.claudeAuth,
     agentTimeoutMin: s.agentTimeoutMin,

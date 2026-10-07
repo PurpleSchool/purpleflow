@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Check, FolderGit2, FolderOpen, GitBranch, Globe, MonitorCheck, MonitorPlay, PackageOpen, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert } from 'lucide-react';
-import type { ProjectCommands } from '@psflow/core';
+import type { ProjectCommands, Workspace } from '@psflow/core';
 import { Button, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 import { useStore } from '../lib/store';
@@ -30,6 +30,7 @@ export function NewTaskScreen() {
   const [suggest, setSuggest] = useState<{ mode: Mode; reason: string } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [visual, setVisual] = useState(true);
+  const [workspace, setWorkspace] = useState<Workspace>('worktree');
   /** Откуда взята каждая команда: файл проекта, нейросеть или правка руками. */
   const [notes, setNotes] = useState<Record<Cmd, string>>({ setup: '', lint: '', test: '', run: '', url: '' });
   const [aiBusy, setAiBusy] = useState(false);
@@ -46,11 +47,13 @@ export function NewTaskScreen() {
     if (cfg) {
       setCmds({ setup: cfg.setupCommand, lint: cfg.lintCommand, test: cfg.testCommand, run: cfg.runCommand ?? '', url: cfg.appUrl ?? '' });
       setNotes({ ...cfg.notes, run: cfg.notes.run ?? '', url: '' });
+      setWorkspace(cfg.workspace ?? 'worktree');
       setSaved('saved');
     } else {
       setCmds({ setup: info.setupCommand, lint: info.lintCommand, test: info.testCommand, run: '', url: '' });
       const from = info.detectedFrom ? `по ${info.detectedFrom}` : '';
       setNotes({ setup: info.setupCommand ? from : '', lint: info.lintCommand ? from : '', test: info.testCommand ? from : '', run: '', url: '' });
+      setWorkspace('worktree');
       setSaved('draft');
     }
     try {
@@ -89,7 +92,7 @@ export function NewTaskScreen() {
     setError(null);
     try {
       await window.psflow.core.saveProjectConfig(project.path, {
-        setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, runCommand: cmds.run, appUrl: cmds.url,
+        setupCommand: cmds.setup, lintCommand: cmds.lint, testCommand: cmds.test, runCommand: cmds.run, appUrl: cmds.url, workspace,
         notes: { setup: notes.setup, lint: notes.lint, test: notes.test, run: notes.run },
       });
       setSaved('saved');
@@ -111,7 +114,7 @@ export function NewTaskScreen() {
         type: 'run.start',
         input: {
           projectPath: project.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url,
+          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, workspace,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
@@ -128,7 +131,8 @@ export function NewTaskScreen() {
   };
 
   const busyRun = state.runs.find((r) => r.status === 'running');
-  const route = stagesFor(mode, Boolean(cmds.run.trim() && cmds.url.trim()) && visual);
+  // Визуальная проверка всегда видна в маршруте и включается переключателем прямо в нём.
+  const route = stagesFor(mode, true);
   const canStart = Boolean(project?.isRepo && task.trim().length > 5) && !busyRun;
   const edit = (k: Cmd, v: string) => {
     setCmds({ ...cmds, [k]: v });
@@ -155,7 +159,29 @@ export function NewTaskScreen() {
 
   return (
     <div className="screen">
-      <Topbar title="Новая задача" sub="Простая задача: одно изменение OpenSpec в отдельной ветке" />
+      <Topbar title="Новая задача" sub="Простая задача: одно изменение OpenSpec в отдельной ветке">
+        <button
+          className={`project is-compact ${project ? (project.isRepo ? 'is-ok' : 'is-bad') : ''}`}
+          title={project ? project.path : 'Git-репозиторий проекта'}
+          onClick={async () => choose(await window.psflow.pickFolder())}
+        >
+          <span className="project-icon">{project ? <FolderGit2 size={18} /> : <FolderOpen size={18} />}</span>
+          <span className="project-text">
+            {project ? (
+              <>
+                <strong>{project.name}</strong>
+                <span className="mono">{shortPath(project.path)}</span>
+              </>
+            ) : (
+              <>
+                <strong>Выберите папку проекта</strong>
+                <span>Git-репозиторий проекта</span>
+              </>
+            )}
+          </span>
+          <span className="project-change">{project ? 'Сменить' : 'Обзор'}</span>
+        </button>
+      </Topbar>
       <div className="page-tabs">
         <PillTabs<Tab>
           className="tabs"
@@ -177,23 +203,6 @@ export function NewTaskScreen() {
           <div className="newtask-main step-enter" key={tab}>
             {tab === 'task' ? (
               <>
-                <button className={`project ${project ? (project.isRepo ? 'is-ok' : 'is-bad') : ''}`} onClick={async () => choose(await window.psflow.pickFolder())}>
-                  <span className="project-icon">{project ? <FolderGit2 size={20} /> : <FolderOpen size={20} />}</span>
-                  <span className="project-text">
-                    {project ? (
-                      <>
-                        <strong>{project.name}</strong>
-                        <span className="mono">{shortPath(project.path)}</span>
-                      </>
-                    ) : (
-                      <>
-                        <strong>Выберите папку проекта</strong>
-                        <span>Git-репозиторий. Ваша рабочая копия не изменится — работа идёт в отдельной worktree.</span>
-                      </>
-                    )}
-                  </span>
-                  <span className="project-change">{project ? 'Сменить' : 'Обзор'}</span>
-                </button>
                 {project && !project.isRepo && (
                   <p className="inline-error"><TriangleAlert size={14} /> Это не git-репозиторий. Выполните git init и первый коммит.</p>
                 )}
@@ -206,16 +215,6 @@ export function NewTaskScreen() {
                     <span className="cmd-edit">Настроить</span>
                   </button>
                 )}
-                {project?.isRepo && (
-                  <label className={`visual-toggle ${canVisual ? '' : 'is-off'}`} title={canVisual ? '' : 'Задайте команду запуска и адрес в командах проекта'}>
-                    <input type="checkbox" checked={canVisual && visual} disabled={!canVisual} onChange={(e) => setVisual(e.target.checked)} />
-                    <MonitorCheck size={16} />
-                    <span>
-                      <strong>Визуальная проверка</strong>
-                      <small>{canVisual ? 'Запустить приложение и проверить результат в браузере со скриншотами' : 'Нужна команда запуска приложения — задайте её в «Командах проекта»'}</small>
-                    </span>
-                  </label>
-                )}
 
                 <div className="modes" role="radiogroup" aria-label="Режим">
                   {MODES.map((m) => (
@@ -225,7 +224,7 @@ export function NewTaskScreen() {
                       {suggest?.mode === m.id && <Sparkles size={12} className="mode-ai" />}
                     </button>
                   ))}
-                  <button className="mode mode-auto" onClick={() => void askMode()} disabled={suggesting || task.trim().length < 6} title="Нейросеть прочитает задачу и предложит режим">
+                  <button className="mode mode-auto" onClick={() => void askMode()} disabled={suggesting || task.trim().length < 6} title={task.trim().length < 6 ? 'Сначала опишите задачу — нейросеть подберёт режим по тексту' : 'Нейросеть прочитает задачу и предложит режим'}>
                     {suggesting ? <span className="spinner" /> : <Sparkles size={15} />}
                     <span>{suggesting ? 'Определяю…' : 'Авто'}</span>
                   </button>
@@ -286,19 +285,65 @@ export function NewTaskScreen() {
           <aside className="newtask-aside">
             <h3>Как пойдёт: {MODES.find((m) => m.id === mode)?.title.toLowerCase()}</h3>
             <ol className="route">
-              {route.map((s, i) => (
-                <li key={`${mode}-${s.id}`} className={s.gate ? 'is-gate' : ''} style={{ animationDelay: `${i * 0.04}s` }}>
-                  <span className="route-n">{s.gate ? '' : i + 1 - route.slice(0, i).filter((x) => x.gate).length}</span>
-                  <div>
-                    <strong>{s.title}</strong>
-                    <span>{s.hint}</span>
-                  </div>
-                </li>
-              ))}
+              {route.map((s, i) => {
+                const optional = s.id === 'visual';
+                const on = !optional || (canVisual && visual);
+                const n = i + 1 - route.slice(0, i).filter((x) => x.gate || (x.id === 'visual' && !(canVisual && visual))).length;
+                return (
+                  <li key={`${mode}-${s.id}`} className={`${s.gate ? 'is-gate' : ''} ${optional ? 'is-optional' : ''} ${on ? '' : 'is-skipped'}`} style={{ animationDelay: `${i * 0.04}s` }}>
+                    <span className="route-n">{s.gate ? '' : on ? n : <MonitorCheck size={12} />}</span>
+                    <div>
+                      <strong>{s.title}</strong>
+                      {optional && !canVisual ? (
+                        <span>
+                          Нужна команда запуска приложения —{' '}
+                          {project?.isRepo ? <button className="link" onClick={() => setTab('commands')}>задайте в «Командах проекта»</button> : 'задайте в «Командах проекта»'}
+                        </span>
+                      ) : (
+                        <span>{s.hint}</span>
+                      )}
+                    </div>
+                    {optional && (
+                      <button
+                        role="switch"
+                        aria-checked={on}
+                        aria-label="Визуальная проверка"
+                        className={`switch is-mini ${on ? 'is-on' : ''}`}
+                        disabled={!canVisual}
+                        onClick={() => setVisual(!visual)}
+                      >
+                        <i />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
-            <p className="route-note">
-              <GitBranch size={14} /> <span>Результат — коммит в ветке <code>psflow/&lt;id&gt;</code>. Влить можно кнопкой в конце прогона.</span>
-            </p>
+            <div className="workspace">
+              <div className="workspace-head">
+                <strong>Где работать</strong>
+                <div className="segmented small" role="radiogroup">
+                  {WORKSPACES.map((w) => (
+                    <button
+                      key={w.id}
+                      role="radio"
+                      aria-checked={workspace === w.id}
+                      className={workspace === w.id ? 'is-on' : ''}
+                      onClick={() => {
+                        setWorkspace(w.id);
+                        if (saved === 'saved') setSaved('dirty');
+                      }}
+                    >
+                      {w.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="route-note">
+                <GitBranch size={14} />
+                <span>{WORKSPACES.find((w) => w.id === workspace)!.hint}</span>
+              </p>
+            </div>
           </aside>
         </div>
       </div>
@@ -311,6 +356,19 @@ export function NewTaskScreen() {
     </div>
   );
 }
+
+const WORKSPACES: { id: Workspace; title: string; hint: ReactNode }[] = [
+  {
+    id: 'worktree',
+    title: 'Worktree',
+    hint: <>Отдельная копия проекта — ваша рабочая копия не меняется. Результат — коммит в ветке <code>psflow/&lt;id&gt;</code>, влить можно кнопкой в конце прогона.</>,
+  },
+  {
+    id: 'branch',
+    title: 'Ветка',
+    hint: <>Работа прямо в проекте на новой ветке <code>psflow/&lt;id&gt;</code> — изменения сразу видны в редакторе. Нужна чистая рабочая копия; подготовка не запускается, зависимости — ваши.</>,
+  },
+];
 
 function CmdRow({ icon, title, hint, placeholder, value, note, onChange, loading }: {
   icon: ReactNode; title: string; hint: string; placeholder: string; value: string; note: string; onChange: (v: string) => void; loading: boolean;

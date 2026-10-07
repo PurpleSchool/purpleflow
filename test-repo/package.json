@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Небольшой TypeScript-проект для проверки PS Flow: без зависимостей, тесты на встроенном node:test.",
+  "description": "Небольшой TypeScript-проект для проверки PurpleFlow: без зависимостей, тесты на встроенном node:test.",
   "engines": { "node": ">=22.18" },
   "scripts": {
     "test": "node --test"

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight, ChevronDown, CircleAlert, FileText, Image as ImageIcon, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
-import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
+import type { DiffFile, LineComment, RunFile, StageAttempt, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline, useNow } from '../components/Timeline';
@@ -10,7 +10,7 @@ import { isGate } from '../lib/bars';
 import { MODES, nodeState, runStages, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { activeClock, ms } from '../lib/clock';
-import { LiveLog, type LogSlice } from '../components/Terminal';
+import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { DiffReview } from '../components/DiffReview';
 import { Button, Empty, StatusPill, TextArea } from '../components/ui';
@@ -298,7 +298,7 @@ export function RunScreen({ runId }: { runId: string }) {
                     <div className="drawer-body">
                       {showPlan && run.mode === 'bug' && run.repro && <ReproView run={run} kind="bug" />}
                       {showPlan && <PlanView docs={docs} run={run} />}
-                      {slice && <div className="pane-log"><LiveLog key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} /></div>}
+                      {slice && attempt && <AgentOutput key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} attempt={attempt} />}
                       {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
                       {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
                       {drawer === 'visual' && <VisualView run={run} runId={runId} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
@@ -696,4 +696,49 @@ function GateBar(props: {
 function stripAnsi(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+/** Стадия агента: итоговый ответ в Markdown отдельно от служебного лога. */
+function AgentOutput({ runId, slice, attempt }: { runId: string; slice: LogSlice; attempt: StageAttempt }) {
+  const running = attempt.status === 'running';
+  const [fromLog, setFromLog] = useState<string | null>(null);
+  const [tab, setTab] = useState<'result' | 'log'>(running ? 'log' : 'result');
+  useEffect(() => {
+    if (running || attempt.output) return;
+    let alive = true;
+    void window.psflow.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
+    return () => {
+      alive = false;
+    };
+  }, [runId, slice.title, slice.attempt, running, attempt.output]);
+  useEffect(() => {
+    if (!running) setTab('result');
+  }, [running]);
+  const result = attempt.output ?? fromLog;
+  const hasResult = !running && Boolean(result);
+  const shown = hasResult ? tab : 'log';
+  return (
+    <div className="agent-out">
+      {hasResult && (
+        <div className="agent-out-tabs">
+          <PillTabs<'result' | 'log'>
+            className="tabs small"
+            value={shown}
+            onChange={setTab}
+            items={[
+              { id: 'result', label: 'Результат' },
+              { id: 'log', label: 'Лог' },
+            ]}
+          />
+        </div>
+      )}
+      {shown === 'result' && result ? (
+        <div className="agent-result scroll tab-enter">
+          <Markdown source={result} />
+        </div>
+      ) : (
+        <div className="pane-log"><LiveLog runId={runId} slice={slice} /></div>
+      )}
+    </div>
+  );
 }

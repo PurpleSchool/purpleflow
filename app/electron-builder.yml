@@ -1,6 +1,6 @@
 appId: ru.purpleschool.psflow
 electronVersion: 44.5.1
-productName: PS Flow
+productName: PurpleFlow
 directories:
   output: release
   buildResources: build

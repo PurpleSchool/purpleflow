@@ -20,5 +20,5 @@ fs.renameSync(path.join(target, 'gitignore.txt'), path.join(target, '.gitignore'
 const git = (...args) => execFileSync('git', args, { cwd: target, stdio: 'inherit' });
 git('init', '-q', '-b', 'main');
 git('add', '-A');
-git('-c', 'user.name=PS Flow', '-c', 'user.email=psflow@localhost', 'commit', '-q', '-m', 'Initial commit');
+git('-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost', 'commit', '-q', '-m', 'Initial commit');
 console.log(`Готово: ${target}`);

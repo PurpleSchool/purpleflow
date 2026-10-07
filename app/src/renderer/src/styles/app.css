@@ -187,7 +187,7 @@ input[type='number'].input { font-variant-numeric: tabular-nums; }
 .check p { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-13); user-select: text; }
 
 /* ——— Новая задача ——— */
-.newtask { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--gap); padding: 0 var(--page-x) var(--s-12); max-width: 1400px; }
+.newtask { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--gap); padding: 0 var(--page-x) var(--s-12); }
 .newtask-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
 .newtask-main > .grid-2 { padding: var(--s-6) var(--s-8) var(--s-8); background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--highlight); }
 .project { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-5) var(--s-6); border-radius: var(--r-card); text-align: left; background: var(--bg-3); box-shadow: var(--highlight); transition: background 0.3s var(--ease); }
@@ -494,7 +494,7 @@ button.note-loc:hover { color: var(--text-1); }
 }
 
 @media (max-width: 1280px) {
-  :root { --page-x: 32px; }
+  :root { --page-x: 24px; }
   .newtask { grid-template-columns: 1fr; }
   .newtask-aside { position: static; }
   .run-grid { grid-template-columns: 300px minmax(0, 1fr); }
@@ -1076,10 +1076,9 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .check-block { display: flex; flex-direction: column; gap: var(--s-2); }
 .check-block + .check-block { margin-top: var(--s-4); }
 
-/* Адаптивность: контент по центру с разумной шириной, на узком окне — одна колонка */
-.newtask { max-width: 1440px; margin: 0 auto; width: 100%; grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 380px); }
-.screen > .topbar { max-width: calc(1440px + var(--page-x) * 2); margin: 0 auto; width: 100%; }
-.screen > .actionbar { max-width: calc(1440px + var(--page-x) * 2); margin: 0 auto; width: 100%; }
+/* Адаптивность: всё прижато к левому краю с общим отступом, ширина ограничена; на узком окне — одна колонка */
+.newtask { width: 100%; grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 380px); }
+.screen > .topbar, .screen > .actionbar { width: 100%; }
 .task-input { min-height: clamp(160px, 28vh, 320px); }
 @media (max-width: 1100px) {
   .newtask { grid-template-columns: minmax(0, 1fr); }
@@ -1096,7 +1095,7 @@ button.imgdrop-thumb { cursor: zoom-in; }
 }
 
 /* Вкладки страницы слева под заголовком */
-.page-tabs { flex: none; max-width: calc(1440px + var(--page-x) * 2); width: 100%; margin: calc(var(--s-4) * -1) auto var(--s-6); padding: 0 var(--page-x); }
+.page-tabs { flex: none; width: 100%; margin: calc(var(--s-4) * -1) 0 var(--s-6); padding: 0 var(--page-x); }
 .page-tabs .tabs { margin: 0; }
 .tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--wait); }
 .cmd-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-3) var(--s-5); border-radius: var(--r-l); background: var(--bg-3); text-align: left; font-size: var(--fs-12); transition: background 0.25s var(--ease); }
@@ -1106,7 +1105,6 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .cmd-edit { color: var(--text-1); font-weight: 500; }
 .cmd-actions { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
 .cmd-saved { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-size: var(--fs-13); }
-.newtask { max-width: calc(1440px + var(--page-x) * 2); }
 
 /* ——— Режимы ——— */
 .modes { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1124,13 +1122,6 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .route li { animation: tabIn 0.4s var(--ease) both; }
 
 /* Визуальная проверка */
-.visual-toggle { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-5); border-radius: var(--r-l); background: var(--bg-3); cursor: pointer; }
-.visual-toggle.is-off { cursor: default; opacity: 0.6; }
-.visual-toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
-.visual-toggle > svg { color: var(--text-2); }
-.visual-toggle span { display: flex; flex-direction: column; line-height: 1.35; }
-.visual-toggle strong { font-weight: 500; font-size: var(--fs-13); }
-.visual-toggle small { font-size: var(--fs-12); color: var(--text-3); }
 
 /* Режим в шапке, воспроизведение, скриншоты */
 .mode-chip svg { color: var(--accent-hi); }
@@ -1147,3 +1138,66 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .shot figcaption { font-size: var(--fs-12); color: var(--text-2); line-height: 1.45; }
 .split.is-open { grid-template-columns: 380px minmax(0, 1fr); }
 .gantt.is-compact .gantt-row.is-click { grid-template-columns: 190px 1fr 18px; }
+
+/* Проект — в шапке «Новой задачи», справа от заголовка */
+.project.is-compact { gap: var(--s-3); padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4); border-radius: var(--r-l); width: clamp(280px, 30vw, 440px); }
+.project.is-compact .project-icon { width: 36px; height: 36px; border-radius: 11px; flex: none; }
+.project.is-compact .project-text strong { font-size: var(--fs-14); }
+.project.is-compact .project-change { flex: none; }
+@media (max-width: 760px) {
+  .topbar-actions:has(.project.is-compact) { width: 100%; }
+  .project.is-compact { width: 100%; }
+}
+
+/* Необязательная стадия в маршруте: переключатель прямо в строке */
+.route li.is-optional { align-items: flex-start; }
+.route li.is-optional > div { flex: 1; min-width: 0; }
+.route li.is-skipped strong { color: var(--text-3); }
+.route li.is-skipped .route-n { color: var(--text-4); background: var(--bg-3); }
+.route li > div, .route-n { transition: color 0.3s var(--ease), background 0.3s var(--ease); }
+.switch.is-mini { height: auto; padding: 0; background: transparent; margin-top: 1px; }
+.switch.is-mini i { width: 34px; height: 20px; }
+.switch.is-mini i::after { top: 2px; left: 2px; width: 16px; height: 16px; }
+.switch.is-mini.is-on i::after { transform: translateX(14px); }
+.switch.is-mini:active i::after { width: 19px; }
+.switch.is-mini.is-on:active i::after { transform: translateX(11px); }
+.switch.is-mini:disabled { opacity: 0.4; cursor: default; }
+.link { padding: 0; color: var(--accent-hi); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, var(--accent-hi) 40%, transparent); }
+
+/* Итог агента: «Результат» в Markdown и «Лог» отдельной вкладкой */
+.drawer-body > .agent-out { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.agent-out-tabs { flex: none; padding: 0 var(--s-6) var(--s-3); }
+.agent-out-tabs .tabs { margin: 0; }
+.agent-out > .pane-log { flex: 1; min-height: 0; display: flex; padding: 0 var(--s-4) var(--s-4); }
+.agent-result { flex: 1; min-height: 0; overflow: auto; padding: 0 var(--s-2) var(--s-6); }
+.agent-result .md { max-width: 82ch; }
+.agent-result .md > :first-child { margin-top: 0.4em; }
+.tabs.small .tab { height: 28px; padding: 0 var(--s-3); font-size: var(--fs-12); }
+
+/* ——— Единые отступы экранов: --page-x по бокам, --page-top сверху, --page-bottom снизу ——— */
+.appbar { padding: 0 var(--page-x); }
+.topbar { padding: var(--page-top) var(--page-x) var(--s-6); }
+.welcome { padding: var(--page-top) var(--page-x) var(--s-6); }
+.settings-tabs { padding: 0 var(--page-x) var(--s-4); }
+.page-tabs { margin: calc(var(--s-2) * -1) 0 var(--s-4); }
+.settings, .newtask { padding-bottom: var(--page-bottom); }
+.history { margin-bottom: var(--page-bottom); }
+.actionbar { padding: var(--s-3) var(--page-x) var(--page-bottom); }
+.run-v3 { padding: 0 var(--page-x) var(--page-bottom); }
+.run-v3 > .run-head { padding: var(--page-top) 0 var(--s-2); }
+.run-v3 .tab-groups { margin: var(--s-5) var(--s-6) 0; }
+.timeline-panel { padding: var(--s-2) var(--s-6) var(--s-6); }
+.token-row { display: flex; gap: var(--s-2); align-items: center; }
+.token-row > :first-child { flex: 1; min-width: 0; }
+.token-row > .btn { flex: none; }
+a.btn { text-decoration: none; }
+
+/* Где работать: worktree или ветка в проекте */
+.workspace { margin-top: var(--s-6); display: flex; flex-direction: column; gap: var(--s-3); }
+.workspace-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+.workspace-head strong { font-size: var(--fs-13); font-weight: 500; }
+.workspace .route-note { margin: 0; }
+.segmented.small button { height: 28px; padding: 0 var(--s-3); }
+/* Полоса прокрутки всегда занимает 10px — вычитаем их, чтобы правый край контента совпадал с шапкой и кнопкой */
+.screen > .scroll { scrollbar-gutter: stable; }
+.screen > .scroll > .newtask { padding-right: calc(var(--page-x) - 10px); }

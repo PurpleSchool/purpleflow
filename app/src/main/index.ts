@@ -7,6 +7,11 @@ import { coreSettings, publicSettings, updateSettings } from './settings';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PSFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PSFLOW_USER_DATA));
+else {
+  // До переименования в PurpleFlow профиль жил в «PS Flow»: там настройки, история и worktree прогонов — остаёмся в нём.
+  const legacy = path.join(app.getPath('appData'), 'PS Flow');
+  if (fs.existsSync(legacy)) app.setPath('userData', legacy);
+}
 
 let win: BrowserWindow | null = null;
 let host: UtilityProcess | null = null;
@@ -18,7 +23,7 @@ const promptsDir = () =>
   app.isPackaged ? path.join(process.resourcesPath, 'prompts') : path.join(app.getAppPath(), '..', 'core', 'prompts');
 
 function startHost(): Promise<void> {
-  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), [], { serviceName: 'PS Flow Core', stdio: 'inherit' });
+  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), [], { serviceName: 'PurpleFlow Core', stdio: 'inherit' });
   ready = new Promise((resolve) => {
     host!.on('message', (m: HostMessage) => {
       if (m.kind === 'ready') resolve();

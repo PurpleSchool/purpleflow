@@ -74,11 +74,11 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
   const t = raw.toLowerCase();
   if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
     if (auth === 'env') return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
-    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо задайте прокси в настройках.`;
-    return `${agent}: прокси отклонил ключ. Проверьте base URL и ключ в настройках.`;
+    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо введите токен PurpleSchool в настройках.`;
+    return `${agent}: прокси PurpleSchool отклонил токен. Проверьте токен в настройках.`;
   }
   if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
-    return `${agent}: закончились токены или кредиты на балансе прокси.`;
+    return `${agent}: закончились токены или кредиты на балансе PurpleSchool.`;
   }
   if (/rate.?limit|429|overloaded|529/.test(t)) {
     return `${agent}: превышен лимит запросов или модель перегружена. Повторите позже.`;
@@ -87,7 +87,7 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
     return `${agent}: модель недоступна. Проверьте имя модели для роли в настройках.`;
   }
   if (/enotfound|econnrefused|etimedout|network|fetch failed|connection error|getaddrinfo/.test(t)) {
-    return `${agent}: нет соединения с прокси. Проверьте base URL и сеть.`;
+    return `${agent}: нет соединения с прокси PurpleSchool. Проверьте сеть.`;
   }
   const line = raw.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400);
   return `${agent}: ${line || 'завершился с ошибкой без сообщения'}`;

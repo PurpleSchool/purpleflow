@@ -1,7 +1,7 @@
-# PS Flow — прототип оркестратора стадий на OpenSpec
+# PurpleFlow — прототип оркестратора стадий на OpenSpec
 
 Задача проходит жёсткие стадии: **план → утверждение → реализация → тесты → ревью другой моделью → приёмка → архив и коммит**.
-Своего агента нет: стадии выполняют установленные CLI `claude` и `codex`. PS Flow отвечает только за оркестрацию, гейты и интерфейс.
+Своего агента нет: стадии выполняют установленные CLI `claude` и `codex`. PurpleFlow отвечает только за оркестрацию, гейты и интерфейс.
 
 Каждая задача — одно изменение OpenSpec в отдельной git worktree на ветке `psflow/<change-id>`. Рабочая копия пользователя не трогается, merge делает человек.
 
@@ -158,7 +158,7 @@ claude -p --output-format stream-json --verbose
 
 - `--setting-sources project,local` и `--strict-mcp-config` — пользовательские хуки, плагины, MCP и `env` из `~/.claude` не вмешиваются в прогон (и не меняются).
 - `--permission-mode bypassPermissions` — агент работает автономно, но только внутри отдельной worktree.
-- Прокси: `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_AUTH_TOKEN=<ключ>` (`ANTHROPIC_API_KEY` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
+- Прокси: в настройках вводится только токен PurpleSchool; адрес — `https://proxy.purpleschool.ru` (переопределяется переменной `PSFLOW_PROXY_URL`). Агенту передаются `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_AUTH_TOKEN=<ключ>` (`ANTHROPIC_API_KEY` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
 - Из stream-json берём `assistant` (текст и вызовы инструментов — в лог), `user.tool_result`, финальный `result` (`usage`, `total_cost_usd`, `is_error`).
 
 **codex** (`core/src/agents/codex.ts`), промпт через stdin (`-`):
@@ -171,7 +171,7 @@ codex exec --json --ephemeral --skip-git-repo-check --color never
 ```
 
 - Прокси подключается отдельным провайдером через `-c`, без правки `~/.codex/config.toml`:
-  `--ignore-user-config -c model_provider=psflow -c model_providers.psflow.base_url=<URL> -c model_providers.psflow.env_key=PSFLOW_OPENAI_API_KEY -c model_providers.psflow.wire_api=responses`, ключ — в `PSFLOW_OPENAI_API_KEY`. URL для codex — отдельное поле в настройках, по умолчанию `<base URL>/v1`.
+  `--ignore-user-config -c model_provider=psflow -c model_providers.psflow.base_url=<URL> -c model_providers.psflow.env_key=PSFLOW_OPENAI_API_KEY -c model_providers.psflow.wire_api=responses`, ключ — в `PSFLOW_OPENAI_API_KEY`. URL для codex — `<base URL>/v1`.
 - Из JSONL берём `item.completed` (`agent_message`, `command_execution`, `reasoning`), `turn.completed.usage`, `error`/`turn.failed`.
 
 **openspec**: `init --tools none --no-animation .`, `validate <id> --type change --strict --json --no-interactive`, `archive <id> -y --json`.
@@ -213,7 +213,7 @@ cd core && npx tsx scripts/e2e.ts --repo ~/psflow-sample --reject-plan "Доба
 
 | Критерий | Как проверено | Итог |
 |---|---|---|
-| Приложение запускается «из Finder» и находит claude и codex | `open` упакованного `PS Flow.app` (LaunchServices, урезанный PATH) | git, claude 2.1.286, codex 0.160.1 найдены через login-шелл |
+| Приложение запускается «из Finder» и находит claude и codex | `open` упакованного `PurpleFlow.app` (LaunchServices, урезанный PATH) | git, claude 2.1.286, codex 0.160.1 найдены через login-шелл |
 | Задача проходит все стадии до архива и коммита | headless e2e и живой прогон через окно на `test-repo` | коммит в `psflow/<id>`, изменение в `openspec/changes/archive/`, тесты зелёные |
 | Красные тесты → повтор с выводом → стоп после 3 попыток | e2e с заведомо красной командой тестов | 3 реализации, исполнитель цитирует вывод тестов, затем вопрос человеку |
 | «Вернуть с комментарием» доходит до агента | возврат на G1 и на G2 с замечанием на строке | планировщик добавил пункт, исполнитель выполнил замечание на строке |

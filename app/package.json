@@ -1,8 +1,8 @@
 {
   "name": "@psflow/app",
-  "productName": "PS Flow",
+  "productName": "PurpleFlow",
   "version": "0.1.0",
-  "description": "PS Flow — оркестратор стадий для claude и codex на OpenSpec",
+  "description": "PurpleFlow — оркестратор стадий для claude и codex на OpenSpec",
   "author": "PurpleSchool",
   "private": true,
   "main": "./out/main/index.js",

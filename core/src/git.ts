@@ -52,6 +52,54 @@ export class Git {
     await this.git(repo, ['worktree', 'add', '-b', branch, worktreePath, base], 120_000);
   }
 
+  /** Текущая ветка рабочей копии (null — detached HEAD). */
+  async currentBranch(dir: string): Promise<string | null> {
+    const r = await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: dir, env: this.env });
+    return r.stdout.trim() || null;
+  }
+
+  /** Незакоммиченные изменения рабочей копии, включая неотслеживаемые файлы. */
+  async dirtyFiles(dir: string): Promise<string[]> {
+    const out = await this.git(dir, ['status', '--porcelain']);
+    return out.split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+  }
+
+  /** Режим «ветка»: новая ветка от base прямо в рабочей копии пользователя. */
+  async checkoutNewBranch(repo: string, branch: string, base: string): Promise<void> {
+    await this.git(repo, ['checkout', '-b', branch, base], 60_000);
+  }
+
+  /** Дифф между двумя коммитами — для завершённого прогона, когда рабочая копия уже на другой ветке. */
+  async diffCommits(repo: string, base: string, head: string, skip: (path: string) => boolean = () => false): Promise<DiffFile[]> {
+    const out = await this.git(repo, ['diff', '--name-status', '-M', '-z', base, head]);
+    const parts = out.split('\0').filter(Boolean);
+    const files: DiffFile[] = [];
+    for (let i = 0; i < parts.length; ) {
+      const code = parts[i++];
+      const st = code[0] as DiffFile['status'];
+      const oldPath = parts[i++];
+      const newPath = st === 'R' ? parts[i++] : oldPath;
+      if (skip(newPath)) continue;
+      const original = st === 'A' ? '' : await this.show(repo, base, oldPath);
+      const modified = st === 'D' ? '' : await this.show(repo, head, newPath);
+      const binary = original.includes('\0') || modified.includes('\0');
+      files.push({
+        path: newPath,
+        status: st === 'A' || st === 'M' || st === 'D' || st === 'R' ? st : 'M',
+        original: binary ? '' : original,
+        modified: binary ? '' : modified,
+        binary,
+      });
+    }
+    return files;
+  }
+
+  /** Файлы каталога в коммите (пути от корня репозитория). */
+  async listAt(repo: string, rev: string, dir: string): Promise<string[]> {
+    const r = await run(this.bin, ['ls-tree', '-r', '--name-only', rev, '--', dir], { cwd: repo, env: this.env, timeoutMs: 20_000 });
+    return r.code === 0 ? r.stdout.split('\n').map((x) => x.trim()).filter(Boolean) : [];
+  }
+
   async worktreeExists(repo: string, worktreePath: string): Promise<boolean> {
     if (!fs.existsSync(worktreePath)) return false;
     const out = await this.git(repo, ['worktree', 'list', '--porcelain']).catch(() => '');
@@ -131,7 +179,7 @@ export class Git {
     if (!status.trim()) return this.head(worktree);
     // Своё имя автора только если в репозитории не настроено — глобальный конфиг не трогаем.
     const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
-    const identity = hasUser ? [] : ['-c', 'user.name=PS Flow', '-c', 'user.email=psflow@localhost'];
+    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
     await this.git(worktree, [...identity, 'commit', '-m', message, '--no-verify']);
     return this.head(worktree);
   }
@@ -175,7 +223,7 @@ export class Git {
     }
     try {
       const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir!, env: this.env })).stdout.trim();
-      const identity = hasUser ? [] : ['-c', 'user.name=PS Flow', '-c', 'user.email=psflow@localhost'];
+      const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
       const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], { cwd: dir!, env: this.env, timeoutMs: 120_000 });
       if (r.code !== 0) {
         const conflicts = (await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir!, env: this.env })).stdout.trim();

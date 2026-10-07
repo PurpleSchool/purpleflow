@@ -29,7 +29,7 @@ const BASE: Record<StageId, StageDef> = {
   baseline: { id: 'baseline', title: 'Базовые проверки', actor: 'оркестратор', hint: 'Линтер и тесты зелёные до начала — эталон поведения' },
   plan: { id: 'plan', title: 'План', actor: 'claude', role: 'planner', hint: 'Изменение OpenSpec: proposal, tasks, дельты спецификаций' },
   gate1: { id: 'gate1', title: 'Утверждение плана', actor: 'человек', gate: true, hint: 'Принять, вернуть с комментарием или отменить' },
-  implement: { id: 'implement', title: 'Реализация', actor: 'claude', role: 'executor', hint: 'Выполняет tasks.md в отдельной worktree' },
+  implement: { id: 'implement', title: 'Реализация', actor: 'claude', role: 'executor', hint: 'Выполняет tasks.md на ветке прогона' },
   tests: { id: 'tests', title: 'Проверки', actor: 'оркестратор', hint: 'Линтер и тесты проекта' },
   visual: { id: 'visual', title: 'Визуальная проверка', actor: 'claude', role: 'executor', hint: 'Запускает приложение, проходит сценарии в браузере, снимает скриншоты' },
   review: { id: 'review', title: 'Ревью', actor: 'codex', role: 'reviewer', hint: 'Другая модель сверяет дифф с планом' },

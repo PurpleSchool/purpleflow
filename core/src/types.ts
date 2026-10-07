@@ -38,6 +38,9 @@ export type StageId = 'baseline' | 'plan' | 'gate1' | 'implement' | 'tests' | 'v
 /** Режим работы: какие стадии и правила применяются к задаче. */
 export type RunMode = 'quick' | 'bug' | 'task' | 'epic' | 'refactor';
 
+/** Где работают агенты: отдельная worktree (рабочая копия не меняется) или ветка прямо в проекте. */
+export type Workspace = 'worktree' | 'branch';
+
 export interface VisualShot {
   /** Абсолютный путь к скриншоту в каталоге данных приложения. */
   file: string;
@@ -75,6 +78,8 @@ export interface StageAttempt {
   status: AttemptStatus;
   /** Короткий итог для списка стадий. */
   summary?: string;
+  /** Итоговый ответ агента (Markdown) — показывается отдельно от лога. */
+  output?: string;
   error?: string;
   tokens?: TokenUsage;
   model?: string;
@@ -151,6 +156,10 @@ export interface RunFile {
   lintCommand?: string;
   /** Режим (у старых прогонов отсутствует — считается «задачей»). */
   mode?: RunMode;
+  /** Где шла работа; у старых прогонов — worktree. */
+  workspace?: Workspace;
+  /** Ветка, на которой была рабочая копия до прогона в режиме «ветка». */
+  originalBranch?: string;
   visual?: boolean;
   runCommand?: string;
   appUrl?: string;
@@ -234,6 +243,7 @@ export interface StartRunInput {
   runCommand?: string;
   appUrl?: string;
   visual?: boolean;
+  workspace?: Workspace;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
 }
@@ -278,6 +288,7 @@ export interface ProjectConfig {
   testCommand: string;
   runCommand?: string;
   appUrl?: string;
+  workspace?: Workspace;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
 }

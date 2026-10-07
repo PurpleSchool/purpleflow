@@ -154,7 +154,10 @@ export class Orchestrator {
     const r = this.mustLoad(id);
     const tools = await this.tools(['git']);
     const git = new Git(tools.git, this.opts.env);
-    return git.diff(r.worktreePath, r.baseCommit, (p) => p.startsWith('openspec/changes/') && p.endsWith('/run.json'));
+    const skip = (p: string) => p.startsWith('openspec/') && p.endsWith('/run.json');
+    // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
+    if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
+    return git.diff(r.worktreePath, r.baseCommit, skip);
   }
 
   /** Ветки репозитория пользователя для слияния результата. */
@@ -179,9 +182,23 @@ export class Orchestrator {
   }
 
   /** proposal.md, tasks.md и дельты спецификаций — для гейта 1 и ревью. */
-  getChangeDocs(id: string): { proposal: string; tasks: string; design: string; specs: { path: string; content: string }[] } {
+  async getChangeDocs(id: string): Promise<{ proposal: string; tasks: string; design: string; specs: { path: string; content: string }[] }> {
     const r = this.mustLoad(id);
     const dir = r.archivedPath ? path.dirname(r.archivedPath) : path.join(r.worktreePath, 'openspec', 'changes', r.changeId);
+    if (!fs.existsSync(dir) && r.status === 'finished') {
+      // Режим «ветка» после переключения ветки: читаем документы из ветки прогона.
+      const tools = await this.tools(['git']);
+      const git = new Git(tools.git, this.opts.env);
+      const rel = path.relative(r.worktreePath, dir).split(path.sep).join('/');
+      const at = (f: string) => git.show(r.projectPath, r.branch, `${rel}/${f}`);
+      const specFiles = (await git.listAt(r.projectPath, r.branch, `${rel}/specs`)).filter((f) => f.endsWith('.md')).sort();
+      return {
+        proposal: await at('proposal.md'),
+        tasks: await at('tasks.md'),
+        design: await at('design.md'),
+        specs: await Promise.all(specFiles.map(async (f) => ({ path: f.slice(rel.length + 1), content: await git.show(r.projectPath, r.branch, f) }))),
+      };
+    }
     const read = (f: string) => {
       try {
         return fs.readFileSync(path.join(dir, f), 'utf8');
@@ -243,8 +260,22 @@ export class Orchestrator {
 
     const changeId = makeChangeId(input.task);
     const branch = `psflow/${changeId}`;
-    const worktreePath = path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
-    await git.addWorktree(repo, worktreePath, branch, base);
+    const workspace = input.workspace ?? 'worktree';
+    let worktreePath: string;
+    let originalBranch: string | undefined;
+    if (workspace === 'branch') {
+      // Режим «ветка»: работаем прямо в проекте. Чужие незакоммиченные правки попали бы в коммит прогона — поэтому только с чистой копией.
+      const dirty = await git.dirtyFiles(repo);
+      if (dirty.length) {
+        throw new Error(`В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`);
+      }
+      originalBranch = (await git.currentBranch(repo)) ?? undefined;
+      await git.checkoutNewBranch(repo, branch, base);
+      worktreePath = repo;
+    } else {
+      worktreePath = path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
+      await git.addWorktree(repo, worktreePath, branch, base);
+    }
 
     const mode = input.mode ?? 'task';
     if (mode !== 'quick') {
@@ -270,10 +301,13 @@ export class Orchestrator {
       setupCommand: input.setupCommand?.trim() || undefined,
       lintCommand: input.lintCommand?.trim() || undefined,
       mode,
+      workspace,
+      originalBranch,
       visual: visual || undefined,
       runCommand: visual ? input.runCommand!.trim() : undefined,
       appUrl: visual ? input.appUrl!.trim() : undefined,
-      prepared: !input.setupCommand?.trim(),
+      // В режиме «ветка» зависимости — уже установленные пользователем; подготовку не запускаем.
+      prepared: workspace === 'branch' || !input.setupCommand?.trim(),
       models: { ...s.models },
       status: 'running',
       next: MODE_FIRST[mode],
@@ -290,7 +324,7 @@ export class Orchestrator {
       updatedAt: now,
     };
     this.save(run);
-    this.log(run, c.dim(`PS Flow · ${run.changeId}\nветка ${branch} от ${base.slice(0, 8)}\nworktree ${worktreePath}\n`));
+    this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${branch} от ${base.slice(0, 8)}\n${workspace === 'branch' ? `рабочая копия проекта ${repo} (была ветка ${originalBranch ?? 'detached HEAD'})` : `worktree ${worktreePath}`}\n`));
     void this.drive(run);
     return run.id;
   }
@@ -299,12 +333,21 @@ export class Orchestrator {
     if (this.driving.has(id)) return;
     const r = this.mustLoad(id);
     if (r.status === 'finished' || r.status === 'cancelled') throw new Error('Прогон уже завершён');
+    await this.ensureOnBranch(r);
     r.message = undefined;
     if (r.next === 'plan') r.planRetries = 0;
     if (isGate(r.next)) return this.waitGate(r, r.next as GateId, this.gateMessage(r));
     r.status = 'running';
     this.save(r);
     void this.drive(r);
+  }
+
+  /** Режим «ветка»: продолжать можно, только если проект всё ещё на ветке прогона. */
+  private async ensureOnBranch(r: RunFile) {
+    if (r.workspace !== 'branch') return;
+    const tools = await this.tools(['git']);
+    const cur = await new Git(tools.git, this.opts.env).currentBranch(r.projectPath);
+    if (cur !== r.branch) throw new Error(`Проект сейчас на ветке ${cur ?? 'detached HEAD'}. Переключитесь на ${r.branch} (git checkout ${r.branch}) и продолжите.`);
   }
 
   private async stop(id: string) {
@@ -460,7 +503,7 @@ export class Orchestrator {
       v.issues.push({ level: 'ERROR', message: 'Для большой задачи нужен design.md: варианты решения, выбранный подход и разбиение на этапы.' });
     }
     if (v.valid && mode === 'epic') {
-      run.phases = Math.max(1, Math.min(8, countPhases(this.getChangeDocs(run.id).tasks)));
+      run.phases = Math.max(1, Math.min(8, countPhases((await this.getChangeDocs(run.id)).tasks)));
     }
     if (v.valid && mode === 'bug') {
       // Воспроизведение засчитано, только если проверки на текущем коде красные.
@@ -479,7 +522,7 @@ export class Orchestrator {
     }
     if (v.valid) {
       this.log(run, c.mint('✓ openspec validate: изменение валидно') + '\n');
-      const title = planTitle(this.getChangeDocs(run.id).proposal);
+      const title = planTitle((await this.getChangeDocs(run.id)).proposal);
       if (title) {
         run.title = title;
         run.titleFromPlan = true;
@@ -540,7 +583,9 @@ export class Orchestrator {
         run.titleFromPlan = true;
       }
     }
-    this.end(run, attempt, 'done', firstLine(res.text.replace(/^НАЗВАНИЕ:.*$/m, '')) || 'Реализация выполнена');
+    const report = res.text.replace(/^НАЗВАНИЕ:.*$/m, '').trim();
+    if (report) attempt.output = report;
+    this.end(run, attempt, 'done', firstLine(report) || 'Реализация выполнена');
     run.next = 'tests';
     this.save(run);
   }
@@ -689,6 +734,7 @@ export class Orchestrator {
       testCommand: cfg.testCommand.trim(),
       runCommand: cfg.runCommand?.trim() || undefined,
       appUrl: cfg.appUrl?.trim() || undefined,
+      workspace: cfg.workspace,
       notes: cfg.notes,
       updatedAt: new Date().toISOString(),
     };
@@ -812,7 +858,7 @@ export class Orchestrator {
       } else {
         fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
       }
-      const docs = this.getChangeDocs(run.id);
+      const docs = await this.getChangeDocs(run.id);
       const tg = await this.tools(['git']);
       const changed = await new Git(tg.git, this.opts.env).changedFiles(run.worktreePath, run.baseCommit);
       const prompt = this.prompts.render('visual.md', {
@@ -888,7 +934,7 @@ export class Orchestrator {
     const git = new Git(tools.git, this.opts.env);
     let diff = await git.diffText(run.worktreePath, run.baseCommit, [RUN_JSON_GLOB]);
     if (diff.length > MAX_DIFF) diff = diff.slice(0, MAX_DIFF) + '\n… (дифф обрезан, остальное смотри через git diff)';
-    const docs = this.getChangeDocs(run.id);
+    const docs = await this.getChangeDocs(run.id);
     const lastTest = run.tests[run.tests.length - 1];
     const prompt = this.prompts.render('review.md', {
       changeId: run.changeId,
@@ -963,8 +1009,8 @@ export class Orchestrator {
     let sha: string;
     try {
       // Быстрая правка идёт без OpenSpec: run.json остаётся в данных прогона, но не в коммите проекта.
-      const exclude = modeOf(run) === 'quick' ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : [];
-      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PS Flow run: ${run.id}`, exclude);
+      const exclude = modeOf(run) === 'quick' && RunStore.inProject(run) ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : [];
+      sha = await git.commitAll(run.worktreePath, `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`, exclude);
     } catch (e) {
       // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
       run.status = 'running';
@@ -972,7 +1018,12 @@ export class Orchestrator {
       Object.assign(attempt, { status: 'running', endedAt: undefined, summary: undefined });
       throw e;
     }
+    run.commit = sha;
+    this.save(run);
     this.log(run, c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
+    if (run.workspace === 'branch') {
+      this.log(run, c.dim(`Проект остался на ветке ${run.branch} — можно посмотреть результат.${run.originalBranch ? ` Вернуться: git checkout ${run.originalBranch}` : ''}`) + '\n');
+    }
     this.emit({ type: 'run.updated', run });
     this.emit({ type: 'run.finished', runId: run.id, status: 'finished' });
   }
