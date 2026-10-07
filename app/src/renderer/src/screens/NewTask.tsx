@@ -3,6 +3,7 @@ import { FolderGit2, FolderOpen, GitBranch, TriangleAlert } from 'lucide-react';
 import type { ProjectCommands } from '@psflow/core';
 import { Button, Field, Input, TextArea, Topbar } from '../components/ui';
 import { useStore } from '../lib/store';
+import { ImageDrop, type PickedImage } from '../components/ImageDrop';
 import { STAGES } from '../lib/stages';
 import { shortPath } from '../lib/format';
 
@@ -14,6 +15,7 @@ export function NewTaskScreen() {
   const { go, state } = useStore();
   const [project, setProject] = useState<Project | null>(null);
   const [task, setTask] = useState('');
+  const [images, setImages] = useState<PickedImage[]>([]);
   const [testCommand, setTestCommand] = useState('');
   const [setupCommand, setSetupCommand] = useState('');
   const [busy, setBusy] = useState(false);
@@ -45,9 +47,14 @@ export function NewTaskScreen() {
     try {
       const { runId } = await window.psflow.core.dispatch({
         type: 'run.start',
-        input: { projectPath: project.path, task, testCommand, setupCommand },
+        input: {
+          projectPath: project.path, task, testCommand, setupCommand,
+          attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
+        },
       });
       setTask('');
+      images.forEach((i) => URL.revokeObjectURL(i.url));
+      setImages([]);
       go({ name: 'run', runId });
     } catch (e) {
       setError((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
@@ -103,6 +110,7 @@ export function NewTaskScreen() {
                 <span className="muted">{task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}</span>
                 <span className="kbd-hint"><kbd>{window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
               </div>
+              <ImageDrop images={images} onChange={setImages} />
             </div>
 
             <div className="grid-2">

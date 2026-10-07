@@ -12,6 +12,10 @@ export interface AgentRunOptions {
   onOutput: (text: string) => void;
   proxy?: { baseUrl: string; apiKey: string; codexBaseUrl?: string };
   claudeAuth?: 'login' | 'env';
+  /** Дополнительные каталоги, доступные агенту (вложения задачи). */
+  addDirs?: string[];
+  /** Изображения, прикреплённые к промпту (codex -i). */
+  images?: string[];
 }
 
 export interface AgentResult {

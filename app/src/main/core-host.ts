@@ -24,6 +24,7 @@ function api(c: Orchestrator): CoreApi {
     testConnection: () => c.testConnection(),
     isDriving: async (id) => c.isDriving(id),
     listBranches: (id) => c.listBranches(id),
+    getAttachment: async (id, i) => c.getAttachment(id, i),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
       const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);

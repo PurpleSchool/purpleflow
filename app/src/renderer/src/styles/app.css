@@ -1012,3 +1012,38 @@ html[data-material] .navpill.is-on, html[data-material] .tab.is-on { background:
 .run-meta { --meta-h: 30px; align-items: center; }
 .run-meta .pill, .run-meta .chip, .run-meta .merge-inline .select, .run-meta .merge-btn.btn { height: var(--meta-h); box-sizing: border-box; }
 .run-meta .pill, .run-meta .chip { padding-top: 0; padding-bottom: 0; }
+
+/* ——— Название и скрытое описание ——— */
+.title-row { display: flex; align-items: center; gap: var(--s-4); min-width: 0; }
+.title-row h1 { min-width: 0; }
+.title-row h1.is-draft { color: var(--text-2); }
+.title-row h1.is-named { animation: tabIn 0.5s var(--ease) both; }
+.title-hint { display: block; margin-top: 4px; font-size: var(--fs-12); color: var(--text-4); }
+.desc-toggle { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); background: var(--bg-3); color: var(--text-3); font-size: var(--fs-12); font-weight: 500; transition: background 0.25s var(--ease), color 0.25s var(--ease); }
+.desc-toggle:hover, .desc-toggle.is-on { background: var(--bg-5); color: var(--text-1); }
+.desc-count { display: inline-flex; align-items: center; gap: 3px; color: var(--text-2); }
+.desc-chev { transition: transform 0.35s var(--ease); }
+.desc-toggle.is-on .desc-chev { transform: rotate(180deg); }
+.desc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.5s var(--ease-panel, var(--ease)); }
+.desc.is-open { grid-template-rows: 1fr; }
+.desc-inner { overflow: hidden; min-height: 0; }
+.desc.is-open .desc-inner { padding: var(--s-4) 0 var(--s-2); }
+.desc-text { margin: 0; max-width: 90ch; color: var(--text-2); font-size: var(--fs-14); line-height: 1.65; white-space: pre-wrap; user-select: text; }
+.desc-images { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-3); }
+.lightbox { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--s-10); background: rgba(4, 5, 6, 0.82); cursor: zoom-out; animation: fadeIn 0.25s var(--ease) both; }
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: var(--r-l); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+
+/* ——— Зона изображений ——— */
+.imgdrop { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0 var(--s-6) var(--s-5); padding: var(--s-3); border-radius: var(--r-l); border: 1.5px dashed var(--line-2); transition: border-color 0.25s var(--ease), background 0.25s var(--ease); }
+.imgdrop.is-over { border-color: var(--accent-line); background: var(--accent-wash); }
+.imgdrop-add { display: inline-flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-m); color: var(--text-3); text-align: left; transition: background 0.25s var(--ease), color 0.25s var(--ease); }
+.imgdrop-add:hover { background: var(--bg-4); color: var(--text-1); }
+.imgdrop-add span { display: flex; flex-direction: column; line-height: 1.35; }
+.imgdrop-add strong { font-weight: 500; font-size: var(--fs-13); color: var(--text-2); }
+.imgdrop-add small { font-size: var(--fs-12); }
+.imgdrop-thumb { position: relative; width: 72px; height: 72px; margin: 0; padding: 0; border-radius: var(--r-m); overflow: hidden; background: var(--bg-4); flex: none; animation: cardIn 0.35s var(--ease) both; }
+.imgdrop-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+button.imgdrop-thumb { cursor: zoom-in; }
+.imgdrop-del { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: rgba(10, 11, 13, 0.82); color: var(--text-1); opacity: 0; transition: opacity 0.2s var(--ease); }
+.imgdrop-thumb:hover .imgdrop-del, .imgdrop-del:focus-visible { opacity: 1; }
+.imgdrop-error { flex-basis: 100%; margin: 0; padding: 0 var(--s-2); color: var(--err); font-size: var(--fs-12); }

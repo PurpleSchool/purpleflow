@@ -245,9 +245,11 @@ export class Orchestrator {
     await openspec.ensureInit(worktreePath, 'init');
 
     const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const attachments = this.saveAttachments(id, input.attachments ?? []);
     const run: RunFile = {
       version: 1,
-      id: crypto.randomUUID(),
+      id,
       changeId,
       title: makeTitle(input.task),
       task: input.task.trim(),
@@ -269,6 +271,7 @@ export class Orchestrator {
       reviews: [],
       gates: [],
       totals: emptyUsage(),
+      attachments: attachments.length ? attachments : undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -413,6 +416,7 @@ export class Orchestrator {
     const prompt = this.prompts.render('plan.md', {
       changeId: run.changeId,
       task: run.task,
+      attachments: this.attachmentsBlock(run),
       testCommand: run.testCommand || 'не задана',
       feedback: this.feedbackBlock(run.feedback),
     });
@@ -429,6 +433,11 @@ export class Orchestrator {
     this.checkStop(run);
     if (v.valid) {
       this.log(run, c.mint('✓ openspec validate: изменение валидно') + '\n');
+      const title = planTitle(this.getChangeDocs(run.id).proposal);
+      if (title) {
+        run.title = title;
+        run.titleFromPlan = true;
+      }
       this.end(run, attempt, 'done', firstLine(res.text) || 'План готов');
       run.feedback = undefined;
       run.planRetries = 0;
@@ -457,6 +466,7 @@ export class Orchestrator {
     const prompt = this.prompts.render('implement.md', {
       changeId: run.changeId,
       task: run.task,
+      attachments: this.attachmentsBlock(run),
       testCommand: run.testCommand || 'не задана',
       attempt: run.implAttemptsUsed,
       limit: run.implAttemptsLimit,
@@ -537,6 +547,7 @@ export class Orchestrator {
       tests: lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
       base: run.baseCommit.slice(0, 8),
       diff: diff || '(пусто)',
+      attachments: run.attachments?.length ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
     });
 
     const res = await runCodex({
@@ -544,6 +555,7 @@ export class Orchestrator {
       prompt,
       model: run.models.reviewer,
       sandbox: 'read-only',
+      images: run.attachments,
       outputSchema: this.prompts.json<object>('review.schema.json'),
     });
     this.afterAgent(run, attempt, res);
@@ -713,7 +725,41 @@ export class Orchestrator {
       onOutput: (text: string) => this.log(run, text, false),
       proxy: s.proxy.baseUrl ? s.proxy : undefined,
       claudeAuth: s.claudeAuth,
+      addDirs: run.attachments?.length ? [path.dirname(run.attachments[0])] : undefined,
     };
+  }
+
+  private attachmentsDir(id: string): string {
+    return path.join(this.opts.dataDir, 'attachments', id);
+  }
+
+  /** Изображения задачи — в каталог данных приложения, чтобы не попасть в коммит репозитория. */
+  private saveAttachments(id: string, files: { name: string; data: Uint8Array }[]): string[] {
+    if (!files.length) return [];
+    const dir = this.attachmentsDir(id);
+    fs.mkdirSync(dir, { recursive: true });
+    return files.map((f, i) => {
+      const ext = (path.extname(f.name) || '.png').toLowerCase().replace(/[^.a-z0-9]/g, '');
+      const base = path.basename(f.name, path.extname(f.name)).replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 40) || 'image';
+      const file = path.join(dir, `${String(i + 1).padStart(2, '0')}-${base}${ext}`);
+      fs.writeFileSync(file, Buffer.from(f.data));
+      return file;
+    });
+  }
+
+  private attachmentsBlock(run: RunFile): string {
+    if (!run.attachments?.length) return '';
+    return `\nК задаче приложены изображения (макеты, скриншоты). Открой их инструментом Read и учитывай:\n${run.attachments.map((p) => `- ${p}`).join('\n')}\n`;
+  }
+
+  /** Вложение для показа в окне: data URL. */
+  getAttachment(id: string, index: number): string | null {
+    const r = this.mustLoad(id);
+    const file = r.attachments?.[index];
+    if (!file || !fs.existsSync(file)) return null;
+    const ext = path.extname(file).slice(1).toLowerCase();
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext || 'png'}`;
+    return `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`;
   }
 
   private shell(run: RunFile, command: string, timeoutMin: number) {
@@ -758,6 +804,14 @@ export class Orchestrator {
 
 function isGate(s: StageId): boolean {
   return s === 'gate1' || s === 'gate2' || s === 'limit';
+}
+
+/** Название изменения от планировщика: первая строка proposal.md вида «# Название». */
+export function planTitle(proposal: string): string | null {
+  const m = proposal.match(/^\s*#\s+(.+?)\s*$/m);
+  if (!m || /^(why|what changes|impact)$/i.test(m[1])) return null;
+  const t = m[1].replace(/^(change|изменение)\s*:\s*/i, '').replace(/[`*]/g, '').trim();
+  return t ? (t.length > 72 ? t.slice(0, 70) + '…' : t) : null;
 }
 
 function firstLine(s: string): string {

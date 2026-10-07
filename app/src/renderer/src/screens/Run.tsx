@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, ChevronDown, CircleAlert, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  ArrowRight, ChevronDown, CircleAlert, FileText, Image as ImageIcon, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, RunFile, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
@@ -47,6 +47,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const gateKey = useRef('');
+  const [descOpen, setDescOpen] = useState(false);
   /** Идёт обратная анимация: детали гаснут, гант разворачивается — потом панель размонтируется. */
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,7 +202,22 @@ export function RunScreen({ runId }: { runId: string }) {
     <div className="screen run run-v3">
       <header className="run-head">
         <div className="run-title">
-          <h1 title={run.task}>{run.title}</h1>
+          <div className="title-row">
+            <h1 className={run.titleFromPlan ? 'is-named' : 'is-draft'}>{run.title}</h1>
+            <button className={`desc-toggle ${descOpen ? 'is-on' : ''}`} onClick={() => setDescOpen(!descOpen)} aria-expanded={descOpen}>
+              <FileText size={14} />
+              Описание
+              {run.attachments?.length ? <span className="desc-count"><ImageIcon size={12} />{run.attachments.length}</span> : null}
+              <ChevronDown size={14} className="desc-chev" />
+            </button>
+          </div>
+          {!run.titleFromPlan && run.status === 'running' && <span className="title-hint">Название придумает планировщик</span>}
+          <div className={`desc ${descOpen ? 'is-open' : ''}`}>
+            <div className="desc-inner">
+              <p className="desc-text">{run.task}</p>
+              {run.attachments?.length ? <Attachments runId={runId} count={run.attachments.length} /> : null}
+            </div>
+          </div>
           <div className="run-meta">
             <StatusPill status={run.status} />
             <span className="chip mono" title={run.branch}><GitBranch size={12} /> {run.branch}</span>
@@ -384,6 +400,31 @@ function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
       </Button>
       {error && <span className="merge-error" title={error}>{error}</span>}
     </span>
+  );
+}
+
+/** Миниатюры изображений задачи; клик — открыть крупно. */
+function Attachments({ runId, count }: { runId: string; count: number }) {
+  const [urls, setUrls] = useState<(string | null)[]>([]);
+  const [big, setBig] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void Promise.all(Array.from({ length: count }, (_, i) => window.psflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
+    return () => { alive = false; };
+  }, [runId, count]);
+  return (
+    <>
+      <div className="desc-images">
+        {urls.map((u, i) => u && (
+          <button key={i} className="imgdrop-thumb" onClick={() => setBig(u)} title="Открыть"><img src={u} alt={`Изображение ${i + 1}`} /></button>
+        ))}
+      </div>
+      {big && (
+        <div className="lightbox" onClick={() => setBig(null)} role="dialog" aria-label="Изображение">
+          <img src={big} alt="" />
+        </div>
+      )}
+    </>
   );
 }
 

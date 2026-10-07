@@ -45,6 +45,7 @@ export interface CoreApi {
   detectProject(dir: string): Promise<ProjectCommands & { isRepo: boolean; name: string }>;
   isDriving(id: string): Promise<boolean>;
   listBranches(id: string): Promise<{ branches: string[]; current: string | null }>;
+  getAttachment(id: string, index: number): Promise<string | null>;
 }
 
 export type CoreMethod = keyof CoreApi;

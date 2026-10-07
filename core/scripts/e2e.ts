@@ -1,5 +1,6 @@
 // Headless-прогон флоу на настоящих агентах (для проверки без GUI).
 // npx tsx scripts/e2e.ts --repo ~/psflow-sample --task "…" [--reject-plan "комментарий"] [--stop-after-ms 20000]
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,7 +84,9 @@ if (resumeRun) {
   if (before.status === 'waiting') await core.dispatch({ type: 'gate.approve', runId });
   else await core.dispatch({ type: 'run.resume', runId });
 } else {
-  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test' } }));
+  const image = arg('image');
+  const attachments = image ? [{ name: path.basename(image), data: new Uint8Array(fs.readFileSync(image)) }] : undefined;
+  ({ runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task, testCommand: arg('test') ?? 'npm test', attachments } }));
 }
 console.log(t(), 'run', runId);
 if (stopAfter) {
@@ -96,5 +99,6 @@ await done;
 await new Promise((r) => setTimeout(r, 500));
 const run = core.getRun(runId)!;
 console.log(t(), 'status', run.status, '| attempts', run.attempts.map((a) => `${a.stage}#${a.attempt}:${a.status}`).join(' '));
+console.log(t(), 'title', JSON.stringify(run.title), 'fromPlan', run.titleFromPlan, 'attachments', run.attachments);
 console.log(t(), 'tokens', JSON.stringify(run.totals), '| live processes', liveCount());
 console.log(t(), 'run.json', run.archivedPath ?? path.join(run.worktreePath, 'openspec/changes', run.changeId, 'run.json'));

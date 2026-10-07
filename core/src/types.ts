@@ -142,6 +142,10 @@ export interface RunFile {
   /** Путь к run.json после `openspec archive` (папка изменения переезжает в archive/). */
   archivedPath?: string;
   commit?: string;
+  /** Абсолютные пути к изображениям задачи (в каталоге данных приложения, не в репозитории). */
+  attachments?: string[];
+  /** Название придумал планировщик (первая строка proposal.md). */
+  titleFromPlan?: boolean;
   /** Ветка psflow/<id> влита человеком из приложения. */
   merged?: { into: string; commit: string; at: string };
 }
@@ -182,6 +186,8 @@ export interface StartRunInput {
   task: string;
   testCommand: string;
   setupCommand?: string;
+  /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
+  attachments?: { name: string; data: Uint8Array }[];
 }
 
 export type CoreCommand =

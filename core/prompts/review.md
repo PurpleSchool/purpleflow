@@ -14,6 +14,8 @@
 
 Ответь только JSON вида `{ "blocking": [...], "notes": [...] }`.
 
+{{attachments}}
+
 ## proposal.md
 
 {{proposal}}

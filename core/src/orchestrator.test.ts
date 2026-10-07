@@ -15,3 +15,13 @@ test('parseReview: JSON в ```json и строки вместо объектов
 test('parseReview: не JSON', () => {
   assert.equal(parseReview('всё хорошо'), null);
 });
+
+import { planTitle } from './orchestrator.js';
+test('planTitle: H1 из proposal.md', () => {
+  assert.equal(planTitle('# Email-уведомления админу о сроке ссылки\n\n## Why\n…'), 'Email-уведомления админу о сроке ссылки');
+  assert.equal(planTitle('# Change: Add `slugify`\n'), 'Add slugify');
+  assert.equal(planTitle('## Why\nтекст'), null);
+});
+test('planTitle: подчёркивания в идентификаторах сохраняются', () => {
+  assert.equal(planTitle('# Константа `APP_ICON_COLORS` в strings.ts'), 'Константа APP_ICON_COLORS в strings.ts');
+});

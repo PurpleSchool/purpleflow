@@ -22,7 +22,7 @@ export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string
  * codex exec --json; промпт читается из stdin ("-").
  * Прокси подключаем отдельным провайдером через -c, не трогая ~/.codex/config.toml.
  */
-export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy'>, extra: { schemaFile?: string; lastFile: string }): string[] {
+export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images'>, extra: { schemaFile?: string; lastFile: string }): string[] {
   const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', o.cwd, '-s', o.sandbox];
   if (o.proxy?.baseUrl) {
     args.push(
@@ -36,6 +36,8 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
   }
   if (o.model) args.push('-m', o.model);
   if (extra.schemaFile) args.push('--output-schema', extra.schemaFile);
+  // --image=… по одному: иначе многозначный -i проглотит завершающий «-» (промпт из stdin).
+  for (const img of o.images ?? []) args.push(`--image=${img}`);
   args.push('-o', extra.lastFile, '-');
   return args;
 }

@@ -8,6 +8,6 @@
 <task>
 {{task}}
 </task>
-
+{{attachments}}
 Сначала изучи проект: структуру, существующие спецификации в `openspec/specs/`, стиль кода и тестов, команду тестов `{{testCommand}}`. Затем создай `proposal.md`, `tasks.md` и дельты спецификаций.
 {{feedback}}
