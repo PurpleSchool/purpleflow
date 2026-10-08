@@ -16,6 +16,8 @@ interface State {
   tools: Record<ToolName, ToolInfo> | null;
   toolsLoading: boolean;
   runs: RunSummary[];
+  /** Список прогонов уже получен от ядра (при запуске ядро стартует не мгновенно). */
+  runsLoaded: boolean;
   /** Полные run.json прогонов, которые открыты или обновлялись в этой сессии. */
   details: Record<string, RunFile>;
   /** Последний открытый прогон — для пункта «Прогон» в навигации. */
@@ -52,7 +54,7 @@ function reducer(s: State, a: Action): State {
       return { ...s, view, details, runs: s.runs.filter((r) => r.id !== a.runId), lastRunId: s.lastRunId === a.runId ? null : s.lastRunId };
     }
     case 'runs':
-      return { ...s, runs: a.runs, lastRunId: s.lastRunId ?? a.runs[0]?.id ?? null };
+      return { ...s, runs: a.runs, runsLoaded: true, lastRunId: s.lastRunId ?? a.runs[0]?.id ?? null };
     case 'run': {
       const idx = s.runs.findIndex((r) => r.id === a.run.id);
       const runs = [...s.runs];
@@ -88,6 +90,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     tools: null,
     toolsLoading: false,
     runs: [],
+    runsLoaded: false,
     details: {},
     lastRunId: null,
   });
@@ -102,7 +105,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshRuns = useCallback(async () => {
-    dispatch({ t: 'runs', runs: await window.psflow.core.listRuns() });
+    try {
+      dispatch({ t: 'runs', runs: await window.psflow.core.listRuns() });
+    } catch {
+      // Ядро ещё не поднялось или упало — не держим вечный загрузчик: пустой список, следующее событие обновит.
+      dispatch({ t: 'runs', runs: [] });
+    }
   }, []);
 
   const loadRun = useCallback(async (id: string) => {

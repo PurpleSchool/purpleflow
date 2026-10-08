@@ -80,7 +80,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       </button>
 
       <nav className="side-list" aria-label="Прогоны">
-        {groups.length === 0 && <p className="side-empty">Прогонов пока нет. Опишите задачу — здесь появится её прогон.</p>}
+        {!state.runsLoaded && (
+          <div className="side-loading" aria-busy="true">
+            <span className="spinner" />
+            <span>Загружаю прогоны…</span>
+          </div>
+        )}
+        {!state.runsLoaded && [0, 1, 2].map((i) => <div key={i} className="side-skel" style={{ animationDelay: `${i * 0.15}s` }} />)}
+        {state.runsLoaded && groups.length === 0 && <p className="side-empty">Прогонов пока нет. Опишите задачу — здесь появится её прогон.</p>}
         {groups.map((g) => (
           <section key={g.title} className={`side-group ${g.title === 'Ждут вас' ? 'is-attention' : ''}`}>
             <h4>{g.title}</h4>

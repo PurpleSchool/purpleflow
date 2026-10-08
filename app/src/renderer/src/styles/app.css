@@ -1278,6 +1278,9 @@ a.btn { text-decoration: none; }
 .side-new.is-on { box-shadow: inset 0 0 0 1px var(--line-2); }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--s-2) var(--s-4); scrollbar-width: thin; }
 .side-empty { margin: var(--s-4) var(--s-3); color: var(--text-4); font-size: var(--fs-12); line-height: 1.55; }
+.side-loading { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-4) var(--s-3) var(--s-2); color: var(--text-3); font-size: var(--fs-12); }
+.side-loading .spinner { width: 12px; height: 12px; }
+.side-skel { height: 58px; margin: 4px var(--s-2); border-radius: var(--r-m); background: var(--bg-3); animation: breathe 1.4s var(--ease) infinite both; }
 .side-group + .side-group { margin-top: var(--s-4); }
 .side-group h4 { margin: 0; padding: var(--s-2) var(--s-3) 6px; color: var(--text-4); font-size: 11px; font-weight: 500; letter-spacing: 0.02em; }
 .side-group.is-attention h4 { color: var(--wait); }
