@@ -280,6 +280,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <div className="run-meta">
             <StatusPill status={run.status} />
             <span className="chip mode-chip">{MODE_ICON[(run.mode ?? 'task') as Mode]} {MODES.find((m) => m.id === (run.mode ?? 'task'))?.title}{run.mode === 'epic' && run.phases ? ` · этап ${Math.min(run.phase ?? 1, run.phases)}/${run.phases}` : ''}</span>
+            {run.autopilot && <span className="chip" title="План принимается сам, при исчерпанных попытках — одна попытка сама">Автопилот</span>}
             <span className="chip mono" title={run.branch}><GitBranch size={12} /> {run.branch}</span>
             {run.status === 'finished' && <MergeControl run={run} runId={runId} />}
             <span className="muted mono path" title={run.projectPath}>{shortPath(run.projectPath)}</span>

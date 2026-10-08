@@ -9,7 +9,7 @@ import { addUsage, c, crlf, emptyUsage, type AgentResult } from './agents/common
 import { detectTools, prependPath, which } from './env.js';
 import { createPr, failedJobLog, mergePr, prComments, prReadiness, prStatus, pushBranch } from './github.js';
 import { Git } from './git.js';
-import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from './reviewdiff.js';
+import { ARTIFACT_RE, GENERATED_GLOBS, lineStats, packReview, splitDiff } from './reviewdiff.js';
 import { makeChangeId, makeTitle } from './ids.js';
 import { OpenSpec } from './openspec.js';
 import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
@@ -21,6 +21,7 @@ import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js'
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
+  EnvCheck,
   AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
@@ -173,8 +174,17 @@ export class Orchestrator {
       for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
       // Оборванная реализация — не вина исполнителя: попытку возвращаем.
       if (r.next === 'implement' && r.implAttemptsUsed > 0) r.implAttemptsUsed--;
-      r.status = 'stopped';
-      r.message = 'Прервано: приложение было закрыто. Нажмите «Продолжить», чтобы повторить текущую стадию.';
+      // Исполнитель продолжит свою сессию: говорим ему, что прошлая попытка оборвалась, а не «исправь замечания».
+      if (r.next === 'implement' && !r.feedback && r.executorSession) {
+        r.feedback = { source: 'system', text: 'Прошлая попытка оборвалась на середине: приложение PurpleFlow было закрыто. Продолжи с того места, где остановился: посмотри, что уже сделано (git status, отметки в tasks.md), и доделай задачу.' };
+      }
+      if (r.message?.startsWith('Изменения прогона остались в git stash')) {
+        r.status = 'stopped';
+      } else {
+        // Прогон продолжится сам — в очереди, с учётом лимита одновременных прогонов.
+        r.status = 'queued';
+        r.message = 'Приложение было закрыто — прогон продолжится сам с текущей стадии.';
+      }
       this.store.save(r);
     }
     void this.pump();
@@ -678,6 +688,7 @@ export class Orchestrator {
       workspace,
       workspacePending: true,
       visual: visual || undefined,
+      autopilot: input.autopilot || undefined,
       // Команда запуска нужна и визуальной стадии, и ручной проверке во вкладке «Браузер».
       runCommand: input.runCommand?.trim() || undefined,
       appUrl: input.appUrl?.trim() || undefined,
@@ -780,6 +791,8 @@ export class Orchestrator {
     this.save(run);
     try {
       if (run.workspacePending) await this.prepareWorkspace(run);
+      // Продолжение после перезапуска приложения: в режиме «ветка» проект могли переключить на другую ветку.
+      else await this.ensureOnBranch(run);
     } catch (e) {
       run.status = 'stopped';
       run.message = `Не удалось начать прогон: ${(e as Error).message}`;
@@ -1382,7 +1395,10 @@ export class Orchestrator {
     }
     if (v.valid) {
       this.log(run, c.mint('✓ openspec validate: изменение валидно') + '\n');
-      const title = planTitle((await this.getChangeDocs(run.id)).proposal);
+      const proposal = (await this.getChangeDocs(run.id)).proposal;
+      const title = planTitle(proposal);
+      // Планировщик разбил большую задачу: этот план — первая часть, остальное — в «Next Parts».
+      run.nextParts = /^##\s+Next Parts/m.test(proposal) || undefined;
       if (title) {
         run.title = title;
         run.titleFromPlan = true;
@@ -1466,8 +1482,21 @@ export class Orchestrator {
     const report = res.text.replace(/^НАЗВАНИЕ:.*$/m, '').trim();
     if (report) attempt.output = report;
     this.end(run, attempt, 'done', firstLine(report) || 'Реализация выполнена');
+    await this.dropArtifacts(run);
     run.next = 'tests';
     this.save(run);
+  }
+
+  /** Сборочные артефакты (tsbuildinfo, next-env.d.ts…), которые агент изменил запуском сборки, — назад к базе: в дифф и коммит они не идут. */
+  private async dropArtifacts(run: RunFile) {
+    const tools = await this.tools(['git']).catch(() => null);
+    if (!tools) return;
+    const git = new Git(tools.git, this.opts.env);
+    const changed = await git.changedFiles(run.worktreePath, this.diffBase(run)).catch(() => [] as string[]);
+    const junk = changed.filter((f) => ARTIFACT_RE.test(f));
+    if (!junk.length) return;
+    await git.restoreFromBase(run.worktreePath, this.diffBase(run), junk).catch((e) => this.log(run, c.dim(`Не удалось откатить артефакты: ${(e as Error).message}`) + '\n'));
+    this.log(run, c.dim(`Откатил сборочные артефакты, которые попали в изменения: ${junk.join(', ')}`) + '\n');
   }
 
   /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
@@ -1807,6 +1836,81 @@ export class Orchestrator {
     }
     const at = (x: ProjectListItem) => x.lastRunAt ?? x.updatedAt ?? '';
     return [...map.values()].sort((a, b) => at(b).localeCompare(at(a)));
+  }
+
+  private envChecks = new Set<string>();
+
+  /**
+   * Проверка окружения перед задачами: команда запуска поднимает приложение в папке проекта, агент в браузере
+   * пробует вход и разделы из инструкции для проверки. Сборочные артефакты, которые поменял dev-сервер, откатываются.
+   */
+  async checkEnvironment(repo: string): Promise<EnvCheck> {
+    const key = path.resolve(repo);
+    const at = new Date().toISOString();
+    const cfg = this.getProjectConfig(key);
+    if (!cfg?.runCommand?.trim() || !cfg.appUrl?.trim()) return { ready: false, steps: [], fix: 'Задайте команду запуска приложения и адрес в командах проекта.', at };
+    if (this.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
+    this.envChecks.add(key);
+    const s = this.opts.getSettings();
+    const tools = await this.tools(['claude', 'git']);
+    const git = new Git(tools.git, this.opts.env);
+    const dirtyBefore = new Set(await git.dirtyFiles(key).catch(() => [] as string[]));
+    const id = crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
+    const dir = path.join(this.opts.dataDir, 'envcheck', id);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    const group = `envcheck:${id}`;
+    const { port, url, command } = await expandPorts(cfg.appUrl.trim(), cfg.runCommand.trim());
+    let out = '';
+    let exited: number | null | undefined;
+    const server = runProc(command, [], {
+      cwd: key,
+      env: { ...this.opts.env, ...portEnv(cfg.runCommand, port), BROWSER: 'none', CI: '1' },
+      shell: true,
+      group,
+      onStdout: (t) => { out = (out + t).slice(-8000); },
+      onStderr: (t) => { out = (out + t).slice(-8000); },
+    });
+    void server.then((r) => { exited = r.code; });
+    const session = `psflow-env-${id}`;
+    try {
+      const ready = await waitForUrl(url, 150_000, () => exited !== undefined);
+      if (!ready) {
+        return {
+          ready: false, url, command, at, serverOutput: out.trim(),
+          steps: [{ title: 'Приложение запускается', ok: false, detail: exited !== undefined ? `Команда завершилась с кодом ${exited}, не открыв ${url}` : `За 2,5 минуты ${url} не ответил` }],
+          fix: 'Посмотрите вывод сервера: обычно не хватает базы, переменных в .env или порт задан не через {port}.',
+        };
+      }
+      fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
+      const res = await runClaude({
+        bin: tools.claude, cwd: key, env: prependPath(this.opts.env, dir),
+        prompt: this.prompts.render('env-check.md', { url, notes: cfg.visualNotes?.trim() || '(нет)', server: out.replace(/\x1b\[[0-9;]*m/g, '').slice(-4000) || '(пусто)' }),
+        model: s.models.visual || this.claudeModel(s.agents, s.models) || undefined,
+        timeoutMs: 20 * 60_000, idleTimeoutMs: 6 * 60_000, group, onOutput: () => {},
+        proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, userConfig: s.userConfig ?? true,
+        addDirs: [dir], tools: ['Bash', 'Read', 'Glob', 'Grep'],
+      });
+      const j = (() => {
+        const a = res.text.indexOf('{');
+        const b = res.text.lastIndexOf('}');
+        try { return a >= 0 ? JSON.parse(res.text.slice(a, b + 1)) as { ready?: boolean; steps?: { title?: string; ok?: boolean; detail?: string }[]; fix?: string } : null; } catch { return null; }
+      })();
+      if (!res.ok || !j) {
+        return { ready: false, url, command, at, serverOutput: out.trim(), steps: [{ title: 'Приложение запускается', ok: true, detail: `${url} отвечает` }, { title: 'Проверка в браузере', ok: false, detail: res.error ?? 'Агент ответил не в формате JSON' }] };
+      }
+      return {
+        ready: Boolean(j.ready), url, command, at, serverOutput: out.trim(), fix: j.fix?.trim() || undefined,
+        steps: [{ title: 'Приложение запускается', ok: true, detail: `${url} отвечает` }, ...(j.steps ?? []).map((x) => ({ title: String(x.title ?? ''), ok: Boolean(x.ok), detail: String(x.detail ?? '') }))],
+      };
+    } finally {
+      await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'close'], { cwd: dir, env: this.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+      await killGroup(group);
+      // Dev-сервер мог переписать отслеживаемые артефакты (next-env.d.ts, tsbuildinfo) — рабочая копия остаётся как была.
+      const touched = (await git.dirtyFiles(key).catch(() => [] as string[])).filter((f) => !dirtyBefore.has(f) && ARTIFACT_RE.test(f));
+      if (touched.length) await git.restoreFromBase(key, 'HEAD', touched).catch(() => undefined);
+      this.envChecks.delete(key);
+    }
   }
 
   /** Незакоммиченные изменения в рабочей копии проекта — по кнопке человека перед стартом в режиме «Ветка». */
@@ -2196,6 +2300,7 @@ export class Orchestrator {
     ].filter(Boolean).join('\n');
     if (n > 1) out(c.dim(`Дифф большой — ревью на ${n} ревьюеров параллельно, по модулям.`) + '\n');
 
+    const previous = this.previousReviewBlock(run);
     const promptFor = (i: number) => this.prompts.render('review.md', {
       changeId: run.changeId,
       proposal: docs.proposal || '(нет)',
@@ -2208,7 +2313,7 @@ export class Orchestrator {
         n > 1 ? `\n## Твоя часть\n\nДифф большой, его делят ${n} ревьюера. Ты смотришь часть ${i + 1} из ${n} — файлы ниже; остальные части смотрят другие. Замечания — по своим файлам; если проблема на стыке с чужим файлом — открой его и тоже напиши. Прошлые замечания по чужим файлам пропусти.\n\n${packed.files[i].map((f) => `- \`${f}\``).join('\n')}\n` : '',
         extraFiles && (n === 1 || i === n - 1) ? `\n${extraFiles}\n` : '',
       ].join(''),
-      previous: this.previousReviewBlock(run),
+      previous: previous || '\nНайденные блокирующие отдельно проверит второй ревьюер по коду — поэтому не отбрасывай подозрение на ошибку из сомнения: если сценарий поломки правдоподобен, ставь в `blocking` с описанием сценария.\n',
       attachments: [
         run.attachments?.some(isImageFile) ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
         this.filesBlock(run),
@@ -2260,6 +2365,12 @@ export class Orchestrator {
       return true;
     });
     const parsed = { blocking: uniq(parsedAll.flatMap((x) => x!.blocking)), notes: uniq(parsedAll.flatMap((x) => x!.notes)) };
+    // Первое ревью — с проверкой найденного: второй ревьюер подтверждает каждое блокирующее по коду.
+    if (!previous && parsed.blocking.length) {
+      const verified = await this.verifyBlocking(run, attempt, parsed.blocking, docs.proposal, out);
+      parsed.blocking = verified.blocking;
+      parsed.notes = [...parsed.notes, ...verified.demoted];
+    }
     const review: ReviewResult = { at: new Date().toISOString(), ...parsed };
     run.reviews.push(review);
     this.emit({ type: 'review.result', runId: run.id, result: review });
@@ -2270,6 +2381,38 @@ export class Orchestrator {
     this.end(run, attempt, review.blocking.length ? 'failed' : 'done', review.blocking.length ? `Блокирующих: ${review.blocking.length}` : `Без блокирующих, заметок: ${review.notes.length}`);
 
     return { review, log: quiet ? buffered : '' };
+  }
+
+  /** Второй проход ревью: подтвердить каждое блокирующее замечание по коду, ложные — убрать, мелкие — в заметки. */
+  private async verifyBlocking(run: RunFile, attempt: StageAttempt, items: ReviewItem[], proposal: string, out: (t: string) => void): Promise<{ blocking: ReviewItem[]; demoted: ReviewItem[] }> {
+    const fmt = (i: ReviewItem) => `${i.file ? `\`${i.file}${i.line ? ':' + i.line : ''}\` — ` : ''}${i.message}`;
+    let buf = '';
+    const res = await this.runRole(run, 'reviewer', {
+      prompt: this.prompts.render('review-verify.md', {
+        changeId: run.changeId,
+        base: run.baseCommit.slice(0, 8),
+        proposal: `${this.taskText(run)}\n\n${proposal || ''}`.slice(0, 20_000),
+        items: items.map((x, k) => `${k + 1}. ${fmt(x)}`).join('\n'),
+      }),
+      readOnly: true,
+      onOutput: (t) => { buf += t; },
+      outputSchema: this.prompts.json<object>('review-verify.schema.json'),
+    });
+    this.afterAgent(run, attempt, res);
+    out('\n' + c.dim(`— проверка ${items.length} блокирующих замечаний вторым ревьюером —`) + '\n' + buf);
+    const verdicts = parseVerdicts(res.text);
+    // Ответ не разобрали — оставляем как есть: лучше лишнее замечание, чем пропущенная ошибка.
+    if (!verdicts) return { blocking: items, demoted: [] };
+    const blocking: ReviewItem[] = [];
+    const demoted: ReviewItem[] = [];
+    items.forEach((x, k) => {
+      const v = verdicts.find((d) => d.index === k + 1);
+      if (!v || v.verdict === 'confirmed') blocking.push(v?.reason ? { ...x, message: `${x.message}\n\nСценарий: ${v.reason}` } : x);
+      else if (v.verdict === 'minor') demoted.push({ ...x, message: `${x.message} (второй ревьюер: не блокирует — ${v.reason})` });
+      else out(c.dim(`  ✗ отклонено: ${fmt(x)} — ${v.reason}`) + '\n');
+    });
+    out(c.dim(`подтверждено ${blocking.length} из ${items.length}${demoted.length ? `, в заметки — ${demoted.length}` : ''}`) + '\n');
+    return { blocking, demoted };
   }
 
   private reviewFeedback(review: ReviewResult): string {
@@ -2369,6 +2512,7 @@ export class Orchestrator {
     if (run.next === 'limit') return run.message ?? 'Попытки реализации исчерпаны. Дать ещё одну попытку?';
     if (run.next === 'gate1' && modeOf(run) === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
     if (run.next === 'gate1' && modeOf(run) === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
+    if (run.next === 'gate1' && run.nextParts) return 'Задача большая — планировщик взял в этот план первую часть, остальные перечислены в разделе «Next Parts» в proposal. Запустите их следующими задачами после этой. Принять план первой части?';
     if (run.next === 'gate1') return 'Проверьте proposal и tasks. Принять, вернуть с комментарием или отменить?';
     if (run.next === 'gate2') return 'Посмотрите дифф и замечания ревью. Принять или вернуть на доработку?';
     return undefined;
@@ -2384,6 +2528,33 @@ export class Orchestrator {
     this.log(run, c.amber(`◆ ${STAGE_TITLES[gate]}: ждём решения человека`) + '\n');
     this.emit({ type: 'gate.waiting', runId: run.id, gate, message });
     if (gate === 'gate2') void this.summarizeChanges(run.id).catch(() => undefined);
+    if (run.autopilot) void this.autopilotGate(run, gate);
+  }
+
+  /**
+   * Автопилот: план без вопросов к человеку принимается сам, при исчерпанных попытках — одна попытка сама.
+   * Вопросы уточнения, разбивка задачи на части и приёмка — всегда за человеком.
+   */
+  private async autopilotGate(run: RunFile, gate: GateId) {
+    if (gate === 'gate1') {
+      const docs = await this.getChangeDocs(run.id).catch(() => null);
+      if (docs && /^##\s+Next Parts/m.test(docs.proposal)) {
+        this.log(run, c.amber('Автопилот: планировщик предлагает разбить задачу на части — план ждёт вашего решения.') + '\n');
+        return;
+      }
+      this.log(run, c.violet('Автопилот: план принят без остановки.') + '\n');
+      await new Promise((r) => setTimeout(r, 800));
+      await this.decide(run.id, 'approve', 'Автопилот').catch((e) => this.log(run, c.dim(`Автопилот не смог принять план: ${(e as Error).message}`) + '\n'));
+      return;
+    }
+    if (gate === 'limit' && !run.autoRetried) {
+      const r = this.mustLoad(run.id);
+      r.autoRetried = true;
+      this.save(r);
+      this.log(run, c.violet('Автопилот: попытки исчерпаны — даю ещё одну сам; следующий раз решите вы.') + '\n');
+      await new Promise((res) => setTimeout(res, 800));
+      await this.decide(run.id, 'approve').catch((e) => this.log(run, c.dim(`Автопилот не смог дать попытку: ${(e as Error).message}`) + '\n'));
+    }
   }
 
   private begin(run: RunFile, stage: StageId, model?: string, quiet = false): StageAttempt {
@@ -2465,7 +2636,7 @@ export class Orchestrator {
 
   private feedbackBlock(f?: Feedback): string {
     if (!f) return '';
-    const source = { validator: 'валидатор OpenSpec', tests: 'тесты', review: 'ревьюер', human: 'человек' }[f.source];
+    const source = { validator: 'валидатор OpenSpec', tests: 'тесты', review: 'ревьюер', human: 'человек', system: 'оркестратор' }[f.source];
     const lines = f.lineComments?.length
       ? '\nЗамечания на строках:\n' + f.lineComments.map((l) => `- ${l.file}:${l.line}${l.quote ? ` («${l.quote}»)` : ''} — ${l.text}`).join('\n')
       : '';
@@ -2646,6 +2817,22 @@ const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
  * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
  * null — если вывод не распознан.
  */
+export function parseVerdicts(text: string): { index: number; verdict: 'confirmed' | 'rejected' | 'minor'; reason: string }[] | null {
+  const a = text.indexOf('{');
+  const b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try {
+    const j = JSON.parse(text.slice(a, b + 1)) as { items?: unknown };
+    if (!Array.isArray(j.items)) return null;
+    return j.items
+      .map((x) => x as { index?: unknown; verdict?: unknown; reason?: unknown })
+      .filter((x) => typeof x.index === 'number' && ['confirmed', 'rejected', 'minor'].includes(String(x.verdict)))
+      .map((x) => ({ index: x.index as number, verdict: x.verdict as 'confirmed' | 'rejected' | 'minor', reason: String(x.reason ?? '') }));
+  } catch {
+    return null;
+  }
+}
+
 /** Куда «Дальше как есть» с гейта исчерпанных попыток: визуальная проверка, если не пропустила дальше не она сама. */
 export function acceptTarget(r: Pick<RunFile, 'attempts' | 'visual'>): 'visual' | 'gate2' {
   if (!r.visual) return 'gate2';

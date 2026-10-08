@@ -240,6 +240,20 @@ export class Git {
     });
   }
 
+  /** Вернуть файлы к состоянию base: изменённые — из base, новые — удалить. */
+  restoreFromBase(worktree: string, base: string, files: string[]): Promise<void> {
+    return serialized(worktree, async () => {
+      for (const f of files) {
+        const inBase = (await run(this.bin, ['cat-file', '-e', `${base}:${f}`], { cwd: worktree, env: this.env })).code === 0;
+        if (inBase) await this.git(worktree, ['checkout', base, '--', f]);
+        else {
+          await run(this.bin, ['reset', '-q', '--', f], { cwd: worktree, env: this.env });
+          fs.rmSync(path.join(worktree, f), { force: true });
+        }
+      }
+    });
+  }
+
   /** Унифицированный дифф текстом — для промпта ревьюера. */
   diffText(worktree: string, base: string, excludeGlobs: string[] = []): Promise<string> {
     return serialized(worktree, async () => {

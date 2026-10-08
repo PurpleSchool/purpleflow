@@ -27,6 +27,9 @@ export const GENERATED_GLOBS = [
   '**/coverage/**',
 ];
 
+/** Сборочные артефакты, которые агент случайно меняет запуском сборки или dev-сервера, — откатываются после реализации. */
+export const ARTIFACT_RE = /(^|\/)(next-env\.d\.ts|\.DS_Store|npm-debug\.log[^/]*|yarn-error\.log)$|\.tsbuildinfo$/;
+
 export interface FileDiff {
   path: string;
   text: string;

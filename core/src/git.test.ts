@@ -95,3 +95,25 @@ test('commitAll: исключение файла из .gitignore не ломае
   assert.equal(g('show', '--name-only', '--format=', 'HEAD').trim(), 'a.txt');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('restoreFromBase: изменённый артефакт — из базы, новый — удалён, остальное не тронуто', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-git-'));
+  const g = (...a: string[]) => execFileSync('git', a, { cwd: dir });
+  g('init', '-q');
+  fs.writeFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'old\n');
+  fs.writeFileSync(path.join(dir, 'app.ts'), 'a\n');
+  g('add', '-A');
+  g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
+  const base = g('rev-parse', 'HEAD').toString().trim();
+  fs.writeFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'new\n');
+  fs.writeFileSync(path.join(dir, 'next-env.d.ts'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'app.ts'), 'b\n');
+  const git = new Git('git', process.env);
+  const changed = await git.changedFiles(dir, base);
+  await git.restoreFromBase(dir, base, changed.filter((f) => f !== 'app.ts'));
+  assert.equal(fs.readFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'utf8'), 'old\n');
+  assert.ok(!fs.existsSync(path.join(dir, 'next-env.d.ts')));
+  assert.equal(fs.readFileSync(path.join(dir, 'app.ts'), 'utf8'), 'b\n');
+  assert.deepEqual(await git.changedFiles(dir, base), ['app.ts']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

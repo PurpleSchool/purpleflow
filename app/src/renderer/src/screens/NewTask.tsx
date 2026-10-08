@@ -9,6 +9,7 @@ import { MODE_ICON } from '../components/ModeIcon';
 import { ProjectPicker, WORKSPACES, cleanErr, loadProject, saveLoaded, type LoadedProject } from './Projects';
 
 const LAST_PROJECT = 'psflow.lastProject';
+const AUTOPILOT_KEY = 'psflow.autopilot';
 
 export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
   const { go, state } = useStore();
@@ -19,6 +20,20 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
   const [suggest, setSuggest] = useState<{ mode: Mode; reason: string } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [visual, setVisual] = useState(true);
+  /** Автопилот запоминается между задачами. */
+  const [autopilot, setAutopilotState] = useState(() => {
+    try {
+      return localStorage.getItem(AUTOPILOT_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setAutopilot = (v: boolean) => {
+    setAutopilotState(v);
+    try {
+      localStorage.setItem(AUTOPILOT_KEY, v ? '1' : '0');
+    } catch { /* без памяти */ }
+  };
   /** Где работать — по умолчанию из настроек проекта, меняется для этой задачи. */
   const [workspace, setWorkspace] = useState<Workspace>('worktree');
   /** От какой ветки начать задачу; по умолчанию — текущая ветка проекта. */
@@ -83,7 +98,7 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
         type: 'run.start',
         input: {
           projectPath: p.info.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
+          mode, visual: canVisual && visual, autopilot, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
@@ -227,6 +242,15 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
                 );
               })}
             </ol>
+            <div className="autopilot">
+              <div>
+                <strong>Автопилот</strong>
+                <span>План принимается сам, при исчерпанных попытках — ещё одна сама. Вы нужны на приёмке, а также если у планировщика вопросы или он предлагает разбить задачу.</span>
+              </div>
+              <button role="switch" aria-checked={autopilot} aria-label="Автопилот" className={`switch is-mini ${autopilot ? 'is-on' : ''}`} onClick={() => setAutopilot(!autopilot)}>
+                <i />
+              </button>
+            </div>
             <div className="workspace">
               <div className="workspace-head">
                 <strong>Где работать</strong>

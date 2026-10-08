@@ -1704,3 +1704,24 @@ button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
 .gantt.is-large .gantt-ghost { border-radius: 7px; }
 .gantt-row.is-skip .gantt-name > span, .gantt-row.is-skip .gantt-node { opacity: 0.45; }
 .gantt-name small.w-skip { color: var(--text-4); font-style: italic; }
+
+/* Новая задача: автопилот */
+.autopilot { display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-3) var(--s-4); margin: var(--s-3) 0; border-radius: var(--r-l); background: var(--bg-3); }
+.autopilot > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.autopilot strong { font-size: var(--fs-13); font-weight: 500; color: var(--text-1); }
+.autopilot span { font-size: var(--fs-12); color: var(--text-3); line-height: 1.5; }
+
+/* Проверка окружения проекта */
+.env-check-actions { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.env-result { margin-top: var(--s-3); padding: var(--s-3) var(--s-4); border-radius: var(--r-l); background: var(--bg-3); display: flex; flex-direction: column; gap: var(--s-2); }
+.env-result > strong { font-size: var(--fs-13); font-weight: 500; }
+.env-result.is-ok > strong { color: var(--ok); }
+.env-result.is-bad > strong { color: var(--err); }
+.env-result ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.env-result li { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-12); color: var(--text-2); line-height: 1.5; }
+.env-result li svg { flex: none; margin-top: 3px; }
+.env-result li.is-ok svg { color: var(--ok); }
+.env-result li.is-bad svg { color: var(--err); }
+.env-result li b { font-weight: 500; color: var(--text-1); }
+.env-fix { margin: 0; font-size: var(--fs-12); color: var(--text-1); line-height: 1.55; }
+.env-out { max-height: 240px; overflow: auto; font-size: 11px; }

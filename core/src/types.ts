@@ -170,7 +170,7 @@ export interface GateDecision {
 
 /** Что передать следующему запуску агента: обратная связь от валидатора, тестов, ревью или человека. */
 export interface Feedback {
-  source: 'validator' | 'tests' | 'review' | 'human';
+  source: 'validator' | 'tests' | 'review' | 'human' | 'system';
   text: string;
   lineComments?: LineComment[];
 }
@@ -205,6 +205,12 @@ export interface RunFile {
   /** Ветка, на которой была рабочая копия до прогона в режиме «ветка». */
   originalBranch?: string;
   visual?: boolean;
+  /** Автопилот: план принимается сам, при исчерпанных попытках — одна попытка сама; человек нужен только на приёмке. */
+  autopilot?: boolean;
+  /** План покрывает первую часть большой задачи; остальные — в разделе «Next Parts» proposal. */
+  nextParts?: boolean;
+  /** Автопилот уже дал одну попытку сверх лимита. */
+  autoRetried?: boolean;
   runCommand?: string;
   appUrl?: string;
   visualNotes?: string;
@@ -314,6 +320,7 @@ export interface StartRunInput {
   runCommand?: string;
   appUrl?: string;
   visual?: boolean;
+  autopilot?: boolean;
   visualNotes?: string;
   envFiles?: string[];
   workspace?: Workspace;
@@ -392,6 +399,17 @@ export interface ProjectConfig {
   knowledge?: ProjectKnowledge;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
+}
+
+/** Проверка окружения проекта для визуальной проверки: поднялось ли приложение, работает ли вход и данные. */
+export interface EnvCheck {
+  ready: boolean;
+  url?: string;
+  command?: string;
+  steps: { title: string; ok: boolean; detail: string }[];
+  fix?: string;
+  serverOutput?: string;
+  at: string;
 }
 
 /** Ветки проекта для выбора, от какой начать задачу. */
