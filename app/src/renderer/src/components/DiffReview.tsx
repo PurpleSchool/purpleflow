@@ -4,6 +4,7 @@ import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { ChevronRight, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { Markdown } from './Markdown';
+import { PillTabs } from './PillTabs';
 import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
 import { Button, TextArea } from './ui';
 
@@ -73,6 +74,34 @@ interface Props {
   readOnly?: boolean;
   /** «Что изменилось»: сводка для приёмки; null — ещё готовится. */
   summary?: string | null;
+  /** Выбранные на приёмке замечания ревьюера — уйдут исполнителю через «Исправить выбранные». */
+  picked?: ReviewItem[];
+  onPicked?: (items: ReviewItem[]) => void;
+  /** Замечания визуальной проверки — на вкладке «Заметки» рядом с замечаниями ревьюера. */
+  visualItems?: ReviewItem[];
+  /** Вкладка «Код»/«Заметки» управляется снаружи (переключатель в шапке приёмки). */
+  tab?: 'code' | 'notes';
+  onTab?: (t: 'code' | 'notes') => void;
+}
+
+export const reviewKey = (r: ReviewItem) => `${r.file ?? ''}:${r.line ?? ''}:${r.message}`;
+
+/** Галочка «исправить» у замечания ревьюера. */
+export function PickBox({ item, picked, onPicked }: { item: ReviewItem; picked: ReviewItem[]; onPicked: (items: ReviewItem[]) => void }) {
+  const on = picked.some((x) => reviewKey(x) === reviewKey(item));
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      className={`switch pick-switch ${on ? 'is-on' : ''}`}
+      title={on ? 'Убрать из исправлений' : 'Отдать исполнителю на исправление'}
+      onClick={() => onPicked(on ? picked.filter((x) => reviewKey(x) !== reviewKey(item)) : [...picked, item])}
+    >
+      <i />
+      <span>Исправить</span>
+    </button>
+  );
 }
 
 type Marker = { line: number; kind: 'blocking' | 'note' | 'mine'; text: string; idx?: number };
@@ -127,7 +156,11 @@ const WIDTH_KEY = 'psflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
 
-export function DiffReview({ files, review, comments, onComments, readOnly, summary }: Props) {
+export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab }: Props) {
+  const [ownTab, setOwnTab] = useState<'code' | 'notes'>('code');
+  const tab = outerTab ?? ownTab;
+  const setTab = onTab ?? setOwnTab;
+  const [sumOpen, setSumOpen] = useState(false);
   // Сначала код, потом файлы OpenSpec — человек смотрит в первую очередь на изменения проекта.
   const sorted = useMemo(
     () => [...files].sort((a, b) => Number(a.path.startsWith('openspec/')) - Number(b.path.startsWith('openspec/')) || a.path.localeCompare(b.path)),
@@ -261,7 +294,6 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     ed?.setPosition({ lineNumber: line, column: 1 });
   };
 
-  const fileItems = (review?.blocking ?? []).concat(review?.notes ?? []).filter((r) => !r.file || !r.line || !files.some((f) => f.path === r.file));
 
   const fileRow = (f: DiffFile, depth: number, withDir: boolean) => {
     const n = countFor(f.path);
@@ -309,8 +341,31 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     return inner;
   };
 
+  const jumpTo = (r: { file: string | null; line: number | null }) => {
+    setTab('code');
+    if (r.file) setCurrent(r.file);
+    if (r.line) setTimeout(() => jump(r.line!), 80);
+  };
+  const noteCount = (review?.blocking.length ?? 0) + (review?.notes.length ?? 0) + visualItems.length + comments.length;
+  const pickedN = picked?.length ?? 0;
+
   return (
-    <div className="diff" style={{ gridTemplateColumns: `${filesW}px minmax(0, 1fr) 300px` }}>
+    <div className="diff-wrap">
+      {!outerTab && (
+        <div className="diff-tabs">
+        <PillTabs<'code' | 'notes'>
+          className="tabs small"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: 'code', label: `Код · ${files.length}` },
+            { id: 'notes', label: `Заметки · ${noteCount}`, extra: review?.blocking.length ? <span className="tab-badge is-bad">{review.blocking.length}</span> : undefined },
+          ]}
+        />
+        {!readOnly && <span className="muted diff-tabs-hint">{tab === 'code' ? 'Клик по номеру строки — замечание исполнителю' : pickedN ? `Отмечено к исправлению: ${pickedN}` : 'Отметьте «исправить» у замечаний, которые нужно поправить'}</span>}
+      </div>
+      )}
+    <div className={`diff ${tab === 'code' ? '' : 'is-hidden'}`} style={{ gridTemplateColumns: `${filesW}px minmax(0, 1fr)` }}>
       <div className="diff-files-resize" style={{ left: `calc(var(--s-4) + ${filesW}px - 1px)` }} onPointerDown={startResize} onDoubleClick={() => { setFilesW(232); try { localStorage.removeItem(WIDTH_KEY); } catch { /* без памяти */ } }} title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию" />
       <aside className="diff-files">
         <div className="diff-files-head">
@@ -369,17 +424,8 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
         ) : (
           <div className="diff-binary">В ветке нет изменений.</div>
         )}
-      </div>
-
-      <aside className="diff-notes">
-        {summary !== undefined && (
-          <section className="change-summary">
-            <h4><Sparkles size={14} /> Что изменилось</h4>
-            {summary === null ? <p className="composer-hint"><span className="spinner" /> Готовлю сводку по диффу…</p> : <Markdown source={summary} className="summary-md" />}
-          </section>
-        )}
-        {!readOnly && (
-          <div className={`composer ${draftLine ? 'is-open' : ''}`}>
+        {!readOnly && draftLine && (
+          <div className="composer is-open diff-composer">
             {draftLine && file ? (
               <>
                 <div className="composer-head">
@@ -404,20 +450,30 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
                   <Button tone="primary" onClick={addComment} disabled={!draft.trim()}>Добавить</Button>
                 </div>
               </>
-            ) : (
-              <p className="composer-hint">Нажмите на номер строки в новой версии файла, чтобы оставить замечание исполнителю.</p>
-            )}
+            ) : null}
           </div>
         )}
 
-        <NoteList title="Блокирующие" kind="blocking" items={review?.blocking ?? []} onJump={(r) => { if (r.file) setCurrent(r.file); if (r.line) setTimeout(() => jump(r.line!), 60); }} />
-        <NoteList title="Заметки ревьюера" kind="note" items={review?.notes ?? []} onJump={(r) => { if (r.file) setCurrent(r.file); if (r.line) setTimeout(() => jump(r.line!), 60); }} />
+      </div>
+    </div>
+
+      {tab === 'notes' && (
+        <div className="diff-notes-page scroll">
+        {summary !== undefined && (
+          <section className={`change-summary ${sumOpen ? '' : 'is-clamped'}`}>
+            <h4><Sparkles size={14} /> Что изменилось</h4>
+            {summary === null ? <p className="composer-hint"><span className="spinner" /> Готовлю сводку по диффу…</p> : <Markdown source={summary} className="summary-md" />}
+            {summary && <button className="link summary-more" onClick={() => setSumOpen(!sumOpen)}>{sumOpen ? 'Свернуть' : 'Показать полностью'}</button>}
+          </section>
+        )}
+        <NoteList title="Блокирующие" kind="blocking" items={review?.blocking ?? []} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
+        <NoteList title="Заметки ревьюера" kind="note" items={review?.notes ?? []} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
         {comments.length > 0 && (
           <section className="notes">
             <h4>Ваши замечания <span className="muted">{comments.length}</span></h4>
             {comments.map((c, i) => (
               <div key={i} className="note n-mine">
-                <button className="note-loc" onClick={() => { setCurrent(c.file); setTimeout(() => jump(c.line), 60); }}>
+                <button className="note-loc" onClick={() => jumpTo(c)}>
                   {c.file.split('/').pop()}:{c.line}
                 </button>
                 <p>{c.text}</p>
@@ -430,10 +486,12 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
             ))}
           </section>
         )}
-        {fileItems.length === 0 && !review?.blocking.length && !review?.notes.length && !comments.length && readOnly && (
+        <NoteList title="Визуальная проверка" kind="note" items={visualItems} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
+        {noteCount === 0 && (
           <p className="composer-hint">Замечаний нет.</p>
         )}
-      </aside>
+        </div>
+      )}
     </div>
   );
 }
@@ -450,7 +508,7 @@ export function OriginTag({ origin }: { origin?: ReviewItem['origin'] }) {
   return <span className={`origin-tag o-${origin}`} title={ORIGIN[origin].title}>{ORIGIN[origin].label}</span>;
 }
 
-function NoteList({ title, kind, items, onJump }: { title: string; kind: 'blocking' | 'note'; items: ReviewItem[]; onJump: (r: ReviewItem) => void }) {
+function NoteList({ title, kind, items, onJump, picked, onPicked }: { title: string; kind: 'blocking' | 'note'; items: ReviewItem[]; onJump: (r: ReviewItem) => void; picked?: ReviewItem[]; onPicked?: (items: ReviewItem[]) => void }) {
   if (!items.length) return null;
   return (
     <section className="notes">
@@ -464,6 +522,7 @@ function NoteList({ title, kind, items, onJump }: { title: string; kind: 'blocki
           )}
           <OriginTag origin={r.origin} />
           <p>{r.message}</p>
+          {picked && onPicked && <PickBox item={r} picked={picked} onPicked={onPicked} />}
         </div>
       ))}
     </section>

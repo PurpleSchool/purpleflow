@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { RunFile, StageId } from '@psflow/core';
-import { nodeState, runStages } from '../lib/stages';
+import { nodeState, runStages, plannedRoute } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
 import { activeClock, agentTime, ms } from '../lib/clock';
 import { isGate, stageBars, type BarKind } from '../lib/bars';
@@ -42,28 +42,35 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
   const clock = activeClock(run, now, { compressGates: true });
   const span = Math.max(1000, clock.total);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const plan = plannedRoute(run);
+  // Шаги маршрута — лесенкой справа от «сейчас»: реальная шкала сжимается, освобождая место под них.
+  const steps = runStages(run).map((s) => s.id).filter((id) => plan[id] === 'planned');
+  // Место справа под шаги: по 20px на шаг (18px пунктир + зазор 2px); реальная шкала — левее.
+  const reserve = steps.length ? steps.length * 20 + 8 : 0;
+  const at = (pct: number) => (reserve ? `calc((100% - ${reserve}px) * ${pct / 100})` : `${pct}%`);
 
   return (
     <div className={`gantt is-large ${compact ? 'is-compact' : ''}`} aria-label="Время по стадиям">
       <div className="gantt-grid" aria-hidden>
-        {ticks.map((f) => <i key={f} style={{ left: `${f * 100}%` }} />)}
+        {ticks.map((f) => <i key={f} style={{ left: at(f * 100) }} />)}
       </div>
       {clock.gaps.length > 0 && (
         <div className="gantt-gaps">
           {clock.gaps.map((g, i) => (
-            <i key={i} style={{ left: `${(g.at / span) * 100}%` }} title={`Прогон стоял ${ms(g.ms)} — после ошибки или остановки. Это время не учитывается.`} />
+            <i key={i} style={{ left: at((g.at / span) * 100) }} title={`Прогон стоял ${ms(g.ms)} — после ошибки или остановки. Это время не учитывается.`} />
           ))}
         </div>
       )}
       {runStages(run).map((st) => {
         const bars = stageBars(run, clock, st.id, now, 0.4);
         const state = nodeState(run, st.id);
+        const planned = plan[st.id];
         const reachable = bars.length > 0 || st.id === run.next;
         const tries = bars.filter((b) => !b.attempt.stage.startsWith('gate') && b.attempt.stage !== 'limit').length;
         return (
           <button
             key={st.id}
-            className={`gantt-row is-click st-${state} ${selected === st.id ? 'is-selected' : ''} ${current === st.id ? 'is-current' : ''}`}
+            className={`gantt-row is-click st-${state} ${planned ? `is-${planned}` : ''} ${selected === st.id ? 'is-selected' : ''} ${current === st.id ? 'is-current' : ''}`}
             onClick={() => onSelect?.(st.id)}
             disabled={!reachable}
             title={reachable ? `Открыть детали «${st.title}»` : st.hint}
@@ -75,16 +82,24 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
               </span>
               <span className="gantt-name">
                 <span>{st.title}{tries > 1 && <em> ×{tries}</em>}</span>
-                <small className={`w-${state}`}>{WORD[state]}</small>
+                <small className={`w-${planned === 'skip' ? 'skip' : state}`}>{planned === 'skip' ? 'пропустится' : planned && state === 'stale' ? 'пройдёт снова' : WORD[state]}</small>
               </span>
             </span>
             <span className="gantt-track">
+              {/* Запланированный следующий шаг — пунктиром в конце шкалы, чтобы было видно, куда прогон пойдёт дальше. */}
+              {planned === 'planned' && (
+                <i
+                  className="gantt-ghost"
+                  style={{ left: `calc(100% - ${reserve - 6 - steps.indexOf(st.id) * 20}px)`, width: 18 }}
+                  title={`Дальше по маршруту: шаг ${steps.indexOf(st.id) + 1} из ${steps.length}`}
+                />
+              )}
               {bars.map((b, i) => {
                 const full = `${bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}${b.took}`;
                 // Ожидание человека — фиксированный слот без времени (точное время — в подсказке).
                 const label = compact || b.kind === 'wait' || b.kind === 'wait-live' ? '' : fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
                 return (
-                  <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: `${b.left}%`, width: `${b.width}%` }} title={b.tip}>
+                  <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: at(b.left), width: at(b.width) }} title={b.tip}>
                     {label && <b>{label}</b>}
                   </i>
                 );
@@ -97,7 +112,7 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
           </button>
         );
       })}
-      <div className="gantt-axis">
+      <div className="gantt-axis" style={reserve ? { marginRight: reserve } : undefined}>
         {ticks.map((f) => <span key={f}>{f === 0 ? '0' : ms(span * f)}</span>)}
       </div>
       <ul className="gantt-legend">

@@ -150,6 +150,26 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   return 'done';
 }
 
+/**
+ * Куда прогон пойдёт дальше: стадии после текущей строки — 'planned' (пройдёт) или 'skip' (пропустится).
+ * Повторяет маршрут ядра: быстрая правка и разрешение конфликтов — без ревью и визуальной проверки,
+ * слияние базовой ветки без конфликтов — сразу в PR.
+ */
+export function plannedRoute(run: RunFile): Partial<Record<StageId, 'planned' | 'skip'>> {
+  if (run.status === 'finished' || run.status === 'cancelled') return {};
+  const ids = runStages(run).map((s) => s.id);
+  const cur = run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next;
+  const from = ids.indexOf(cur);
+  if (from < 0) return {};
+  const skip = new Set<StageId>();
+  if (!run.visual) skip.add('visual');
+  if (run.quickFix || run.roundFiles?.length) { skip.add('review'); skip.add('visual'); }
+  if (run.mergeOnly) { skip.add('review'); skip.add('visual'); skip.add('gate2'); }
+  const out: Partial<Record<StageId, 'planned' | 'skip'>> = {};
+  for (const id of ids.slice(from + 1)) out[id] = skip.has(id) ? 'skip' : 'planned';
+  return out;
+}
+
 export function attemptsOf(run: RunFile, stage: StageId): StageAttempt[] {
   return run.attempts.filter((a) => a.stage === stage);
 }

@@ -16,7 +16,7 @@ import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Termina
 import { Markdown } from '../components/Markdown';
 import { CommentableMarkdown } from '../components/CommentableMarkdown';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
-import { DiffReview, OriginTag } from '../components/DiffReview';
+import { DiffReview, OriginTag, PickBox } from '../components/DiffReview';
 import { PrPane, onPrRefreshed } from '../components/PrPane';
 import { Button, Empty, Input, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
@@ -50,6 +50,8 @@ export function RunScreen({ runId }: { runId: string }) {
   const [diffErr, setDiffErr] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [lineComments, setLineComments] = useState<LineComment[]>([]);
+  const [picked, setPicked] = useState<ReviewItem[]>([]);
+  const [accTab, setAccTab] = useState<'code' | 'notes'>('code');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const gateKey = useRef('');
@@ -214,6 +216,8 @@ export function RunScreen({ runId }: { runId: string }) {
   const clarifyQuestions = drawer === 'clarify' && run.clarify?.questions.length ? run.clarify : null;
   // Идущая попытка стадии, у которой результат появляется только в конце: вместо прошлой попытки — заглушка.
   const unstableChecks = (run.tests.at(-1)?.checks ?? []).filter((x) => x.unstable);
+  const lastVisual = run.visuals?.at(-1);
+  const accNotes = (lastReview ? lastReview.blocking.length + lastReview.notes.length : 0) + (lastVisual ? lastVisual.blocking.length + lastVisual.notes.length : 0) + lineComments.length;
   const inProgress = Boolean(attempt?.status === 'running' && (drawer === 'tests' || drawer === 'review' || drawer === 'plan'));
   const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer] && !clarifyQuestions
     ? { title: LOG_TITLE[drawer]!, attempt: attempt.attempt, stage: drawer, live: attempt.status === 'running' }
@@ -245,7 +249,8 @@ export function RunScreen({ runId }: { runId: string }) {
       onCancel={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}
       onAccept={gate === 'limit' ? () => act('accept', () => dispatch({ type: 'gate.accept', runId })) : undefined}
       acceptTo={gate === 'limit' ? acceptTarget(run) : undefined}
-      onFix={gate === 'gate2' ? () => act('fix', () => dispatch({ type: 'gate.fix', runId, comment, lineComments })) : undefined}
+      onFix={gate === 'gate2' ? () => act('fix', () => dispatch({ type: 'gate.fix', runId, comment: withPicked(comment, picked), lineComments }).then(() => setPicked([]))) : undefined}
+      pickedCount={gate === 'gate2' ? picked.length : 0}
       onOpenAccept={() => open(gate === 'gate1' ? 'gate1' : 'gate2')}
       onOpenApp={gate === 'gate2' && canRunApp && view !== 'browser' ? openApp : undefined}
       diffShown={gate === 'gate1' ? showPlan : showDiff}
@@ -355,6 +360,17 @@ export function RunScreen({ runId }: { runId: string }) {
                         <strong>{stageDef.title}</strong>
                         <span>{drawer === 'visual' ? 'claude' : stageDef.role ? run.agents?.[stageDef.role] ?? stageDef.actor : stageDef.actor}{drawer === 'visual' ? (attempt?.model && attempt.model !== 'claude' ? ` · ${attempt.model}` : '') : stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
                       </div>
+                      {showDiff && diff && (
+                        <PillTabs<'code' | 'notes'>
+                          className="tabs attempts"
+                          value={accTab}
+                          onChange={setAccTab}
+                          items={[
+                            { id: 'code', label: `Код · ${diff.length}` },
+                            { id: 'notes', label: `Заметки · ${accNotes}`, extra: picked.length ? <span className="tab-badge is-pick">{picked.length}</span> : undefined },
+                          ]}
+                        />
+                      )}
                       {tries.length > 1 && (
                         <PillTabs<string>
                           className="tabs attempts"
@@ -375,7 +391,7 @@ export function RunScreen({ runId }: { runId: string }) {
                       {showPlan && !inProgress && <PlanView docs={docs} run={run} comments={lineComments} onComments={setLineComments} editable={gate === 'gate1'} />}
                       {slice && attempt && <AgentOutput key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} attempt={attempt} />}
                       {drawer === 'tests' && !inProgress && <TestsView run={run} idx={testIdx} />}
-                      {drawer === 'review' && !inProgress && <ReviewView run={run} idx={reviewIdx} />}
+                      {drawer === 'review' && !inProgress && <ReviewView run={run} idx={reviewIdx} {...(gate === 'gate2' && reviewIdx === run.reviews.length - 1 ? { picked, onPicked: setPicked } : {})} />}
                       {drawer === 'visual' && <VisualView key={`visual-${attempt?.attempt ?? 0}`} run={run} runId={runId} attempt={attempt} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
                       {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
                       {clarifyQuestions && <ClarifyView run={run} runId={runId} waiting={run.next === 'gate0' && (run.status === 'waiting' || run.status === 'stopped')} onDone={close} />}
@@ -385,6 +401,11 @@ export function RunScreen({ runId }: { runId: string }) {
                         : <>
                           {unstableChecks.length > 0 && <p className="check-old unstable-banner"><TriangleAlert size={14} /> {unstableText(unstableChecks[0].unstable!)}</p>}
                           <DiffReview
+                            picked={picked}
+                            onPicked={setPicked}
+                            tab={accTab}
+                            onTab={setAccTab}
+                            visualItems={run.visuals?.at(-1) ? [...run.visuals.at(-1)!.blocking, ...run.visuals.at(-1)!.notes] : []}
                             files={diff}
                             review={lastReview}
                             comments={lineComments}
@@ -1060,7 +1081,14 @@ function originSummary(items: ReviewItem[]): string {
   return parts.length ? ` Из блокирующих: ${parts.join(', ')}.` : '';
 }
 
-function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
+/** Комментарий к «Поправить» с выбранными замечаниями ревьюера. */
+function withPicked(comment: string, picked: ReviewItem[]): string {
+  if (!picked.length) return comment;
+  const list = picked.map((i) => `- ${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`).join('\n');
+  return `${comment.trim() ? comment.trim() + '\n\n' : ''}Исправь эти замечания ревьюера (выбраны человеком на приёмке):\n${list}`;
+}
+
+function ReviewView({ run, idx, picked, onPicked }: { run: RunFile; idx: number; picked?: ReviewItem[]; onPicked?: (items: ReviewItem[]) => void }) {
   const r = run.reviews[idx];
   const items = useMemo(() => r ? [...r.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...r.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [], [r]);
   if (!r) return <Empty icon={<Sparkles />} title="Ревью ещё не было" />;
@@ -1081,6 +1109,7 @@ function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
               {x.file && <span className="note-loc">{x.file}{x.line ? `:${x.line}` : ''}</span>}
               <OriginTag origin={x.origin} />
               <p>{x.message}</p>
+              {picked && onPicked && <PickBox item={x} picked={picked} onPicked={onPicked} />}
             </li>
           ))}
         </ul>
@@ -1097,6 +1126,8 @@ function GateBar(props: {
   /** Куда ведёт «Дальше как есть» с гейта исчерпанных попыток. */
   acceptTo?: 'visual' | 'gate2';
   onFix?: () => void;
+  /** Сколько замечаний ревьюера выбрано галочками на приёмке. */
+  pickedCount?: number;
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
   const [open, setOpen] = useState(false);
@@ -1115,7 +1146,7 @@ function GateBar(props: {
       if (inField) return;
       const hasText = Boolean(p.comment.trim()) || p.lineCount > 0;
       const back = () => (hasText ? p.onReject() : setOpen(true));
-      const fix = () => (hasText ? p.onFix?.() : setOpen(true));
+      const fix = () => (hasText || (p.pickedCount ?? 0) > 0 ? p.onFix?.() : setOpen(true));
       e.preventDefault();
       e.stopPropagation();
       if (p.gate === 'limit') return e.shiftKey ? p.onCancel() : p.onApprove();
@@ -1164,6 +1195,11 @@ function GateBar(props: {
           </>
         ) : (
           <>
+            {gate === 'gate2' && props.onFix && (props.pickedCount ?? 0) > 0 && !open && lineCount === 0 && (
+              <Button tone="ghost" icon={<Wrench size={14} />} busy={busy === 'fix'} onClick={props.onFix} title="Выбранные замечания ревьюера — исполнителю: реализация → проверки → снова приёмка, без нового ревью">
+                Исправить выбранные ({props.pickedCount}) <kbd className="kbd-mini">{mod}⌥↵</kbd>
+              </Button>
+            )}
             {needsComment && !open && lineCount === 0 ? (
               <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)} title={`${mod}⇧↵`}>{gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}</Button>
             ) : (
@@ -1173,11 +1209,11 @@ function GateBar(props: {
                     tone="ghost"
                     icon={<Wrench size={14} />}
                     busy={busy === 'fix'}
-                    disabled={!comment.trim() && lineCount === 0}
+                    disabled={!comment.trim() && lineCount === 0 && !props.pickedCount}
                     onClick={props.onFix}
                     title="Небольшая правка в той же ветке: реализация → проверки → снова приёмка, без ревью и визуальной проверки"
                   >
-                    Поправить{lineCount ? ` (+${lineCount})` : ''} <kbd className="kbd-mini">{mod}⌥↵</kbd>
+                    Поправить{lineCount || props.pickedCount ? ` (+${lineCount + (props.pickedCount ?? 0)})` : ''} <kbd className="kbd-mini">{mod}⌥↵</kbd>
                   </Button>
                 )}
                 <Button
