@@ -82,3 +82,25 @@ export function ms(n: number): string {
   if (m < 60) return `${m} мин ${s % 60} с`;
   return `${Math.floor(m / 60)} ч ${m % 60} мин`;
 }
+
+/** Время работы агентов и проверок: стадии без гейтов, параллельные (проверки и ревью) — один раз. */
+export function agentTime(run: RunFile, now = Date.now()): number {
+  const spans = run.attempts
+    .filter((a) => !GATES.includes(a.stage))
+    .map((a) => {
+      const s = Date.parse(a.startedAt);
+      const e = a.endedAt ? Date.parse(a.endedAt) : a.status === 'running' ? now : s;
+      return [s, Math.max(s, e)] as [number, number];
+    })
+    .sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let cur: [number, number] | null = null;
+  for (const [s, e] of spans) {
+    if (cur && s <= cur[1]) cur[1] = Math.max(cur[1], e);
+    else {
+      if (cur) total += cur[1] - cur[0];
+      cur = [s, e];
+    }
+  }
+  return total + (cur ? cur[1] - cur[0] : 0);
+}

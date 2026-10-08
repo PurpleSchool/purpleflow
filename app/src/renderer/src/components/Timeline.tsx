@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import type { RunFile, StageId } from '@psflow/core';
 import { nodeState, runStages } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
-import { activeClock, ms } from '../lib/clock';
+import { activeClock, agentTime, ms } from '../lib/clock';
 import { isGate, stageBars, type BarKind } from '../lib/bars';
 
 const LEGEND: { kind: BarKind; label: string }[] = [
@@ -112,18 +112,12 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
 export function TimelinePanel({ run, onSelect }: { run: RunFile; onSelect: (s: StageId) => void }) {
   const now = useNow(run);
   const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
-  const humanMs = run.attempts
-    .filter((a) => isGate(a.stage))
-    .reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : now) - Date.parse(a.startedAt)), 0);
-  const clock = activeClock(run, now);
   return (
     <div className="scroll">
       <div className="timeline-panel">
         <dl className="timeline-sum">
-          <div><dt>Активное время</dt><dd>{ms(clock.total)}</dd></div>
-          <div><dt>Ожидание человека</dt><dd>{ms(humanMs)}</dd></div>
+          <div><dt>Время агентов</dt><dd>{ms(agentTime(run, now))}</dd></div>
           <div><dt>Запусков стадий</dt><dd>{runs}</dd></div>
-          {clock.paused > 0 && <div><dt>Простой не учтён</dt><dd>{ms(clock.paused)}</dd></div>}
         </dl>
         <Timeline run={run} onSelect={onSelect} />
       </div>

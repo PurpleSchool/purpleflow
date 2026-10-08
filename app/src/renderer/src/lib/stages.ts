@@ -142,6 +142,8 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
     if (run.status === 'stopped' || run.status === 'cancelled') return 'stopped';
   }
   if (!a) return 'idle';
+  // Ревью идёт параллельно с проверками: строка «впереди», но стадия уже работает.
+  if (a.status === 'running' && run.status === 'running') return 'active';
   if (me > cur) return 'stale';
   if (a.status === 'failed') return me < cur ? 'done' : 'failed';
   if (a.status === 'stopped') return 'stopped';

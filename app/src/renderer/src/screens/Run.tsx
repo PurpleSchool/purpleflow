@@ -11,7 +11,7 @@ import { Timeline, useNow } from '../components/Timeline';
 import { isGate } from '../lib/bars';
 import { MODES, acceptTarget, limitRow, nodeState, runStages, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
-import { activeClock, ms } from '../lib/clock';
+import { agentTime, ms } from '../lib/clock';
 import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { CommentableMarkdown } from '../components/CommentableMarkdown';
@@ -729,17 +729,13 @@ function Attachments({ runId, files }: { runId: string; files: string[] }) {
 
 function Metrics({ run }: { run: RunFile }) {
   const now = useNow(run);
-  const clock = activeClock(run, now);
   const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
-  const humanMs = run.attempts.filter((a) => isGate(a.stage)).reduce((n, a) => n + ((a.endedAt ? Date.parse(a.endedAt) : now) - Date.parse(a.startedAt)), 0);
   const total = usageTotal(run.totals);
   return (
     <dl className="metrics-row">
-      <div className="stat" title={clock.paused > 0 ? `Без простоя ${ms(clock.paused)} после ошибок и остановок` : undefined}>
-        <dt>Активное время</dt><dd><Num animate={false} text={ms(clock.total)} /></dd>
-        {clock.paused > 0 && <span className="stat-note">простой {ms(clock.paused)} не учтён</span>}
+      <div className="stat" title="Сколько работали агенты и проверки — без ожидания вашего решения и пауз">
+        <dt>Время агентов</dt><dd><Num animate={false} text={ms(agentTime(run, now))} /></dd>
       </div>
-      <div className="stat"><dt>Ждали вас</dt><dd><Num animate={false} text={ms(humanMs)} /></dd></div>
       <div className="stat"><dt>Запусков стадий</dt><dd><Num text={String(runs)} /></dd></div>
       <div className="stat" title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
       <div className="stat"><dt>Попытки реализации</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
