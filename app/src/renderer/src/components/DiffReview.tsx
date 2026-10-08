@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import { FileCode2, FilePlus2, FileMinus2, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronRight, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
 import { Button, TextArea } from './ui';
@@ -77,13 +77,103 @@ interface Props {
 
 type Marker = { line: number; kind: 'blocking' | 'note' | 'mine'; text: string; idx?: number };
 
+interface TreeDir {
+  /** Полный путь папки (ключ для свёрнутых). */
+  path: string;
+  /** Подпись: одиночные вложенные папки склеены — «packages/api/src». */
+  name: string;
+  dirs: TreeDir[];
+  files: DiffFile[];
+  /** Сколько файлов внутри, включая вложенные папки. */
+  count: number;
+}
+
+/** Дерево изменённых файлов: папки раньше файлов, openspec/ — в конце, цепочки из одной папки склеены. */
+function buildTree(files: DiffFile[]): TreeDir {
+  const root: TreeDir = { path: '', name: '', dirs: [], files: [], count: 0 };
+  for (const f of files) {
+    const parts = f.path.split('/');
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      const p = node.path ? `${node.path}/${part}` : part;
+      let next = node.dirs.find((d) => d.path === p);
+      if (!next) node.dirs.push((next = { path: p, name: part, dirs: [], files: [], count: 0 }));
+      node = next;
+    }
+    node.files.push(f);
+  }
+  const finish = (d: TreeDir): TreeDir => {
+    d.dirs = d.dirs.map(finish);
+    // Папка, где только одна вложенная папка и нет файлов, склеивается с ней.
+    while (d.path && d.dirs.length === 1 && !d.files.length) {
+      const only = d.dirs[0];
+      Object.assign(d, { path: only.path, name: `${d.name}/${only.name}`, dirs: only.dirs, files: only.files });
+    }
+    d.dirs.sort((a, b) => Number(a.name.startsWith('openspec')) - Number(b.name.startsWith('openspec')) || a.name.localeCompare(b.name));
+    d.files.sort((a, b) => a.path.localeCompare(b.path));
+    d.count = d.files.length + d.dirs.reduce((n, x) => n + x.count, 0);
+    return d;
+  };
+  return finish(root);
+}
+
+/** Файлы в порядке дерева — чтобы первым открывался верхний файл дерева. */
+function treeOrder(d: TreeDir): DiffFile[] {
+  return [...d.dirs.flatMap(treeOrder), ...d.files];
+}
+
+const TREE_KEY = 'psflow.diffTree';
+const WIDTH_KEY = 'psflow.diffFilesWidth';
+const MIN_W = 180;
+const MAX_W = 640;
+
 export function DiffReview({ files, review, comments, onComments, readOnly, summary }: Props) {
   // Сначала код, потом файлы OpenSpec — человек смотрит в первую очередь на изменения проекта.
   const sorted = useMemo(
     () => [...files].sort((a, b) => Number(a.path.startsWith('openspec/')) - Number(b.path.startsWith('openspec/')) || a.path.localeCompare(b.path)),
     [files],
   );
-  const [current, setCurrent] = useState<string | null>(sorted[0]?.path ?? null);
+  const tree = useMemo(() => buildTree(files), [files]);
+  const [asTree, setAsTree] = useState(() => {
+    try {
+      return localStorage.getItem(TREE_KEY) !== 'list';
+    } catch {
+      return true;
+    }
+  });
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** Ширина панели файлов — тянется за правый край, запоминается. */
+  const [filesW, setFilesW] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem(WIDTH_KEY));
+      return v >= MIN_W && v <= MAX_W ? v : 232;
+    } catch {
+      return 232;
+    }
+  });
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = filesW;
+    let w = w0;
+    const move = (ev: PointerEvent) => {
+      w = Math.min(MAX_W, Math.max(MIN_W, w0 + ev.clientX - x0));
+      setFilesW(w);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('is-col-resizing');
+      try {
+        localStorage.setItem(WIDTH_KEY, String(w));
+      } catch { /* без памяти о ширине */ }
+    };
+    document.body.classList.add('is-col-resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const ordered = useMemo(() => (asTree ? treeOrder(tree) : sorted), [asTree, tree, sorted]);
+  const [current, setCurrent] = useState<string | null>(ordered[0]?.path ?? null);
   const [draftLine, setDraftLine] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -92,8 +182,8 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
   const draftRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (!current || !sorted.some((f) => f.path === current)) setCurrent(sorted[0]?.path ?? null);
-  }, [sorted, current]);
+    if (!current || !ordered.some((f) => f.path === current)) setCurrent(ordered[0]?.path ?? null);
+  }, [ordered, current]);
 
   const file = sorted.find((f) => f.path === current) ?? null;
 
@@ -173,33 +263,76 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
 
   const fileItems = (review?.blocking ?? []).concat(review?.notes ?? []).filter((r) => !r.file || !r.line || !files.some((f) => f.path === r.file));
 
+  const fileRow = (f: DiffFile, depth: number, withDir: boolean) => {
+    const n = countFor(f.path);
+    const name = f.path.split('/').pop();
+    const dir = f.path.slice(0, f.path.length - (name?.length ?? 0));
+    return (
+      <li key={f.path}>
+        <button className={`file ${f.path === current ? 'is-on' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => { setCurrent(f.path); setDraftLine(null); }} title={f.path}>
+          <span className={`file-st st-${f.status}`}>
+            {f.status === 'A' ? <FilePlus2 size={14} /> : f.status === 'D' ? <FileMinus2 size={14} /> : <FileCode2 size={14} />}
+          </span>
+          <span className="file-name">
+            <span>{name}</span>
+            {withDir && dir && <small>{dir}</small>}
+          </span>
+          {n > 0 && <span className="file-n">{n}</span>}
+        </button>
+      </li>
+    );
+  };
+
+  const toggleDir = (p: string) => setCollapsed((cur) => {
+    const next = new Set(cur);
+    if (next.has(p)) next.delete(p);
+    else next.add(p);
+    return next;
+  });
+
+  const renderDir = (d: TreeDir, depth: number): ReactNode[] => {
+    const inner = [...d.dirs.flatMap((x) => {
+      const shut = collapsed.has(x.path);
+      const n = treeOrder(x).reduce((k, f) => k + countFor(f.path), 0);
+      return [
+        <li key={`d:${x.path}`}>
+          <button className={`file dir ${shut ? 'is-shut' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => toggleDir(x.path)} title={x.path}>
+            <ChevronRight size={13} className="dir-caret" />
+            <Folder size={14} className="dir-icon" />
+            <span className="file-name"><span>{x.name}</span></span>
+            {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{x.count}</span>}
+          </button>
+        </li>,
+        ...(shut ? [] : renderDir(x, depth + 1)),
+      ];
+    }), ...d.files.map((f) => fileRow(f, depth, false))];
+    return inner;
+  };
+
   return (
-    <div className="diff">
+    <div className="diff" style={{ gridTemplateColumns: `${filesW}px minmax(0, 1fr) 300px` }}>
+      <div className="diff-files-resize" style={{ left: `calc(var(--s-4) + ${filesW}px - 1px)` }} onPointerDown={startResize} onDoubleClick={() => { setFilesW(232); try { localStorage.removeItem(WIDTH_KEY); } catch { /* без памяти */ } }} title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию" />
       <aside className="diff-files">
         <div className="diff-files-head">
           <span>Файлы</span>
           <span className="muted">{files.length}</span>
+          <span className="grow" />
+          <button
+            className="diff-files-mode"
+            title={asTree ? 'Показать списком' : 'Показать деревом'}
+            onClick={() => {
+              const next = !asTree;
+              setAsTree(next);
+              try {
+                localStorage.setItem(TREE_KEY, next ? 'tree' : 'list');
+              } catch { /* без памяти о виде */ }
+            }}
+          >
+            {asTree ? <List size={14} /> : <ListTree size={14} />}
+          </button>
         </div>
         <ul>
-          {sorted.map((f) => {
-            const n = countFor(f.path);
-            const name = f.path.split('/').pop();
-            const dir = f.path.slice(0, f.path.length - (name?.length ?? 0));
-            return (
-              <li key={f.path}>
-                <button className={`file ${f.path === current ? 'is-on' : ''}`} onClick={() => { setCurrent(f.path); setDraftLine(null); }} title={f.path}>
-                  <span className={`file-st st-${f.status}`}>
-                    {f.status === 'A' ? <FilePlus2 size={14} /> : f.status === 'D' ? <FileMinus2 size={14} /> : <FileCode2 size={14} />}
-                  </span>
-                  <span className="file-name">
-                    <span>{name}</span>
-                    {dir && <small>{dir}</small>}
-                  </span>
-                  {n > 0 && <span className="file-n">{n}</span>}
-                </button>
-              </li>
-            );
-          })}
+          {asTree ? renderDir(tree, 0) : sorted.map((f) => fileRow(f, 0, true))}
         </ul>
       </aside>
 
