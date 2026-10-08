@@ -19,6 +19,8 @@ interface StoredSettings {
   /** Короткий звук в тех же случаях. */
   sound: boolean;
   claudeAuth: 'login' | 'env';
+  /** Подключать агентам настройки пользователя: MCP, скиллы, плагины. */
+  userConfig: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -34,6 +36,7 @@ const DEFAULTS: StoredSettings = {
   notify: true,
   sound: true,
   claudeAuth: 'login',
+  userConfig: true,
 };
 
 /**
@@ -95,6 +98,7 @@ export function publicSettings(): PublicSettings {
     notify: s.notify,
     sound: s.sound,
     claudeAuth: s.claudeAuth,
+    userConfig: s.userConfig,
   };
 }
 
@@ -108,6 +112,7 @@ export function coreSettings(): CoreSettings {
     models: s.models,
     agents: s.agents,
     claudeAuth: s.claudeAuth,
+    userConfig: s.userConfig,
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
     maxParallel: s.maxParallel,
@@ -138,6 +143,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.notify !== undefined) s.notify = patch.notify;
   if (patch.sound !== undefined) s.sound = patch.sound;
   if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
+  if (patch.userConfig !== undefined) s.userConfig = patch.userConfig;
   persist(s);
   return publicSettings();
 }

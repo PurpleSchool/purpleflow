@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -16,6 +16,7 @@ export interface PublicSettings {
   notify: boolean;
   sound: boolean;
   claudeAuth: 'login' | 'env';
+  userConfig: boolean;
 }
 
 export interface SettingsPatch {
@@ -31,6 +32,7 @@ export interface SettingsPatch {
   notify?: boolean;
   sound?: boolean;
   claudeAuth?: 'login' | 'env';
+  userConfig?: boolean;
 }
 
 export interface ChangeDocs {
@@ -52,7 +54,7 @@ export interface CoreApi {
   testConnection(): Promise<ConnectionCheck[]>;
   detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
   isDriving(id: string): Promise<boolean>;
-  listBranches(id: string): Promise<{ branches: string[]; current: string | null }>;
+  listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }>;
   getAttachment(id: string, index: number): Promise<string | null>;
   detectCommandsAI(dir: string): Promise<AiCommands>;
   getProjectConfig(dir: string): Promise<ProjectConfig | null>;
@@ -75,6 +77,8 @@ export interface CoreApi {
   listProjects(): Promise<ProjectListItem[]>;
   projectOverview(dir: string): Promise<ProjectOverview>;
   forgetProject(dir: string): Promise<void>;
+  projectBranches(dir: string, fetch?: boolean): Promise<ProjectBranches>;
+  cleanWorkingCopy(dir: string, how: 'stash' | 'discard'): Promise<{ files: number }>;
   projectStats(dir: string): Promise<ProjectStats>;
 }
 

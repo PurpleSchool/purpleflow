@@ -58,6 +58,7 @@ export async function prStatus(ghBin: string, repo: string, env: NodeJS.ProcessE
     mergeable: j.mergeable === 'MERGEABLE',
     conflicts: j.mergeable === 'CONFLICTING',
     blocked: j.mergeStateStatus === 'BLOCKED',
+    behind: j.mergeStateStatus === 'BEHIND' || j.mergeable === 'CONFLICTING',
     review: j.reviewDecision || null,
     checks: { total: v.length, passed: v.filter((x) => x === 'ok').length, failed: v.filter((x) => x === 'failed').length, pending: v.filter((x) => x === 'pending').length },
     failedChecks,

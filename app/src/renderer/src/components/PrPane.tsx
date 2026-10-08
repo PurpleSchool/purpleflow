@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CircleCheck, CircleX, ExternalLink, FileCode2, GitPullRequest, MessageSquare, RotateCw, ShieldAlert, Wrench } from 'lucide-react';
+import { CircleCheck, CircleX, ExternalLink, FileCode2, GitMerge, GitPullRequest, MessageSquare, RotateCw, ShieldAlert, Wrench } from 'lucide-react';
 import type { PrComment, PrDetails, PrFollowupItem, PrStatus, RunFile } from '@psflow/core';
 import { Button, TextArea } from './ui';
 import { Markdown } from './Markdown';
@@ -29,7 +29,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'followup' | 'update' | null>(null);
   const [showResolved, setShowResolved] = useState(false);
 
   /** Замечания, уже отработанные в прошлых кругах. */
@@ -86,7 +86,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
       // В обсуждении важны и ответы: ревьюер мог уточнить, что именно хочет.
       body: c.replies?.length ? `${c.body}\n${c.replies.map((r) => `  ↳ @${r.author}: ${r.body}`).join('\n')}` : c.body,
     }));
-    setBusy(true);
+    setBusy('followup');
     setError(null);
     try {
       await window.psflow.core.dispatch({ type: 'run.prFollowup', runId, items, note: note.trim() || undefined });
@@ -95,7 +95,20 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     } catch (e) {
       setError(cleanErr(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  const update = async () => {
+    setBusy('update');
+    setError(null);
+    try {
+      await window.psflow.core.dispatch({ type: 'run.updateBranch', runId });
+      onStarted();
+    } catch (e) {
+      setError(cleanErr(e));
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -120,7 +133,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
                   </span>
                 )}
                 {st?.review && <span className="muted">{st.review === 'APPROVED' ? 'одобрен' : st.review === 'CHANGES_REQUESTED' ? 'просят изменения' : st.review === 'REVIEW_REQUIRED' ? 'ждёт ревью' : st.review}</span>}
-                {st?.conflicts && <span className="tag is-bad">конфликт с {run.pr.base}</span>}
+                {st?.conflicts ? <span className="tag is-bad">конфликт с {run.pr.base}</span> : st?.behind && <span className="tag is-wait">отстаёт от {run.pr.base}</span>}
               </div>
             </div>
           </div>
@@ -133,7 +146,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
         {(run.prRounds?.length ?? 0) > 0 && (
           <p className="pr-rounds muted">
             Кругов доработки: {run.prRounds!.length}.{' '}
-            {run.prRounds!.map((r) => `круг ${r.round} — ${r.items.length} ${noun(r.items.length)}${r.commit ? `, ${r.commit.slice(0, 7)}` : inRound && r === run.prRounds!.at(-1) ? ', идёт' : ''}`).join('; ')}
+            {run.prRounds!.map((r) => `круг ${r.round} — ${r.kind === 'update' ? `обновление из ${run.pr!.base}${r.conflicts?.length ? `, конфликтов: ${r.conflicts.length}` : ''}` : `${r.items.length} ${noun(r.items.length)}`}${r.commit ? `, ${r.commit.slice(0, 7)}` : inRound && r === run.prRounds!.at(-1) ? ', идёт' : ''}`).join('; ')}
           </p>
         )}
 
@@ -196,13 +209,23 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
         {d && !merged && !closed && (
           <section className="panel pr-action">
             {inRound ? (
-              <p className="muted">Идёт доработка по PR — круг {run.prRound}. Следите за ней на таймлайне; после приёмки правки уйдут в ветку PR.</p>
+              <p className="muted">{run.prRounds?.at(-1)?.kind === 'update' ? `Идёт обновление ветки из ${run.pr.base} — круг ${run.prRound}.` : `Идёт доработка по PR — круг ${run.prRound}.`} Следите за ним на таймлайне; после проверок{run.mergeOnly ? '' : ' и приёмки'} изменения уйдут в ветку PR.</p>
             ) : (
               <>
                 <TextArea rows={2} placeholder="Ваш комментарий к доработке (необязательно) — например, с каким замечанием не согласны" value={note} onChange={(e) => setNote(e.target.value)} />
                 <div className="pr-action-row">
                   <span className="muted">Новый круг в этом прогоне: реализация → проверки → ревью → приёмка → коммит и push в ветку PR. Отвечать в обсуждениях — на GitHub.</span>
-                  <Button tone="primary" icon={<Wrench size={14} />} busy={busy} disabled={!picked.size && !note.trim()} onClick={() => void start()}>
+                  <Button
+                    tone={st?.behind || st?.conflicts ? 'ghost' : 'quiet'}
+                    icon={<GitMerge size={14} />}
+                    busy={busy === 'update'}
+                    disabled={busy !== null}
+                    title={`Влить свежую ${run.pr.base} в ветку PR: без конфликтов — проверки и push, с конфликтами — их разрешит исполнитель, затем проверки и приёмка`}
+                    onClick={() => void update()}
+                  >
+                    Обновить ветку{st?.conflicts ? ' и разрешить конфликты' : ''}
+                  </Button>
+                  <Button tone="primary" icon={<Wrench size={14} />} busy={busy === 'followup'} disabled={busy !== null || (!picked.size && !note.trim())} onClick={() => void start()}>
                     Отработать{picked.size ? ` (${picked.size})` : ''}
                   </Button>
                 </div>

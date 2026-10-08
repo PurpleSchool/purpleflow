@@ -20,7 +20,7 @@ import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js'
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
-  AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, PrFollowupItem, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
+  AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
 } from './types.js';
 
@@ -132,6 +132,9 @@ export class Orchestrator {
       case 'run.prFollowup':
         await this.prFollowup(cmd.runId, cmd.items, cmd.note);
         return { runId: cmd.runId };
+      case 'run.updateBranch':
+        await this.updateBranch(cmd.runId);
+        return { runId: cmd.runId };
       case 'run.delete':
         await this.deleteRun(cmd.runId, cmd.deleteBranch);
         return { runId: cmd.runId };
@@ -185,7 +188,9 @@ export class Orchestrator {
     const tools = await this.tools(['git']);
     const git = new Git(tools.git, this.opts.env);
     const env = new Set(this.envFilesOf(r));
-    const skip = (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p);
+    // Круг с разрешёнными конфликтами: показываем только эти файлы, а не весь влитый код базовой ветки.
+    const only = r.status !== 'finished' && r.roundFiles?.length ? new Set(r.roundFiles) : null;
+    const skip = (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p) || Boolean(only && !only.has(p));
     // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
     if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
     return git.diff(r.worktreePath, this.diffBase(r), skip);
@@ -386,24 +391,7 @@ export class Orchestrator {
     if (r.status !== 'finished') throw new Error('Доработку можно начать, когда прогон завершён');
     if (r.merged) throw new Error('PR уже влит — для новых правок создайте новую задачу');
     if (!items.length && !note?.trim()) throw new Error('Выберите замечания или опишите, что доработать');
-    const tools = await this.tools(['git']);
-    const git = new Git(tools.git, this.opts.env);
-
-    // Рабочая копия: worktree могли удалить при очистке, в режиме «ветка» проект мог уйти на другую ветку.
-    if (r.workspace === 'branch') {
-      const cur = await git.currentBranch(r.projectPath);
-      if (cur !== r.branch) {
-        const dirty = await git.dirtyFiles(r.projectPath);
-        if (dirty.length) throw new Error(`В проекте есть незакоммиченные изменения (${dirty.length}) — закоммитьте или уберите их, чтобы переключиться на ${r.branch}`);
-        await git.checkout(r.projectPath, r.branch);
-      }
-    } else if (r.worktreeRemoved || !fs.existsSync(r.worktreePath)) {
-      await git.addWorktreeAt(r.projectPath, r.worktreePath, r.branch);
-      r.worktreeRemoved = undefined;
-      this.copyEnvFiles(r);
-    }
-    const pulled = await git.pullFastForward(r.worktreePath, r.branch);
-    if (pulled === 'diverged') throw new Error(`Ветка ${r.branch} на GitHub разошлась с локальной — подтяните изменения вручную (git pull) и повторите`);
+    const { git, pulled } = await this.reopenWorkspace(r);
 
     // Логи упавших проверок CI — исполнителю, чтобы не гадать, что сломалось.
     const gh = this.ghBin();
@@ -441,6 +429,80 @@ export class Orchestrator {
     void this.drive(r);
   }
 
+  /** Рабочая копия завершённого прогона для нового круга: worktree могли удалить, проект в режиме «ветка» — переключить. */
+  private async reopenWorkspace(r: RunFile): Promise<{ git: Git; pulled: 'updated' | 'same' | 'diverged' | 'no-remote' }> {
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+
+    // Рабочая копия: worktree могли удалить при очистке, в режиме «ветка» проект мог уйти на другую ветку.
+    if (r.workspace === 'branch') {
+      const cur = await git.currentBranch(r.projectPath);
+      if (cur !== r.branch) {
+        const dirty = await git.dirtyFiles(r.projectPath);
+        if (dirty.length) throw new Error(`В проекте есть незакоммиченные изменения (${dirty.length}) — закоммитьте или уберите их, чтобы переключиться на ${r.branch}`);
+        await git.checkout(r.projectPath, r.branch);
+      }
+    } else if (r.worktreeRemoved || !fs.existsSync(r.worktreePath)) {
+      await git.addWorktreeAt(r.projectPath, r.worktreePath, r.branch);
+      r.worktreeRemoved = undefined;
+      this.copyEnvFiles(r);
+    }
+    const pulled = await git.pullFastForward(r.worktreePath, r.branch);
+    if (pulled === 'diverged') throw new Error(`Ветка ${r.branch} на GitHub разошлась с локальной — подтяните изменения вручную (git pull) и повторите`);
+    return { git, pulled };
+  }
+
+  /**
+   * «Обновить ветку»: влить свежую базовую ветку PR в ветку прогона.
+   * Без конфликтов — проверки и push; с конфликтами — исполнитель разрешает их, затем проверки и приёмка.
+   */
+  private async updateBranch(id: string) {
+    const r = this.mustLoad(id);
+    if (!r.pr) throw new Error('У прогона нет PR');
+    if (r.status !== 'finished') throw new Error('Обновить ветку можно, когда прогон завершён');
+    if (r.merged) throw new Error('PR уже влит');
+    const { git } = await this.reopenWorkspace(r);
+    const base = r.pr.base;
+    await git.fetchRef(r.worktreePath, base);
+    const round = (r.prRound ?? 1) + 1;
+    r.roundBase = await git.head(r.worktreePath);
+    const m = await git.mergeRef(r.worktreePath, 'FETCH_HEAD', `Merge ${base} в ${r.branch}`);
+    if (!m.changed) {
+      this.log(r, c.dim(`ветка ${r.branch} уже содержит всё из ${base} — обновлять нечего`) + '\n');
+      throw new Error(`Ветка уже содержит всё из ${base}`);
+    }
+    r.prRound = round;
+    r.prRounds = [...(r.prRounds ?? []), { round, at: new Date().toISOString(), items: [], kind: 'update', conflicts: m.conflicts.length ? m.conflicts : undefined, note: `Обновление из ${base}` }];
+    r.status = 'running';
+    r.finishedAt = undefined;
+    r.message = undefined;
+    this.log(r, '\n' + c.violet(c.bold(`━━ Обновление ветки из ${base} · круг ${round}`)) + '\n');
+    if (m.conflicts.length) {
+      r.roundFiles = m.conflicts;
+      r.mergeOnly = undefined;
+      r.next = 'implement';
+      r.implAttemptsLimit = r.implAttemptsUsed + 3;
+      r.feedback = {
+        source: 'validator',
+        text: [
+          `Идёт слияние свежей ветки ${base} в ветку задачи ${r.branch} — в файлах конфликты. Задача уже сделана; сейчас нужно только разрешить конфликты.`,
+          `Файлы с конфликтами:\n${m.conflicts.map((f) => `- ${f}`).join('\n')}`,
+          `Разреши каждый конфликт так, чтобы сохранились и изменения из ${base}, и изменения задачи. Убери все маркеры <<<<<<< ======= >>>>>>>. Если ${base} что-то переименовал или поменял API — подстрой под это код задачи.`,
+          'Не выполняй git commit, git merge --abort и git reset — слияние завершит оркестратор после проверок.',
+        ].join('\n\n'),
+      };
+      this.log(r, c.amber(`! конфликты: ${m.conflicts.join(', ')} — их разрешит исполнитель`) + '\n');
+    } else {
+      r.roundFiles = undefined;
+      r.mergeOnly = true;
+      r.next = 'tests';
+      this.log(r, c.mint(`✓ ${base} влита без конфликтов — проверки и отправка в PR`) + '\n');
+    }
+    this.save(r);
+    this.emit({ type: 'run.updated', run: r });
+    void this.drive(r);
+  }
+
   /** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
   private diffBase(run: RunFile): string {
     return run.prRound && run.roundBase ? run.roundBase : run.baseCommit;
@@ -456,11 +518,15 @@ export class Orchestrator {
   }
 
   /** Ветки репозитория пользователя для слияния результата. */
-  async listBranches(id: string): Promise<{ branches: string[]; current: string | null }> {
+  async listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }> {
     const r = this.mustLoad(id);
     const tools = await this.tools(['git']);
     const b = await new Git(tools.git, this.opts.env).branches(r.projectPath);
-    return { branches: b.branches.filter((x) => x !== r.branch && !x.startsWith('psflow/')), current: b.current };
+    const branches = b.branches.filter((x) => x !== r.branch && !x.startsWith('psflow/'));
+    // Куда вливать по умолчанию: ветка, от которой начинали задачу, иначе main/master, иначе текущая.
+    const from = r.baseBranch?.replace(/^origin\//, '');
+    const suggested = [from, 'main', 'master', b.current].find((x): x is string => Boolean(x && branches.includes(x))) ?? branches[0] ?? null;
+    return { branches, current: b.current, suggested };
   }
 
   /** Влить ветку прогона в выбранную ветку репозитория пользователя (решение человека). */
@@ -552,9 +618,16 @@ export class Orchestrator {
     if (!input.task.trim()) throw new Error('Опишите задачу');
     if (!(await git.isRepo(input.projectPath))) throw new Error('Выбранная папка не является git-репозиторием');
     const repo = await git.topLevel(input.projectPath);
-    const base = await git.head(repo).catch(() => {
+    const head = await git.head(repo).catch(() => {
       throw new Error('В репозитории нет ни одного коммита — сделайте первый коммит');
     });
+    // Ветка, от которой начать: выбранная в окне (в неё можно ещё не переходить) или текущая.
+    const baseBranch = input.baseBranch?.trim() || (await git.currentBranch(repo)) || undefined;
+    const base = input.baseBranch?.trim()
+      ? await git.revParse(repo, input.baseBranch.trim()).catch(() => {
+        throw new Error(`Ветка ${input.baseBranch} не найдена`);
+      })
+      : head;
 
     const changeId = makeChangeId(input.task);
     const branch = `psflow/${changeId}`;
@@ -582,6 +655,7 @@ export class Orchestrator {
       worktreePath,
       branch,
       baseCommit: base,
+      baseBranch,
       testCommand: input.testCommand.trim(),
       setupCommand: input.setupCommand?.trim() || undefined,
       lintCommand: input.lintCommand?.trim() || undefined,
@@ -647,7 +721,7 @@ export class Orchestrator {
     run.workspacePending = undefined;
     this.save(run);
     this.copyEnvFiles(run);
-    this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
+    this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
   }
 
   // ——— Очередь: сколько прогонов агенты ведут одновременно ———
@@ -1096,6 +1170,46 @@ export class Orchestrator {
   }
 
   /** После прогона: уроки из правок человека, ревью, визуальной проверки и сбоев проверок. В фоне, не задерживает коммит. */
+  /** Что за круг принимает человек: от этого зависит, как читать дифф. */
+  private summaryContext(run: RunFile): string {
+    const round = run.prRound ? run.prRounds?.at(-1) : undefined;
+    if (round?.kind === 'update') {
+      return `\nВажно: это не новая работа по задаче. В ветку задачи влита свежая ${run.pr?.base ?? 'базовая ветка'}, в файлах были конфликты, и агент их разрешил. Дифф — изменения этих файлов от состояния ветки до слияния: код, пришедший из ${run.pr?.base ?? 'базовой ветки'}, — это не отклонение от задачи. Опиши, что пришло из базовой ветки и как разрешены конфликты; проверь, что сохранены обе стороны и не осталось маркеров конфликта.\n`;
+    }
+    if (round) {
+      return `\nВажно: задача уже сделана, это круг доработки по замечаниям ревьюеров в PR. Дифф — только правки этого круга. Замечания:\n${round.items.map((i) => `- ${i.kind === 'check' ? `упала проверка CI «${i.body}»` : `${i.path ? `${i.path}: ` : ''}${i.body.slice(0, 300)}`}`).join('\n')}${round.note ? `\n- комментарий человека: ${round.note}` : ''}\nВ «Что сделано» опиши, как отработано каждое замечание; в «На что посмотреть» — замечания, которые не отработаны или отработаны не полностью.\n`;
+    }
+    return '';
+  }
+
+  /** «Что изменилось»: короткая сводка диффа для приёмки — в фоне, приёмку не задерживает. */
+  private async summarizeChanges(id: string) {
+    const run = this.store.load(id);
+    if (!run || run.next !== 'gate2') return;
+    const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
+    if (run.changeSummary?.attempt === attempt) return;
+    const tools = await this.tools(['git', 'claude']).catch(() => null);
+    if (!tools) return;
+    const files = run.roundFiles;
+    let diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
+    if (files?.length) diff = diff.split(/^(?=diff --git )/m).filter((d) => files.some((f) => d.startsWith(`diff --git a/${f} `))).join('');
+    if (!diff.trim()) return;
+    const s = this.opts.getSettings();
+    const res = await runClaude({
+      bin: tools.claude, cwd: os.tmpdir(), env: this.opts.env,
+      prompt: this.prompts.render('summary.md', { task: this.taskText(run), context: this.summaryContext(run), diff: diff.slice(0, 60_000) }),
+      model: this.claudeModel(s.agents, s.models) || undefined, timeoutMs: 3 * 60_000, group: `${run.id}:summary`, onOutput: () => {},
+      proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, tools: [],
+    }).catch(() => null);
+    if (!res?.ok || !res.text.trim()) return;
+    // Пока сводка писалась, человек мог уже принять решение — пишем только в ту же приёмку.
+    const fresh = this.store.load(id);
+    if (!fresh || fresh.next !== 'gate2' || fresh.attempts.filter((a) => a.stage === 'gate2').length !== attempt) return;
+    fresh.changeSummary = { at: new Date().toISOString(), text: res.text.trim(), attempt };
+    this.save(fresh);
+    this.emit({ type: 'run.updated', run: fresh });
+  }
+
   private async learn(run: RunFile) {
     // Круг по PR: уроки только из его замечаний — прошлые круги уже разобраны.
     const since = run.prRound ? run.prRounds?.at(-1)?.at ?? '' : '';
@@ -1410,8 +1524,12 @@ export class Orchestrator {
         this.save(run);
         return;
       }
-      if (run.quickFix) {
-        // Быстрая правка: ревью и визуальная проверка уже были — сразу к человеку.
+      if (run.mergeOnly) {
+        // Базовая ветка влилась без конфликтов и проверки зелёные — сразу в PR.
+        run.mergeOnly = undefined;
+        run.next = 'finish';
+      } else if (run.quickFix || run.roundFiles?.length) {
+        // Быстрая правка: ревью и визуальная проверка уже были — сразу к человеку. Разрешённые конфликты — тоже на приёмку.
         run.quickFix = undefined;
         run.next = 'gate2';
       } else {
@@ -1421,6 +1539,13 @@ export class Orchestrator {
       return;
     }
     run.feedback = { source: 'tests', text: this.checksFeedback(failed, run.baseChecks) };
+    if (run.mergeOnly) {
+      // После слияния базовой ветки проверки покраснели — чинит исполнитель, результат — на приёмку.
+      run.mergeOnly = undefined;
+      run.roundFiles = undefined;
+      run.implAttemptsLimit = Math.max(run.implAttemptsLimit, run.implAttemptsUsed + 3);
+      run.feedback.text = `В ветку влита свежая ${run.pr?.base ?? 'базовая ветка'}, и проверки покраснели. Почини так, чтобы работали и изменения задачи, и новый код базовой ветки.\n\n${run.feedback.text}`;
+    }
     this.nextImplementOrLimit(run, `Проверки красные после ${run.implAttemptsUsed} попыток реализации.`);
   }
 
@@ -1484,6 +1609,17 @@ export class Orchestrator {
     return [...map.values()].sort((a, b) => at(b).localeCompare(at(a)));
   }
 
+  /** Незакоммиченные изменения в рабочей копии проекта — по кнопке человека перед стартом в режиме «Ветка». */
+  async cleanWorkingCopy(repo: string, how: 'stash' | 'discard'): Promise<{ files: number }> {
+    const tools = await this.tools(['git']);
+    const git = new Git(tools.git, this.opts.env);
+    const dirty = await git.dirtyFiles(repo);
+    if (!dirty.length) return { files: 0 };
+    if (how === 'stash') await git.stashAll(repo, `PurpleFlow: перед новой задачей ${new Date().toLocaleString('ru-RU')}`);
+    else await git.discardAll(repo);
+    return { files: dirty.length };
+  }
+
   /** Состояние репозитория проекта для страницы «Обзор». */
   async projectOverview(repo: string): Promise<ProjectOverview> {
     const tools = await this.tools(['git']);
@@ -1505,6 +1641,15 @@ export class Orchestrator {
       .map((r) => this.store.load(r.id))
       .filter((r): r is RunFile => Boolean(r));
     return projectStats(runs);
+  }
+
+  /** Ветки проекта для «От ветки» в новой задаче. fetch — сначала подтянуть ветки origin. */
+  async projectBranches(repo: string, fetch = false): Promise<ProjectBranches> {
+    const tools = await this.tools(['git']);
+    const all = await new Git(tools.git, this.opts.env).allBranches(repo, fetch);
+    // Ветки прогонов PurpleFlow — в конец: от них новые задачи начинают редко.
+    const own = (b: { name: string }) => b.name.replace(/^origin\//, '').startsWith('psflow/');
+    return { current: all.current, branches: [...all.branches.filter((b) => !own(b)), ...all.branches.filter(own)] };
   }
 
   /** Убрать проект из списка: команды и знания удаляются, прогоны остаются. */
@@ -1796,7 +1941,8 @@ export class Orchestrator {
       base: run.baseCommit.slice(0, 8),
       diff: diff || '(пусто)',
       attachments: [
-        run.attachments?.length ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
+        run.attachments?.some(isImageFile) ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
+        this.filesBlock(run),
         run.visuals?.length ? 'Также прикреплены скриншоты приложения после изменений (визуальная проверка). Учитывай видимый результат.' : '',
       ].filter(Boolean).join('\n'),
     });
@@ -1804,7 +1950,7 @@ export class Orchestrator {
     const res = await this.runRole(run, 'reviewer', {
       prompt,
       readOnly: true,
-      images: [...(run.attachments ?? []), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
+      images: [...(run.attachments ?? []).filter(isImageFile), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
       outputSchema: this.prompts.json<object>('review.schema.json'),
     });
     this.afterAgent(run, attempt, res);
@@ -1865,7 +2011,9 @@ export class Orchestrator {
         ...this.envFilesOf(run),
       ];
       const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
-      const message = round
+      const message = round?.kind === 'update'
+        ? `Merge ${run.pr!.base} в ${run.branch}${round.conflicts?.length ? `\n\nРазрешены конфликты:\n${round.conflicts.map((f) => `- ${f}`).join('\n')}` : ''}\n\nPurpleFlow run: ${run.id}`
+        : round
         ? `psflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
         : `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
       sha = await git.commitAll(run.worktreePath, message, exclude);
@@ -1877,6 +2025,7 @@ export class Orchestrator {
       throw e;
     }
     run.commit = sha;
+    run.roundFiles = undefined;
     this.save(run);
     // Круг доработки по PR: правки сразу уходят в ветку PR.
     const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
@@ -1937,6 +2086,7 @@ export class Orchestrator {
     this.save(run);
     this.log(run, c.amber(`◆ ${STAGE_TITLES[gate]}: ждём решения человека`) + '\n');
     this.emit({ type: 'gate.waiting', runId: run.id, gate, message });
+    if (gate === 'gate2') void this.summarizeChanges(run.id).catch(() => undefined);
   }
 
   private begin(run: RunFile, stage: StageId, model?: string): StageAttempt {
@@ -2079,6 +2229,7 @@ export class Orchestrator {
       onOutput: (text: string) => this.log(run, text, false),
       proxy: s.proxy.baseUrl ? s.proxy : undefined,
       claudeAuth: s.claudeAuth,
+      userConfig: s.userConfig ?? true,
       addDirs: run.attachments?.length ? [path.dirname(run.attachments[0])] : undefined,
     };
   }
@@ -2087,14 +2238,14 @@ export class Orchestrator {
     return path.join(this.opts.dataDir, 'attachments', id);
   }
 
-  /** Изображения задачи — в каталог данных приложения, чтобы не попасть в коммит репозитория. */
+  /** Файлы задачи (изображения, документы, логи) — в каталог данных приложения, чтобы не попасть в коммит репозитория. */
   private saveAttachments(id: string, files: { name: string; data: Uint8Array }[]): string[] {
     if (!files.length) return [];
     const dir = this.attachmentsDir(id);
     fs.mkdirSync(dir, { recursive: true });
     return files.map((f, i) => {
-      const ext = (path.extname(f.name) || '.png').toLowerCase().replace(/[^.a-z0-9]/g, '');
-      const base = path.basename(f.name, path.extname(f.name)).replace(/[^\p{L}\p{N}_-]+/gu, '-').slice(0, 40) || 'image';
+      const ext = path.extname(f.name).toLowerCase().replace(/[^.a-z0-9]/g, '');
+      const base = path.basename(f.name, path.extname(f.name)).replace(/[^\p{L}\p{N}_.-]+/gu, '-').slice(0, 60) || 'file';
       const file = path.join(dir, `${String(i + 1).padStart(2, '0')}-${base}${ext}`);
       fs.writeFileSync(file, Buffer.from(f.data));
       return file;
@@ -2103,16 +2254,35 @@ export class Orchestrator {
 
   private attachmentsBlock(run: RunFile): string {
     if (!run.attachments?.length) return '';
-    return `\nК задаче приложены изображения (макеты, скриншоты). Открой их инструментом Read и учитывай:\n${run.attachments.map((p) => `- ${p}`).join('\n')}\n`;
+    const images = run.attachments.filter(isImageFile);
+    return [
+      images.length ? `\nК задаче приложены изображения (макеты, скриншоты). Открой их инструментом Read и учитывай:\n${images.map((p) => `- ${p}`).join('\n')}\n` : '',
+      this.filesBlock(run),
+    ].join('');
   }
 
-  /** Вложение для показа в окне: data URL. */
+  /** Не изображения: небольшие текстовые — прямо в промпт, остальные — путями (агент прочитает сам). */
+  private filesBlock(run: RunFile): string {
+    const files = (run.attachments ?? []).filter((p) => !isImageFile(p) && fs.existsSync(p));
+    if (!files.length) return '';
+    const fence = '`'.repeat(4);
+    const parts = files.map((p) => {
+      const name = path.basename(p).replace(/^\d+-/, '');
+      const text = readSmallText(p);
+      return text !== null
+        ? `### ${name}\n\n${fence}\n${text}\n${fence}`
+        : `- ${p} (${name}, ${Math.max(1, Math.round(fs.statSync(p).size / 1024))} КБ) — открой и прочитай, если нужно для задачи`;
+    });
+    return `\nК задаче приложены файлы от человека — учитывай их:\n\n${parts.join('\n\n')}\n`;
+  }
+
+  /** Вложение для показа в окне: data URL изображения; null — не изображение или файла нет. */
   getAttachment(id: string, index: number): string | null {
     const r = this.mustLoad(id);
     const file = r.attachments?.[index];
-    if (!file || !fs.existsSync(file)) return null;
+    if (!file || !fs.existsSync(file) || !isImageFile(file)) return null;
     const ext = path.extname(file).slice(1).toLowerCase();
-    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext || 'png'}`;
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext || 'png'}`;
     return `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`;
   }
 
@@ -2328,4 +2498,23 @@ export function parseReview(text: string): { blocking: ReviewItem[]; notes: Revi
     } catch { /* следующий кандидат */ }
   }
   return null;
+}
+
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+
+/** Растровое изображение — его можно показать агенту как картинку. */
+export function isImageFile(p: string): boolean {
+  return IMAGE_EXT.has(path.extname(p).toLowerCase());
+}
+
+/** Текст файла, если он небольшой и похож на текст (без нулевых байтов, валидный UTF-8); иначе null. */
+export function readSmallText(p: string, max = 16 * 1024): string | null {
+  try {
+    if (fs.statSync(p).size > max) return null;
+    const buf = fs.readFileSync(p);
+    if (buf.includes(0)) return null;
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+  } catch {
+    return null;
+  }
 }

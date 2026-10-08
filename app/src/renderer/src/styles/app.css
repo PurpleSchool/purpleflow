@@ -1597,3 +1597,47 @@ a.btn { text-decoration: none; }
 .pr-action { gap: var(--s-3); padding: var(--s-5) var(--s-6); }
 .pr-action p { margin: 0; font-size: var(--fs-13); }
 .pr-action-row { display: flex; align-items: center; gap: var(--s-4); justify-content: space-between; font-size: var(--fs-12); }
+
+/* «Что изменилось» на приёмке */
+.change-summary { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-radius: var(--r-l); background: var(--accent-wash); }
+.change-summary h4 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-12); font-weight: 500; color: var(--accent-hi); }
+.change-summary .composer-hint { display: flex; align-items: center; gap: 8px; margin: 0; }
+.summary-md { padding: 0; font-size: var(--fs-12); line-height: 1.55; max-width: none; color: var(--text-2); }
+.summary-md > :first-child { margin-top: 0; }
+.summary-md > :last-child { margin-bottom: 0; }
+.summary-md p { margin: 0.5em 0 0.2em; }
+.summary-md ul { margin: 0.2em 0; padding-left: 1.1em; }
+.summary-md code { font-size: 11px; }
+.pr-action-row .btn { flex: none; }
+.kbd-mini { margin-left: 6px; padding: 1px 5px; border-radius: 5px; background: rgba(255, 255, 255, 0.08); font: 500 10.5px/1.4 var(--font-sans, inherit); color: inherit; opacity: 0.6; }
+.btn-approve .kbd-mini { background: rgba(0, 0, 0, 0.08); }
+.file-chip { position: relative; display: inline-flex; align-items: center; gap: 10px; height: 72px; max-width: 260px; margin: 0; padding: 0 var(--s-4) 0 var(--s-3); border-radius: var(--r-m); background: var(--bg-4); color: var(--text-3); text-align: left; flex: none; animation: cardIn 0.35s var(--ease) both; }
+button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
+.file-chip-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.file-chip-text strong { font-weight: 500; font-size: var(--fs-12); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip-text small { font-size: 11px; color: var(--text-4); }
+.file-chip:hover .imgdrop-del { opacity: 1; }
+.base-branch { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-4); }
+.base-branch-label { flex: none; font-size: var(--fs-13); font-weight: 500; color: var(--text-1); margin-right: auto; }
+.base-branch-select { min-width: 0; max-width: 220px; }
+.base-branch-select select { min-width: 0; text-overflow: ellipsis; }
+.base-branch-fetch { width: 30px; height: 30px; }
+.base-branch-note { margin: var(--s-2) 0 0; color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
+.base-branch-note code { font-size: 11px; }
+.base-branch-select { height: 32px; padding: 0 28px 0 12px; }
+
+.user-config {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 16px 0 4px;
+}
+.user-config .switch { align-self: flex-start; }
+.user-config p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  max-width: 720px;
+}
+.dirty-actions { display: flex; gap: var(--s-2); flex: none; }

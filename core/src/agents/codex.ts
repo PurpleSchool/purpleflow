@@ -22,11 +22,12 @@ export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string
  * codex exec --json; промпт читается из stdin ("-").
  * Прокси подключаем отдельным провайдером через -c, не трогая ~/.codex/config.toml.
  */
-export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images'>, extra: { schemaFile?: string; lastFile: string }): string[] {
+export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images' | 'userConfig'>, extra: { schemaFile?: string; lastFile: string }): string[] {
   const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', o.cwd, '-s', o.sandbox];
   if (o.proxy?.baseUrl) {
+    // С настройками пользователя его config.toml (MCP и прочее) остаётся, провайдер переопределяется поверх через -c.
+    if (!o.userConfig) args.push('--ignore-user-config');
     args.push(
-      '--ignore-user-config',
       '-c', 'model_provider=psflow',
       '-c', 'model_providers.psflow.name=psflow',
       '-c', `model_providers.psflow.base_url=${codexProxyBase(o.proxy)}`,

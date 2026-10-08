@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import { FileCode2, FilePlus2, FileMinus2, MessageSquarePlus, Trash2 } from 'lucide-react';
+import { FileCode2, FilePlus2, FileMinus2, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import { Markdown } from './Markdown';
 import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
 import { Button, TextArea } from './ui';
 
@@ -70,11 +71,13 @@ interface Props {
   comments: LineComment[];
   onComments: (c: LineComment[]) => void;
   readOnly?: boolean;
+  /** «Что изменилось»: сводка для приёмки; null — ещё готовится. */
+  summary?: string | null;
 }
 
 type Marker = { line: number; kind: 'blocking' | 'note' | 'mine'; text: string; idx?: number };
 
-export function DiffReview({ files, review, comments, onComments, readOnly }: Props) {
+export function DiffReview({ files, review, comments, onComments, readOnly, summary }: Props) {
   // Сначала код, потом файлы OpenSpec — человек смотрит в первую очередь на изменения проекта.
   const sorted = useMemo(
     () => [...files].sort((a, b) => Number(a.path.startsWith('openspec/')) - Number(b.path.startsWith('openspec/')) || a.path.localeCompare(b.path)),
@@ -236,6 +239,12 @@ export function DiffReview({ files, review, comments, onComments, readOnly }: Pr
       </div>
 
       <aside className="diff-notes">
+        {summary !== undefined && (
+          <section className="change-summary">
+            <h4><Sparkles size={14} /> Что изменилось</h4>
+            {summary === null ? <p className="composer-hint"><span className="spinner" /> Готовлю сводку по диффу…</p> : <Markdown source={summary} className="summary-md" />}
+          </section>
+        )}
         {!readOnly && (
           <div className={`composer ${draftLine ? 'is-open' : ''}`}>
             {draftLine && file ? (

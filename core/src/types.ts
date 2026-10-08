@@ -37,6 +37,11 @@ export interface CoreSettings {
    * (ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL из окружения игнорируются), 'env' — ключ из окружения.
    */
   claudeAuth?: 'login' | 'env';
+  /**
+   * Подключать собственные настройки агентов пользователя (~/.claude, ~/.codex): MCP-серверы, скиллы, плагины, CLAUDE.md.
+   * Хуки claude при этом выключены. По умолчанию включено.
+   */
+  userConfig?: boolean;
   /** Сколько прогонов агенты ведут одновременно (остальные ждут в очереди). По умолчанию 2. */
   maxParallel?: number;
   /** Таймаут одной стадии агента, минуты. */
@@ -173,6 +178,8 @@ export interface RunFile {
   worktreePath: string;
   branch: string;
   baseCommit: string;
+  /** Ветка, от которой начата задача (её последний коммит — baseCommit). */
+  baseBranch?: string;
   testCommand: string;
   setupCommand?: string;
   lintCommand?: string;
@@ -241,7 +248,13 @@ export interface RunFile {
   /** Доработка по замечаниям PR: номер текущего круга (первый — исходная реализация) и коммит, от которого считается дифф круга. */
   prRound?: number;
   roundBase?: string;
-  prRounds?: { round: number; at: string; items: PrFollowupItem[]; note?: string; commit?: string }[];
+  prRounds?: { round: number; at: string; items: PrFollowupItem[]; note?: string; commit?: string; kind?: 'comments' | 'update'; conflicts?: string[] }[];
+  /** Круг «Обновить ветку» без конфликтов: после зелёных проверок — сразу push, без приёмки. */
+  mergeOnly?: boolean;
+  /** Файлы, по которым показывать дифф круга (разрешённые конфликты), — не весь влитый код базовой ветки. */
+  roundFiles?: string[];
+  /** «Что изменилось»: короткая сводка диффа для приёмки. */
+  changeSummary?: { at: string; text: string; attempt: number };
 }
 
 export interface RunSummary {
@@ -295,6 +308,8 @@ export interface StartRunInput {
   visualNotes?: string;
   envFiles?: string[];
   workspace?: Workspace;
+  /** Ветка, от которой начать задачу; по умолчанию — текущая ветка проекта. */
+  baseBranch?: string;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
 }
@@ -318,6 +333,7 @@ export type CoreCommand =
   /** Влить открытый PR (gh pr merge --merge). */
   | { type: 'run.prMerge'; runId: string }
   | { type: 'run.prFollowup'; runId: string; items: PrFollowupItem[]; note?: string }
+  | { type: 'run.updateBranch'; runId: string }
   /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку psflow/<id>. */
   | { type: 'run.delete'; runId: string; deleteBranch: boolean };
 
@@ -361,6 +377,13 @@ export interface ProjectConfig {
   knowledge?: ProjectKnowledge;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
+}
+
+/** Ветки проекта для выбора, от какой начать задачу. */
+export interface ProjectBranches {
+  /** Локальные ветки и ветки origin, которых нет локально (`origin/…`). */
+  branches: { name: string; remote: boolean; at: string }[];
+  current: string | null;
 }
 
 /** Проект в списке «Проекты». */
@@ -468,6 +491,8 @@ export interface PrStatus {
   conflicts: boolean;
   /** Слияние заблокировано правилами ветки (нужно ревью, обязательные проверки). */
   blocked: boolean;
+  /** В базовой ветке есть коммиты, которых нет в ветке PR. */
+  behind: boolean;
   review: string | null;
   checks: { total: number; passed: number; failed: number; pending: number };
   /** Упавшие проверки CI: название и ссылка (для GitHub Actions — на job с логом). */

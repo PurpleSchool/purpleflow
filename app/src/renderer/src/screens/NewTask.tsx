@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { GitBranch, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
-import type { Workspace } from '@psflow/core';
+import { Archive, ChevronDown, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
+import type { ProjectBranches, Workspace } from '@psflow/core';
 import { Button, Topbar } from '../components/ui';
 import { useStore } from '../lib/store';
-import { ImageDrop, type PickedImage } from '../components/ImageDrop';
+import { FileDrop, type PickedFile } from '../components/FileDrop';
 import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { ProjectPicker, WORKSPACES, cleanErr, loadProject, saveLoaded, type LoadedProject } from './Projects';
@@ -14,21 +14,31 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
   const { go, state } = useStore();
   const [p, setP] = useState<LoadedProject | null>(null);
   const [task, setTask] = useState('');
-  const [images, setImages] = useState<PickedImage[]>([]);
+  const [images, setImages] = useState<PickedFile[]>([]);
   const [mode, setMode] = useState<Mode>('task');
   const [suggest, setSuggest] = useState<{ mode: Mode; reason: string } | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [visual, setVisual] = useState(true);
   /** Где работать — по умолчанию из настроек проекта, меняется для этой задачи. */
   const [workspace, setWorkspace] = useState<Workspace>('worktree');
+  /** От какой ветки начать задачу; по умолчанию — текущая ветка проекта. */
+  const [branches, setBranches] = useState<ProjectBranches | null>(null);
+  const [baseBranch, setBaseBranch] = useState('');
+  const [fetching, setFetching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** «Отменить изменения» — со второго нажатия: изменения пропадут безвозвратно. */
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [cleaning, setCleaning] = useState<'stash' | 'discard' | null>(null);
 
   const choose = async (dir: string | null) => {
     if (!dir) return;
     const x = await loadProject(dir);
     setP(x);
     setWorkspace(x.workspace);
+    setBranches(null);
+    setBaseBranch('');
+    if (x.info.isRepo) void loadBranches(dir, false);
     try {
       localStorage.setItem(LAST_PROJECT, dir);
     } catch { /* без памяти о проекте */ }
@@ -44,6 +54,19 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
     if (last) void choose(last).catch(() => {});
   }, []);
 
+  const loadBranches = async (dir: string, fetch: boolean) => {
+    setFetching(fetch);
+    try {
+      const b = await window.psflow.core.projectBranches(dir, fetch);
+      setBranches(b);
+      setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : b.current ?? b.branches[0]?.name ?? ''));
+    } catch {
+      setBranches({ branches: [], current: null });
+    } finally {
+      setFetching(false);
+    }
+  };
+
   const project = p?.info ?? null;
   const cmds = p?.cmds ?? { setup: '', lint: '', test: '', run: '', url: '' };
   const toProject = () => project && go({ name: 'project', path: project.path, tab: 'commands' });
@@ -52,6 +75,7 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
     if (!p) return;
     setBusy(true);
     setError(null);
+    setConfirmDiscard(false);
     try {
       // Команды, найденные по файлам проекта, запоминаются при первом запуске.
       if (!p.cfg) await saveLoaded({ ...p, path: p.info.path });
@@ -59,12 +83,12 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
         type: 'run.start',
         input: {
           projectPath: p.info.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace,
+          mode, visual: canVisual && visual, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
       setTask('');
-      images.forEach((i) => URL.revokeObjectURL(i.url));
+      images.forEach((i) => i.url && URL.revokeObjectURL(i.url));
       setImages([]);
       go({ name: 'run', runId });
     } catch (e) {
@@ -72,6 +96,24 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  // В режиме «Ветка» прогон начинается только с чистой рабочей копии — предлагаем спрятать или отменить изменения прямо здесь.
+  const dirtyError = Boolean(error && workspace === 'branch' && /незакоммиченные изменения/.test(error));
+
+  const cleanAndStart = async (how: 'stash' | 'discard') => {
+    if (!p) return;
+    if (how === 'discard' && !confirmDiscard) return setConfirmDiscard(true);
+    setCleaning(how);
+    try {
+      await window.psflow.core.cleanWorkingCopy(p.info.path, how);
+    } catch (e) {
+      setError(cleanErr(e));
+      setCleaning(null);
+      return;
+    }
+    setCleaning(null);
+    await start();
   };
 
   // Одновременно агенты ведут не больше maxParallel прогонов — остальные встают в очередь.
@@ -144,7 +186,7 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
                 <span className="muted">{task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}</span>
                 <span className="kbd-hint"><kbd>{window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
               </div>
-              <ImageDrop images={images} onChange={setImages} />
+              <FileDrop files={images} onChange={setImages} />
             </div>
           </div>
 
@@ -200,12 +242,50 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
                 <GitBranch size={14} />
                 <span>{WORKSPACES.find((w) => w.id === workspace)!.hint}</span>
               </p>
+              {project?.isRepo && (
+                <div className="base-branch">
+                  <span className="base-branch-label">От ветки</span>
+                  <label className="select base-branch-select" title="Ветка, от которой начать задачу — переходить в неё в проекте не нужно">
+                    <select value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} disabled={!branches?.branches.length}>
+                      {!branches && <option value="">загружаю…</option>}
+                      {branches?.branches.map((b) => (
+                        <option key={b.name} value={b.name}>{b.name}{b.name === branches.current ? ' — текущая' : ''}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={13} />
+                  </label>
+                  <button className="side-icon base-branch-fetch" title="Подтянуть ветки с origin (git fetch)" disabled={fetching} onClick={() => project && void loadBranches(project.path, true)}>
+                    <RotateCw size={14} className={fetching ? 'spin' : ''} />
+                  </button>
+                </div>
+              )}
+              {branches && baseBranch && branches.current && baseBranch !== branches.current && (
+                <p className="base-branch-note">Задача начнётся от <code>{baseBranch}</code>, хотя проект сейчас на <code>{branches.current}</code>{workspace === 'branch' ? ' — в режиме «Ветка» проект переключится на ветку задачи' : ' — ваша рабочая копия не изменится'}.</p>
+              )}
             </div>
           </aside>
         </div>
       </div>
       <footer className="actionbar">
         {error && <span className="actionbar-error">{error}</span>}
+        {dirtyError && (
+          <span className="dirty-actions">
+            <Button tone="quiet" icon={<Archive size={14} />} busy={cleaning === 'stash'} disabled={Boolean(cleaning) || busy} title="git stash --include-untracked: изменения сохранятся, вернуть — git stash pop" onClick={() => void cleanAndStart('stash')}>
+              Спрятать и запустить
+            </Button>
+            <Button
+              tone={confirmDiscard ? 'danger' : 'quiet'}
+              icon={<Eraser size={14} />}
+              busy={cleaning === 'discard'}
+              disabled={Boolean(cleaning) || busy}
+              title="git reset --hard и git clean -fd: правки и новые файлы удалятся безвозвратно; игнорируемые (.env, node_modules) останутся"
+              onClick={() => void cleanAndStart('discard')}
+              onBlur={() => confirmDiscard && setTimeout(() => setConfirmDiscard(false), 150)}
+            >
+              {confirmDiscard ? 'Точно удалить изменения?' : 'Очистить и запустить'}
+            </Button>
+          </span>
+        )}
         {willQueue && !error && <span className="muted">Сейчас идут {active} из {limit} прогонов{queuedCount ? `, в очереди ${queuedCount}` : ''} — этот встанет в очередь и начнётся сам.</span>}
         <span className="grow" />
         <Button tone="primary" busy={busy} disabled={!canStart} onClick={() => void start()}>{willQueue ? "Поставить в очередь" : "Запустить прогон"}</Button>

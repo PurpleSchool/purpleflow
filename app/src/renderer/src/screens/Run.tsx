@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Clock3, MessageCircleQuestion, GitPullRequest, Globe, Trash2, Wrench,
-  ArrowRight, ChevronDown, CircleAlert, FileText, Image as ImageIcon, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
 } from 'lucide-react';
 import type { DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
@@ -255,7 +255,7 @@ export function RunScreen({ runId }: { runId: string }) {
             <button className={`desc-toggle ${descOpen ? 'is-on' : ''}`} onClick={() => setDescOpen(!descOpen)} aria-expanded={descOpen}>
               <FileText size={14} />
               Описание
-              {run.attachments?.length ? <span className="desc-count"><ImageIcon size={12} />{run.attachments.length}</span> : null}
+              {run.attachments?.length ? <span className="desc-count"><Paperclip size={12} />{run.attachments.length}</span> : null}
               <ChevronDown size={14} className="desc-chev" />
             </button>
           </div>
@@ -263,7 +263,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <div className={`desc ${descOpen ? 'is-open' : ''}`}>
             <div className="desc-inner">
               <p className="desc-text">{run.task}</p>
-              {run.attachments?.length ? <Attachments runId={runId} count={run.attachments.length} /> : null}
+              {run.attachments?.length ? <Attachments runId={runId} files={run.attachments} /> : null}
             </div>
           </div>
           <div className="run-meta">
@@ -369,7 +369,14 @@ export function RunScreen({ runId }: { runId: string }) {
                       {showDiff && (
                         diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
                         : !diff ? <div className="center"><span className="spinner big" /></div>
-                        : <DiffReview files={diff} review={lastReview} comments={lineComments} onComments={setLineComments} readOnly={!(gate === 'gate2')} />
+                        : <DiffReview
+                            files={diff}
+                            review={lastReview}
+                            comments={lineComments}
+                            onComments={setLineComments}
+                            readOnly={!(gate === 'gate2')}
+                            summary={gate === 'gate2' ? (run.changeSummary?.attempt === run.attempts.filter((a) => a.stage === 'gate2').length ? run.changeSummary.text : run.status === 'waiting' ? null : undefined) : undefined}
+                          />
                       )}
                       {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && !clarifyQuestions && (
                         <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
@@ -547,7 +554,7 @@ function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
     if (run.merged || run.pr) return;
     void window.psflow.core.listBranches(runId).then((b) => {
       setBranches(b.branches);
-      setTarget((t) => t || b.current || b.branches[0] || '');
+      setTarget((t) => t || b.suggested || b.current || b.branches[0] || '');
     }).catch((e) => setError(cleanErr(e)));
     void window.psflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
   }, [runId, run.merged, run.pr]);
@@ -652,20 +659,25 @@ function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   );
 }
 
-/** Миниатюры изображений задачи; клик — открыть крупно. */
-function Attachments({ runId, count }: { runId: string; count: number }) {
+/** Файлы задачи: изображения — миниатюрами (клик — крупно), остальные — карточками (клик — открыть в системном приложении). */
+function Attachments({ runId, files }: { runId: string; files: string[] }) {
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const [big, setBig] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void Promise.all(Array.from({ length: count }, (_, i) => window.psflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
+    void Promise.all(files.map((_, i) => window.psflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
     return () => { alive = false; };
-  }, [runId, count]);
+  }, [runId, files.length]);
   return (
     <>
       <div className="desc-images">
-        {urls.map((u, i) => u && (
-          <button key={i} className="imgdrop-thumb" onClick={() => setBig(u)} title="Открыть"><img src={u} alt={`Изображение ${i + 1}`} /></button>
+        {files.map((f, i) => urls[i] ? (
+          <button key={i} className="imgdrop-thumb" onClick={() => setBig(urls[i])} title="Открыть"><img src={urls[i]!} alt={`Изображение ${i + 1}`} /></button>
+        ) : (
+          <button key={i} className="file-chip" onClick={() => void window.psflow.openPath(f)} title={f}>
+            <FileText size={16} />
+            <span className="file-chip-text"><strong>{f.split(/[\\/]/).pop()!.replace(/^\d+-/, '')}</strong><small>открыть</small></span>
+          </button>
         ))}
       </div>
       {big && <Lightbox src={big} onClose={() => setBig(null)} />}
@@ -774,9 +786,13 @@ function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: string;
           <div className="verdict is-warn">
             <span className="verdict-mark">!</span>
             <div>
-              <strong>Проверить не удалось</strong>
-              <p>{v.unverified}</p>
-              <p className="muted">Это не ошибка реализации — задача не вернулась исполнителю. Проверьте сами во вкладке «Браузер»; тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.</p>
+              <strong>{/^Нестабильное окружение:/i.test(v.unverified) ? 'Окружение вело себя нестабильно' : 'Проверить не удалось'}</strong>
+              <p>{v.unverified.replace(/^Нестабильное окружение:\s*/i, '')}</p>
+              <p className="muted">
+                {/^Нестабильное окружение:/i.test(v.unverified)
+                  ? 'Интерфейс не реагировал даже после перезагрузки, а ошибок в коде задачи не видно — похоже на сбой dev-сервера или браузера. Задача не вернулась исполнителю: проверьте сами во вкладке «Браузер» или перезапустите проверку.'
+                  : 'Это не ошибка реализации — задача не вернулась исполнителю. Проверьте сами во вкладке «Браузер»; тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в настройках проекта.'}
+              </p>
             </div>
           </div>
         ) : null}
@@ -982,6 +998,34 @@ function GateBar(props: {
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
   const [open, setOpen] = useState(false);
+  // Горячие клавиши: ⌘↵ — принять, ⌘⇧↵ — вернуть, ⌘⌥↵ — поправить (приёмка). В поле комментария к гейту ⌘↵ отправляет его.
+  const keys = useRef(props);
+  keys.current = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.repeat) return;
+      const p = keys.current;
+      if (p.busy) return;
+      const el = document.activeElement as HTMLElement | null;
+      const inGateComment = Boolean(el?.closest('.gate-comment'));
+      // Свои ⌘↵ у полей замечаний к строкам и пунктам плана — не перехватываем. Monaco с диффом — не поле ввода.
+      const inField = !inGateComment && el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && !el.closest('.monaco-editor');
+      if (inField) return;
+      const hasText = Boolean(p.comment.trim()) || p.lineCount > 0;
+      const back = () => (hasText ? p.onReject() : setOpen(true));
+      const fix = () => (hasText ? p.onFix?.() : setOpen(true));
+      e.preventDefault();
+      e.stopPropagation();
+      if (p.gate === 'limit') return e.shiftKey ? p.onCancel() : p.onApprove();
+      if (e.altKey && p.gate === 'gate2' && p.onFix) return fix();
+      if (e.shiftKey) return back();
+      if (inGateComment && hasText) return p.gate === 'gate2' && p.onFix ? fix() : back();
+      p.onApprove();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+  const mod = window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl+';
   const title = gate === 'gate1' ? 'Утверждение плана' : gate === 'gate2' ? 'Приёмка' : 'Попытки исчерпаны';
   const needsComment = gate !== 'limit';
   return (
@@ -1014,12 +1058,12 @@ function GateBar(props: {
           <>
             <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Остановить</Button>
             {props.onAccept && <Button tone="ghost" icon={<ClipboardCheck size={14} />} busy={busy === 'accept'} onClick={props.onAccept} title="Посмотреть дифф и решить самому — без новых попыток">К приёмке как есть</Button>}
-            <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>Ещё попытка</Button>
+            <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>Ещё попытка <kbd className="kbd-mini">{mod}↵</kbd></Button>
           </>
         ) : (
           <>
             {needsComment && !open && lineCount === 0 ? (
-              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)}>{gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}</Button>
+              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)} title={`${mod}⇧↵`}>{gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}</Button>
             ) : (
               <>
                 {gate === 'gate2' && props.onFix && (
@@ -1031,7 +1075,7 @@ function GateBar(props: {
                     onClick={props.onFix}
                     title="Небольшая правка в той же ветке: реализация → проверки → снова приёмка, без ревью и визуальной проверки"
                   >
-                    Поправить{lineCount ? ` (+${lineCount})` : ''}
+                    Поправить{lineCount ? ` (+${lineCount})` : ''} <kbd className="kbd-mini">{mod}⌥↵</kbd>
                   </Button>
                 )}
                 <Button
@@ -1042,12 +1086,12 @@ function GateBar(props: {
                   onClick={props.onReject}
                   title={gate === 'gate2' ? 'Полный круг: реализация → проверки → ревью → визуальная проверка' : undefined}
                 >
-                  {gate === 'gate2' ? 'Вернуть на доработку' : `Вернуть${lineCount ? ` (+${lineCount})` : ''}`}
+                  {gate === 'gate2' ? 'Вернуть на доработку' : `Вернуть${lineCount ? ` (+${lineCount})` : ''}`} <kbd className="kbd-mini">{mod}⇧↵</kbd>
                 </Button>
               </>
             )}
             <Button tone="approve" icon={<CircleCheck size={15} />} busy={busy === 'approve'} onClick={props.onApprove}>
-              {gate === 'gate1' ? 'Принять план' : 'Принять'}
+              {gate === 'gate1' ? 'Принять план' : 'Принять'} <kbd className="kbd-mini">{mod}↵</kbd>
             </Button>
           </>
         )}

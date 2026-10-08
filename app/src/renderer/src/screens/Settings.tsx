@@ -294,6 +294,22 @@ export function SettingsScreen() {
                 <datalist key={a} id={`models-${a}`}>{MODEL_HINTS[a].map((m) => <option key={m} value={m} />)}</datalist>
               ))}
             </div>
+            <div className="user-config">
+              <button
+                role="switch"
+                aria-checked={s.userConfig}
+                className={`switch ${s.userConfig ? 'is-on' : ''}`}
+                onClick={() => void saveSettings({ userConfig: !s.userConfig })}
+              >
+                <i />
+                <span>Мои настройки агентов</span>
+              </button>
+              <p>
+                {s.userConfig
+                  ? 'Агенты работают с вашими настройками из ~/.claude и ~/.codex: MCP-серверы, скиллы, плагины, CLAUDE.md — как в обычном claude и codex. Хуки claude в прогонах выключены. Файлы настроек PurpleFlow не меняет.'
+                  : 'Агенты запускаются изолированно: только настройки самого проекта, без ваших MCP-серверов, скиллов, плагинов и хуков. Прогоны повторяемее, но, например, задачу из трекера через MCP агент не прочитает.'}
+              </p>
+            </div>
             <div className="grid-2 narrow">
               <Field label="Таймаут стадии агента, мин">
                 <Input type="number" min={1} value={agentTimeout} onChange={(e) => setAgentTimeout(Number(e.target.value) || 30)} />

@@ -34,3 +34,23 @@ test('parseQuestions: JSON с вопросами, не больше 4, пуст�
   assert.deepEqual(parseQuestions('{"questions":[]}'), []);
   assert.deepEqual(parseQuestions('нет json'), []);
 });
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isImageFile, readSmallText } from './orchestrator.js';
+
+test('вложения: изображения и небольшие текстовые файлы', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-att-'));
+  const txt = path.join(dir, 'spec.md');
+  const bin = path.join(dir, 'data.bin');
+  const big = path.join(dir, 'big.log');
+  fs.writeFileSync(txt, '# Требования\nфункция padLeft');
+  fs.writeFileSync(bin, Buffer.from([1, 0, 2, 3]));
+  fs.writeFileSync(big, 'x'.repeat(20_000));
+  assert.equal(isImageFile('a/b/Shot.PNG'), true);
+  assert.equal(isImageFile('a/spec.pdf'), false);
+  assert.equal(readSmallText(txt), '# Требования\nфункция padLeft');
+  assert.equal(readSmallText(bin), null);
+  assert.equal(readSmallText(big), null);
+});

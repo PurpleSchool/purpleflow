@@ -12,6 +12,8 @@ export interface AgentRunOptions {
   onOutput: (text: string) => void;
   proxy?: { baseUrl: string; apiKey: string; codexBaseUrl?: string };
   claudeAuth?: 'login' | 'env';
+  /** Подключать настройки пользователя (MCP, скиллы, плагины) вместо изолированного запуска. */
+  userConfig?: boolean;
   /** Дополнительные каталоги, доступные агенту (вложения задачи). */
   addDirs?: string[];
   /** Изображения, прикреплённые к промпту (codex -i). */

@@ -79,6 +79,23 @@ export class Git {
     return (await this.head(dir)) === before ? 'same' : 'updated';
   }
 
+  /** Влить ref в текущую ветку. Конфликты не отменяются — слияние остаётся незавершённым, файлы с маркерами. */
+  async mergeRef(dir: string, ref: string, message: string): Promise<{ conflicts: string[]; changed: boolean }> {
+    const before = await this.head(dir);
+    const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir, env: this.env })).stdout.trim();
+    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+    const r = await run(this.bin, [...identity, 'merge', '--no-ff', '--no-edit', '-m', message, ref], { cwd: dir, env: this.env, timeoutMs: 120_000 });
+    if (r.code === 0) return { conflicts: [], changed: (await this.head(dir)) !== before };
+    const u = await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir, env: this.env });
+    const conflicts = u.stdout.split('\n').map((x) => x.trim()).filter(Boolean);
+    if (!conflicts.length) throw new Error(`git merge ${ref} не прошёл: ${(r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ')}`);
+    return { conflicts, changed: true };
+  }
+
+  async fetchRef(dir: string, ref: string): Promise<void> {
+    await this.git(dir, ['fetch', 'origin', ref], 120_000);
+  }
+
   /** Текущая ветка рабочей копии (null — detached HEAD). */
   async currentBranch(dir: string): Promise<string | null> {
     const r = await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: dir, env: this.env });
@@ -89,6 +106,17 @@ export class Git {
   async dirtyFiles(dir: string): Promise<string[]> {
     const out = await this.git(dir, ['status', '--porcelain']);
     return out.split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+  }
+
+  /** Спрятать все незакоммиченные изменения, включая неотслеживаемые файлы; вернуть их — git stash pop. */
+  async stashAll(dir: string, message: string): Promise<void> {
+    await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message], 60_000);
+  }
+
+  /** Отменить все незакоммиченные изменения: правки отслеживаемых файлов и новые файлы. Игнорируемые (.env, node_modules) не трогаем. */
+  async discardAll(dir: string): Promise<void> {
+    await this.git(dir, ['reset', '--hard', 'HEAD'], 60_000);
+    await this.git(dir, ['clean', '-fd'], 60_000);
   }
 
   /** Режим «ветка»: новая ветка от base прямо в рабочей копии пользователя. */
@@ -235,6 +263,32 @@ export class Git {
     const out = await this.git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
     const cur = (await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: repo, env: this.env })).stdout.trim();
     return { branches: out.split('\n').map((x) => x.trim()).filter(Boolean), current: cur || null };
+  }
+
+  /** Коммит ветки или другой ссылки. */
+  async revParse(repo: string, ref: string): Promise<string> {
+    return (await this.git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim();
+  }
+
+  /** Локальные ветки и ветки origin без локальной копии, свежие сверху. fetch — сначала обновить origin. */
+  async allBranches(repo: string, fetch = false): Promise<{ branches: { name: string; remote: boolean; at: string }[]; current: string | null }> {
+    if (fetch) await this.git(repo, ['fetch', '--prune', 'origin'], 120_000).catch(() => undefined);
+    const out = await this.git(repo, ['for-each-ref', '--sort=-committerdate', '--format=%(refname)%09%(committerdate:iso-strict)', 'refs/heads', 'refs/remotes/origin']);
+    const local = new Set<string>();
+    const rows = out.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [ref, at] = l.split('\t');
+      return { ref, at: at ?? '' };
+    });
+    const branches: { name: string; remote: boolean; at: string }[] = [];
+    for (const r of rows) if (r.ref.startsWith('refs/heads/')) { const n = r.ref.slice(11); local.add(n); branches.push({ name: n, remote: false, at: r.at }); }
+    for (const r of rows) {
+      if (!r.ref.startsWith('refs/remotes/origin/')) continue;
+      const n = r.ref.slice(20);
+      if (n === 'HEAD' || local.has(n)) continue;
+      branches.push({ name: `origin/${n}`, remote: true, at: r.at });
+    }
+    const cur = (await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: repo, env: this.env })).stdout.trim();
+    return { branches, current: cur || null };
   }
 
   /** Где сейчас открыта ветка (основная копия или другая worktree), если открыта. */

@@ -5,16 +5,21 @@ import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type Agent
  * claude -p (stdin) --output-format stream-json --verbose.
  * Флаги сверены с claude 2.1.x, см. README.
  */
-export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume'>): string[] {
+export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig'>): string[] {
   const args = [
     '-p',
     '--output-format', 'stream-json',
     '--verbose',
     '--permission-mode', 'bypassPermissions',
-    // Только настройки проекта: пользовательские хуки, плагины и env из ~/.claude не вмешиваются в прогон.
-    '--setting-sources', 'project,local',
-    '--strict-mcp-config',
   ];
+  if (o.userConfig) {
+    // Настройки пользователя (MCP, скиллы, плагины) — как в его обычном claude; только хуки выключены,
+    // чтобы уведомления, логгеры и проверки из ~/.claude не срабатывали на каждом шаге прогона.
+    args.push('--settings', JSON.stringify({ disableAllHooks: true }));
+  } else {
+    // Только настройки проекта: пользовательские хуки, плагины, MCP и env из ~/.claude не вмешиваются в прогон.
+    args.push('--setting-sources', 'project,local', '--strict-mcp-config');
+  }
   // Сессию сохраняем только исполнителю — чтобы следующая попытка продолжила её, а не читала проект заново.
   if (o.resume) args.push('--resume', o.resume);
   else if (o.sessionId) args.push('--session-id', o.sessionId);
