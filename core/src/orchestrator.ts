@@ -21,6 +21,7 @@ import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js'
 import { MODE_FIRST, MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
 import type {
+  NextPartDraft,
   EnvCheck,
   AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, ClarifyQuestion, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, RunMode, VisualResult, ConnectionCheck, CoreCommand, CoreEvent, CoreSettings, DiffFile, Feedback, GateId, LineComment, ReviewItem,
   ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName,
@@ -669,7 +670,8 @@ export class Orchestrator {
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const attachments = this.saveAttachments(id, input.attachments ?? []);
+    const carried = (input.attachmentPaths ?? []).filter((p) => fs.existsSync(p)).map((p) => ({ name: path.basename(p).replace(/^\d+-/, ''), data: fs.readFileSync(p) }));
+    const attachments = this.saveAttachments(id, [...carried, ...(input.attachments ?? [])]);
     const run: RunFile = {
       version: 1,
       id,
@@ -747,6 +749,8 @@ export class Orchestrator {
     run.workspacePending = undefined;
     this.save(run);
     this.copyEnvFiles(run);
+    await this.cloneDeps(run).catch((e) => this.log(run, c.dim(`Не удалось скопировать зависимости: ${(e as Error).message}`) + '\n'));
+    this.save(run);
     this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
   }
 
@@ -921,6 +925,54 @@ export class Orchestrator {
       } catch { /* нет доступа — проверки покажут, чего не хватает */ }
     }
     if (copied.length) this.log(run, c.dim(`файлы окружения скопированы в worktree: ${copied.join(', ')}`) + '\n');
+  }
+
+  /**
+   * Зависимости в worktree — копией node_modules из проекта через copy-on-write (APFS `cp -c`, Linux `--reflink`):
+   * почти мгновенно, места не занимает, и копия независимая — установка пакетов в worktree не трогает проект.
+   * Lock-файлы совпадают — установка пропускается; нет — команда подготовки доустановит поверх копии.
+   */
+  private async cloneDeps(run: RunFile) {
+    if (run.workspace === 'branch' || process.platform === 'win32') return;
+    const found: string[] = [];
+    const walk = (rel: string, depth: number) => {
+      let entries: fs.Dirent[] = [];
+      try { entries = fs.readdirSync(path.join(run.projectPath, rel), { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name === '.git' || e.name.startsWith('.next') || e.name === 'dist' || e.name === 'build') continue;
+        const child = rel ? `${rel}/${e.name}` : e.name;
+        if (e.name === 'node_modules') found.push(child);
+        else if (depth < 3) walk(child, depth + 1);
+      }
+    };
+    walk('', 0);
+    if (!found.length) return;
+    const t0 = Date.now();
+    const cloned: string[] = [];
+    for (const rel of found) {
+      const to = path.join(run.worktreePath, rel);
+      if (fs.existsSync(to) || !fs.existsSync(path.dirname(to))) continue;
+      const args = process.platform === 'darwin' ? ['-cR', path.join(run.projectPath, rel), to] : ['-R', '--reflink=auto', path.join(run.projectPath, rel), to];
+      const r = await runProc('cp', args, { cwd: run.worktreePath, env: this.opts.env, timeoutMs: 5 * 60_000, group: run.id });
+      this.checkStop(run);
+      if (r.code === 0) cloned.push(rel);
+      else fs.rmSync(to, { recursive: true, force: true });
+    }
+    if (!cloned.length) return;
+    const locks = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock'];
+    const same = locks.every((f) => {
+      const a = path.join(run.projectPath, f);
+      const b = path.join(run.worktreePath, f);
+      if (!fs.existsSync(a) && !fs.existsSync(b)) return true;
+      try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; }
+    });
+    const sec = Math.round((Date.now() - t0) / 1000);
+    if (same) {
+      run.prepared = true;
+      this.log(run, c.dim(`зависимости скопированы из проекта (${cloned.join(', ')}, ${sec} с) — lock-файлы совпадают, установка пропущена`) + '\n');
+    } else {
+      this.log(run, c.dim(`зависимости скопированы из проекта (${sec} с); lock-файлы отличаются — команда подготовки доустановит`) + '\n');
+    }
   }
 
   private async stop(id: string) {
@@ -1424,6 +1476,69 @@ export class Orchestrator {
     this.markStopped(run, `План не прошёл openspec validate после ${PLAN_RETRIES + 1} попыток. Исправьте файлы вручную или нажмите «Продолжить».`);
   }
 
+  /** Группы файлов диффа по пунктам плана — считаются к каждой приёмке, если есть tasks.md. */
+  private async mapFilesToPlan(id: string) {
+    const run = this.store.load(id);
+    if (!run || modeOf(run) === 'quick') return;
+    const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
+    if (run.taskMap?.attempt === attempt) return;
+    const docs = await this.getChangeDocs(id).catch(() => null);
+    if (!docs?.tasks.trim()) return;
+    const tools = await this.tools(['git', 'claude']).catch(() => null);
+    if (!tools) return;
+    const diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run), ...GENERATED_GLOBS]);
+    const files = splitDiff(diff).map((f) => ({ path: f.path, ...lineStats(f.text) })).filter((f) => !f.path.startsWith('openspec/'));
+    if (files.length < 4) return;
+    const s = this.opts.getSettings();
+    const res = await runClaude({
+      bin: tools.claude, cwd: os.tmpdir(), env: this.opts.env,
+      prompt: this.prompts.render('plan-map.md', { tasks: docs.tasks.slice(0, 20_000), files: files.map((f) => `- ${f.path} (+${f.add} −${f.del})`).join('\n') }),
+      model: this.claudeModel(s.agents, s.models) || undefined, timeoutMs: 3 * 60_000, group: `${run.id}:map`, onOutput: () => {},
+      proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, tools: [],
+    }).catch(() => null);
+    if (!res?.ok) return;
+    const a = res.text.indexOf('{');
+    const b = res.text.lastIndexOf('}');
+    let groups: { title: string; files: string[] }[] = [];
+    try {
+      const j = JSON.parse(res.text.slice(a, b + 1)) as { groups?: { title?: unknown; files?: unknown }[] };
+      const known = new Set(files.map((f) => f.path));
+      const used = new Set<string>();
+      groups = (j.groups ?? []).map((g) => ({
+        title: String(g.title ?? '').trim(),
+        files: (Array.isArray(g.files) ? g.files.map(String) : []).filter((f) => known.has(f) && !used.has(f) && (used.add(f), true)),
+      })).filter((g) => g.title && g.files.length);
+      const rest = files.map((f) => f.path).filter((f) => !used.has(f));
+      if (rest.length) groups.push({ title: 'Без пункта плана', files: rest });
+    } catch {
+      return;
+    }
+    // Прогон мог уйти дальше, пока считали: сохраняем только к той же приёмке.
+    const fresh = this.store.load(id);
+    if (!fresh || fresh.attempts.filter((x) => x.stage === 'gate2').length !== attempt || !groups.length) return;
+    fresh.taskMap = { attempt, groups };
+    this.save(fresh);
+  }
+
+  /**
+   * С чего начать исполнителю: файлы, которые план называет в proposal и tasks.md, — чтобы не изучать проект заново.
+   * Профиль проекта у него и так в системном промпте.
+   */
+  private async startFilesBlock(run: RunFile): Promise<string> {
+    if (modeOf(run) === 'quick') return '';
+    const docs = await this.getChangeDocs(run.id).catch(() => null);
+    if (!docs) return '';
+    const text = `${docs.proposal}\n${docs.tasks}`;
+    const paths = new Set<string>();
+    for (const m of text.matchAll(/`?((?:[\w.@-]+\/)+[\w.@-]+\.[a-zA-Z0-9]{1,6})`?/g)) {
+      const p = m[1].replace(/^\.\//, '');
+      if (!p.startsWith('openspec/') && !p.includes('..')) paths.add(p);
+    }
+    if (!paths.size) return '';
+    const list = [...paths].slice(0, 60).map((p) => `- \`${p}\`${fs.existsSync(path.join(run.worktreePath, p)) ? '' : ' (новый)'}`).join('\n');
+    return `\nФайлы, которые называет план, — начни с них и их соседей; весь проект заново не изучай (профиль проекта — в системном промпте):\n${list}\n`;
+  }
+
   private async stageImplement(run: RunFile) {
 
     // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
@@ -1434,7 +1549,7 @@ export class Orchestrator {
     const prompt = this.prompts.render(this.tpl('implement', run), {
       changeId: run.changeId,
       task: this.taskText(run),
-      attachments: this.attachmentsBlock(run),
+      attachments: this.attachmentsBlock(run) + (await this.startFilesBlock(run)),
       testCommand: run.testCommand || 'не задана',
       attempt: run.implAttemptsUsed,
       limit: run.implAttemptsLimit,
@@ -1836,6 +1951,27 @@ export class Orchestrator {
     }
     const at = (x: ProjectListItem) => x.lastRunAt ?? x.updatedAt ?? '';
     return [...map.values()].sort((a, b) => at(b).localeCompare(at(a)));
+  }
+
+  /** Следующая часть большой задачи: из «Next Parts» плана — текст задачи и вложения для нового прогона. */
+  async nextPartDraft(id: string): Promise<NextPartDraft | null> {
+    const r = this.mustLoad(id);
+    const docs = await this.getChangeDocs(id).catch(() => null);
+    const parts = parseNextParts(docs?.proposal ?? '');
+    if (!parts.length) return null;
+    const [next, ...rest] = parts;
+    const done = r.commit ? `в ветке \`${r.branch}\` (коммит ${r.commit.slice(0, 8)})` : `в ветке \`${r.branch}\``;
+    const task = [
+      `Следующая часть задачи «${r.title}». Предыдущая часть уже сделана ${done}${r.merged ? ` и влита в \`${r.merged.into}\`` : r.pr?.url ? `, PR: ${r.pr.url}` : ''}.`,
+      '',
+      `Сейчас нужно сделать: ${next}`,
+      rest.length ? `\nПосле этой части останутся (в эту задачу не входят): ${rest.map((x) => `\n- ${x}`).join('')}` : '',
+      '',
+      'Исходная задача целиком — для контекста:',
+      '',
+      r.task,
+    ].join('\n');
+    return { projectPath: r.projectPath, task, attachments: r.attachments ?? [], baseBranch: r.merged?.into || r.pr?.base || r.baseBranch, rest };
   }
 
   private envChecks = new Set<string>();
@@ -2527,7 +2663,10 @@ export class Orchestrator {
     this.save(run);
     this.log(run, c.amber(`◆ ${STAGE_TITLES[gate]}: ждём решения человека`) + '\n');
     this.emit({ type: 'gate.waiting', runId: run.id, gate, message });
-    if (gate === 'gate2') void this.summarizeChanges(run.id).catch(() => undefined);
+    if (gate === 'gate2') {
+      void this.summarizeChanges(run.id).catch(() => undefined);
+      void this.mapFilesToPlan(run.id).catch(() => undefined);
+    }
     if (run.autopilot) void this.autopilotGate(run, gate);
   }
 
@@ -2817,6 +2956,21 @@ const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
  * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
  * null — если вывод не распознан.
  */
+/** Пункты раздела «## Next Parts» из proposal.md — следующие части большой задачи. */
+export function parseNextParts(proposal: string): string[] {
+  const lines = proposal.split('\n');
+  const start = lines.findIndex((l) => /^##\s+Next Parts\s*$/.test(l.trim()));
+  if (start < 0) return [];
+  const out: string[] = [];
+  for (const l of lines.slice(start + 1)) {
+    if (/^##\s/.test(l)) break;
+    const item = l.match(/^\s*(?:[-*+]|\d+[.)])\s+(.+)$/);
+    if (item) out.push(item[1].trim());
+    else if (l.trim() && out.length && /^\s{2,}/.test(l)) out[out.length - 1] += ' ' + l.trim();
+  }
+  return out;
+}
+
 export function parseVerdicts(text: string): { index: number; verdict: 'confirmed' | 'rejected' | 'minor'; reason: string }[] | null {
   const a = text.indexOf('{');
   const b = text.lastIndexOf('}');

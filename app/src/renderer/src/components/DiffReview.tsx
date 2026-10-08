@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import { ChevronRight, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronRight, ListChecks, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PillTabs } from './PillTabs';
 import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
@@ -79,6 +79,8 @@ interface Props {
   onPicked?: (items: ReviewItem[]) => void;
   /** Замечания визуальной проверки — на вкладке «Заметки» рядом с замечаниями ревьюера. */
   visualItems?: ReviewItem[];
+  /** Файлы по пунктам плана — вид «По плану» в списке файлов. */
+  groups?: { title: string; files: string[] }[];
   /** Вкладка «Код»/«Заметки» управляется снаружи (переключатель в шапке приёмки). */
   tab?: 'code' | 'notes';
   onTab?: (t: 'code' | 'notes') => void;
@@ -156,7 +158,7 @@ const WIDTH_KEY = 'psflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
 
-export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab }: Props) {
+export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab, groups }: Props) {
   const [ownTab, setOwnTab] = useState<'code' | 'notes'>('code');
   const tab = outerTab ?? ownTab;
   const setTab = onTab ?? setOwnTab;
@@ -167,13 +169,26 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     [files],
   );
   const tree = useMemo(() => buildTree(files), [files]);
-  const [asTree, setAsTree] = useState(() => {
+  type FilesView = 'plan' | 'tree' | 'list';
+  const [viewPref, setViewPref] = useState<FilesView>(() => {
     try {
-      return localStorage.getItem(TREE_KEY) !== 'list';
+      const v = localStorage.getItem(TREE_KEY);
+      return v === 'list' ? 'list' : v === 'tree' ? 'tree' : 'plan';
     } catch {
-      return true;
+      return 'plan';
     }
   });
+  const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
+  const planGroups = useMemo(() => (groups ?? []).map((g) => ({ ...g, items: g.files.map((f) => byPath.get(f)).filter((f): f is DiffFile => Boolean(f)) })).filter((g) => g.items.length), [groups, byPath]);
+  // «По плану» — когда группы посчитаны; иначе дерево.
+  const view: FilesView = viewPref === 'plan' && !planGroups.length ? 'tree' : viewPref;
+  const asTree = view === 'tree';
+  const setView = (v: FilesView) => {
+    setViewPref(v);
+    try {
+      localStorage.setItem(TREE_KEY, v);
+    } catch { /* без памяти о виде */ }
+  };
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   /** Ширина панели файлов — тянется за правый край, запоминается. */
   const [filesW, setFilesW] = useState(() => {
@@ -205,7 +220,10 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
-  const ordered = useMemo(() => (asTree ? treeOrder(tree) : sorted), [asTree, tree, sorted]);
+  const ordered = useMemo(
+    () => (view === 'plan' ? [...planGroups.flatMap((g) => g.items), ...sorted.filter((f) => !planGroups.some((g) => g.items.includes(f)))] : asTree ? treeOrder(tree) : sorted),
+    [view, asTree, tree, sorted, planGroups],
+  );
   const [current, setCurrent] = useState<string | null>(ordered[0]?.path ?? null);
   const [draftLine, setDraftLine] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
@@ -372,22 +390,31 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
           <span>Файлы</span>
           <span className="muted">{files.length}</span>
           <span className="grow" />
-          <button
-            className="diff-files-mode"
-            title={asTree ? 'Показать списком' : 'Показать деревом'}
-            onClick={() => {
-              const next = !asTree;
-              setAsTree(next);
-              try {
-                localStorage.setItem(TREE_KEY, next ? 'tree' : 'list');
-              } catch { /* без памяти о виде */ }
-            }}
-          >
-            {asTree ? <List size={14} /> : <ListTree size={14} />}
-          </button>
+          <span className="diff-files-modes" role="radiogroup" aria-label="Вид списка файлов">
+            {planGroups.length > 0 && (
+              <button role="radio" aria-checked={view === 'plan'} className={`diff-files-mode ${view === 'plan' ? 'is-on' : ''}`} title="По пунктам плана" onClick={() => setView('plan')}><ListChecks size={14} /></button>
+            )}
+            <button role="radio" aria-checked={view === 'tree'} className={`diff-files-mode ${view === 'tree' ? 'is-on' : ''}`} title="Деревом" onClick={() => setView('tree')}><ListTree size={14} /></button>
+            <button role="radio" aria-checked={view === 'list'} className={`diff-files-mode ${view === 'list' ? 'is-on' : ''}`} title="Списком" onClick={() => setView('list')}><List size={14} /></button>
+          </span>
         </div>
         <ul>
-          {asTree ? renderDir(tree, 0) : sorted.map((f) => fileRow(f, 0, true))}
+          {view === 'plan'
+            ? planGroups.flatMap((g) => {
+              const shut = collapsed.has(`plan:${g.title}`);
+              const n = g.items.reduce((k, f) => k + countFor(f.path), 0);
+              return [
+                <li key={`g:${g.title}`}>
+                  <button className={`file dir plan-group ${shut ? 'is-shut' : ''} ${/^Без пункта|^Вне плана/.test(g.title) ? 'is-offplan' : ''}`} onClick={() => toggleDir(`plan:${g.title}`)} title={g.title}>
+                    <ChevronRight size={13} className="dir-caret" />
+                    <span className="file-name"><span>{g.title}</span></span>
+                    {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{g.items.length}</span>}
+                  </button>
+                </li>,
+                ...(shut ? [] : g.items.map((f) => fileRow(f, 1, true))),
+              ];
+            })
+            : asTree ? renderDir(tree, 0) : sorted.map((f) => fileRow(f, 0, true))}
         </ul>
       </aside>
 

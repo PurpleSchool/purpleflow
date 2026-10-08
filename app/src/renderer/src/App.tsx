@@ -54,7 +54,7 @@ export function App() {
         {/* Полоса сверху вместо заголовка окна: за неё окно перетаскивается. */}
         <div className="main-drag drag" aria-hidden />
         <div className="screen-enter" key={viewKey}>
-          {v.name === 'new' && <NewTaskScreen initialProject={v.project} />}
+          {v.name === 'new' && <NewTaskScreen key={v.draft ? `draft-${v.draft.task.length}` : 'new'} initialProject={v.project} draft={v.draft} />}
           {v.name === 'projects' && <ProjectsScreen />}
           {v.name === 'project' && <ProjectScreen path={v.path} initialTab={v.tab} />}
           {v.name === 'run' && <RunScreen runId={v.runId} />}

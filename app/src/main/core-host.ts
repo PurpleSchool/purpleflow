@@ -48,6 +48,7 @@ function api(c: Orchestrator): CoreApi {
     projectBranches: (dir, fetch) => c.projectBranches(dir, fetch),
     cleanWorkingCopy: (dir, how) => c.cleanWorkingCopy(dir, how),
     checkEnvironment: (dir) => c.checkEnvironment(dir),
+    nextPartDraft: (id) => c.nextPartDraft(id),
     projectStats: async (dir) => c.projectStats(dir),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';

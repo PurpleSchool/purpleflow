@@ -38,7 +38,7 @@ function currentStage(run: RunFile): StageId {
 const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 export function RunScreen({ runId }: { runId: string }) {
-  const { state, loadRun } = useStore();
+  const { state, loadRun, go } = useStore();
   const run = state.details[runId];
   const [view, setView] = useState<View>('timeline');
   /** Стадия, чьи детали открыты в выезжающей панели; null — панель закрыта. */
@@ -294,6 +294,20 @@ export function RunScreen({ runId }: { runId: string }) {
               {run.status === 'queued' || run.workspacePending ? 'Запустить сейчас' : 'Продолжить'}
             </Button>
           )}
+          {run.status === 'finished' && run.nextParts && (
+            <Button
+              tone="primary"
+              icon={<ArrowRight size={14} />}
+              busy={busy === 'next'}
+              title="Новая задача со следующей частью из раздела «Next Parts» плана — с исходным ТЗ и вложениями"
+              onClick={() => act('next', async () => {
+                const d = await window.psflow.core.nextPartDraft(runId);
+                if (d) go({ name: 'new', project: d.projectPath, draft: d });
+              })}
+            >
+              Следующая часть
+            </Button>
+          )}
           {canSkipChecks && (
             <Button tone="ghost" icon={<SkipForward size={14} />} busy={busy === 'skip'} title="Остановить текущую попытку и перейти к ревью, не дожидаясь зелёных проверок" onClick={() => act('skip', () => dispatch({ type: 'run.skipChecks', runId }))}>
               Пропустить проверки
@@ -406,6 +420,7 @@ export function RunScreen({ runId }: { runId: string }) {
                             onPicked={setPicked}
                             tab={accTab}
                             onTab={setAccTab}
+                            groups={run.taskMap?.groups}
                             visualItems={run.visuals?.at(-1) ? [...run.visuals.at(-1)!.blocking, ...run.visuals.at(-1)!.notes] : []}
                             files={diff}
                             review={lastReview}

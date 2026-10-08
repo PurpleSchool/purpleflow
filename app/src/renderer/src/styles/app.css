@@ -1725,3 +1725,14 @@ button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
 .env-result li b { font-weight: 500; color: var(--text-1); }
 .env-fix { margin: 0; font-size: var(--fs-12); color: var(--text-1); line-height: 1.55; }
 .env-out { max-height: 240px; overflow: auto; font-size: 11px; }
+
+.diff-files-modes { display: inline-flex; gap: 2px; }
+.diff-files-mode.is-on { background: var(--bg-4); color: var(--text-1); }
+.file.dir.plan-group .file-name span { font: 500 12px/1.35 var(--font-ui, inherit); color: var(--text-1); white-space: normal; }
+.file.dir.plan-group.is-offplan .file-name span { color: var(--wait); }
+
+/* Новая задача: вложения из прошлой части */
+.carried { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: var(--s-2); font-size: var(--fs-12); }
+.carried-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px 0 10px; border-radius: var(--r-pill); background: var(--bg-4); color: var(--text-2); }
+.carried-chip button { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; color: var(--text-3); }
+.carried-chip button:hover { background: var(--bg-5); color: var(--text-1); }

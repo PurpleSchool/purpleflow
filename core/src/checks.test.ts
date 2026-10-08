@@ -108,3 +108,10 @@ test('parseVerdicts и ARTIFACT_RE', async () => {
   for (const f of ['packages/frontend/tsconfig.tsbuildinfo', 'apps/web/next-env.d.ts', '.DS_Store', 'npm-debug.log.123']) assert.ok(ARTIFACT_RE.test(f), f);
   for (const f of ['src/next-env.ts', 'package-lock.json', 'src/app.ts']) assert.ok(!ARTIFACT_RE.test(f), f);
 });
+
+test('parseNextParts: пункты раздела до следующего заголовка', async () => {
+  const { parseNextParts } = await import('./orchestrator.js');
+  const p = '# Т\n\n## Why\nx\n\n## Next Parts\n- Часть 2: озвучка\n  и дубли голоса\n2. Часть 3: сцены\n\n## Invariants\n- не трогать\n';
+  assert.deepEqual(parseNextParts(p), ['Часть 2: озвучка и дубли голоса', 'Часть 3: сцены']);
+  assert.deepEqual(parseNextParts('# Т\n## Why\nx'), []);
+});

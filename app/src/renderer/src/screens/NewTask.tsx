@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Archive, ChevronDown, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
-import type { ProjectBranches, Workspace } from '@psflow/core';
+import type { ProjectBranches, Workspace, NextPartDraft } from '@psflow/core';
 import { Button, Topbar } from '../components/ui';
 import { useStore } from '../lib/store';
 import { FileDrop, type PickedFile } from '../components/FileDrop';
@@ -11,10 +11,12 @@ import { ProjectPicker, WORKSPACES, cleanErr, loadProject, saveLoaded, type Load
 const LAST_PROJECT = 'psflow.lastProject';
 const AUTOPILOT_KEY = 'psflow.autopilot';
 
-export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
+export function NewTaskScreen({ initialProject, draft }: { initialProject?: string; draft?: NextPartDraft }) {
   const { go, state } = useStore();
   const [p, setP] = useState<LoadedProject | null>(null);
-  const [task, setTask] = useState('');
+  const [task, setTask] = useState(draft?.task ?? '');
+  /** Вложения прошлой части задачи — уйдут в новый прогон как есть. */
+  const [carried, setCarried] = useState<string[]>(draft?.attachments ?? []);
   const [images, setImages] = useState<PickedFile[]>([]);
   const [mode, setMode] = useState<Mode>('task');
   const [suggest, setSuggest] = useState<{ mode: Mode; reason: string } | null>(null);
@@ -74,7 +76,8 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
     try {
       const b = await window.psflow.core.projectBranches(dir, fetch);
       setBranches(b);
-      setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : b.current ?? b.branches[0]?.name ?? ''));
+      const preferred = draft?.baseBranch && b.branches.some((x) => x.name === draft.baseBranch) ? draft.baseBranch : null;
+      setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : preferred ?? b.current ?? b.branches[0]?.name ?? ''));
     } catch {
       setBranches({ branches: [], current: null });
     } finally {
@@ -98,11 +101,12 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
         type: 'run.start',
         input: {
           projectPath: p.info.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, autopilot, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
+          mode, visual: canVisual && visual, autopilot, attachmentPaths: carried.length ? carried : undefined, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
       setTask('');
+      setCarried([]);
       images.forEach((i) => i.url && URL.revokeObjectURL(i.url));
       setImages([]);
       go({ name: 'run', runId });
@@ -201,6 +205,17 @@ export function NewTaskScreen({ initialProject }: { initialProject?: string }) {
                 <span className="muted">{task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}</span>
                 <span className="kbd-hint"><kbd>{window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
               </div>
+              {carried.length > 0 && (
+                <div className="carried">
+                  <span className="muted">Из прошлой части задачи:</span>
+                  {carried.map((f) => (
+                    <span key={f} className="carried-chip" title={f}>
+                      {f.split('/').pop()?.replace(/^\d+-/, '')}
+                      <button title="Не прикладывать" onClick={() => setCarried(carried.filter((x) => x !== f))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
               <FileDrop files={images} onChange={setImages} />
             </div>
           </div>

@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import type { CoreEvent, RunFile, RunSummary, ToolInfo, ToolName } from '@psflow/core';
+import type { CoreEvent, RunFile, RunSummary, ToolInfo, ToolName, NextPartDraft } from '@psflow/core';
 import type { PublicSettings } from '../../../shared/ipc';
 
 export type ProjectTab = 'overview' | 'commands' | 'knowledge';
 export type View =
-  | { name: 'new'; project?: string }
+  | { name: 'new'; project?: string; draft?: NextPartDraft }
   | { name: 'run'; runId: string }
   | { name: 'settings' }
   | { name: 'projects' }

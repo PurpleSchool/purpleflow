@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, EnvCheck, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -80,6 +80,7 @@ export interface CoreApi {
   projectBranches(dir: string, fetch?: boolean): Promise<ProjectBranches>;
   cleanWorkingCopy(dir: string, how: 'stash' | 'discard'): Promise<{ files: number }>;
   checkEnvironment(dir: string): Promise<EnvCheck>;
+  nextPartDraft(runId: string): Promise<NextPartDraft | null>;
   projectStats(dir: string): Promise<ProjectStats>;
 }
 

@@ -207,6 +207,8 @@ export interface RunFile {
   visual?: boolean;
   /** Автопилот: план принимается сам, при исчерпанных попытках — одна попытка сама; человек нужен только на приёмке. */
   autopilot?: boolean;
+  /** Файлы диффа по пунктам плана — для приёмки «по смыслу»; attempt — номер приёмки, к которой посчитано. */
+  taskMap?: { attempt: number; groups: { title: string; files: string[] }[] };
   /** План покрывает первую часть большой задачи; остальные — в разделе «Next Parts» proposal. */
   nextParts?: boolean;
   /** Автопилот уже дал одну попытку сверх лимита. */
@@ -328,6 +330,8 @@ export interface StartRunInput {
   baseBranch?: string;
   /** Изображения к задаче (скриншоты, макеты) — байты из окна. */
   attachments?: { name: string; data: Uint8Array }[];
+  /** Вложения прошлого прогона (следующая часть задачи) — копируются как есть. */
+  attachmentPaths?: string[];
 }
 
 export type CoreCommand =
@@ -399,6 +403,16 @@ export interface ProjectConfig {
   knowledge?: ProjectKnowledge;
   notes: { setup: string; lint: string; test: string; run?: string };
   updatedAt: string;
+}
+
+/** Заготовка следующей части большой задачи: текст, проект, вложения, от какой ветки начать. */
+export interface NextPartDraft {
+  projectPath: string;
+  task: string;
+  attachments: string[];
+  baseBranch?: string;
+  /** Что осталось после этой части. */
+  rest: string[];
 }
 
 /** Проверка окружения проекта для визуальной проверки: поднялось ли приложение, работает ли вход и данные. */
