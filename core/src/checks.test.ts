@@ -81,3 +81,21 @@ test('portEnv: PORT только если в команде запуска не�
   assert.deepEqual(portEnv('(cd api && npm run start:dev) & (cd web && next dev -p {port})', 5173), {});
   assert.deepEqual(portEnv('vite --port {port:web}', 5173), {});
 });
+
+test('packReview: код раньше текстов, большой файл урезан, крупный дифф — на части по модулям', async () => {
+  const { packReview, priorityOf } = await import('./reviewdiff.js');
+  const file = (p: string, n: number) => `diff --git a/${p} b/${p}\n--- a/${p}\n+++ b/${p}\n${'+x\n'.repeat(n)}`;
+  assert.equal(priorityOf('src/a.ts', 100), 0);
+  assert.equal(priorityOf('test/a.e2e-spec.ts', 100), 1);
+  assert.equal(priorityOf('src/prompts/big.prompt.ts', 50_000), 3);
+  assert.equal(priorityOf('README.md', 100), 3);
+  const one = packReview(file('README.md', 10) + file('src/svc.ts', 10), 10_000);
+  assert.equal(one.parts.length, 1);
+  assert.ok(one.parts[0].indexOf('src/svc.ts') < one.parts[0].indexOf('README.md'));
+  const big = packReview(file('src/prompts/huge.prompt.ts', 20_000), 100_000);
+  assert.deepEqual(big.trimmed, ['src/prompts/huge.prompt.ts']);
+  const many = packReview(file('packages/api/src/a.ts', 3000) + file('packages/web/src/b.ts', 3000) + file('packages/api/src/c.ts', 3000), 20_000);
+  assert.equal(many.parts.length, 2);
+  assert.ok(many.files.some((f) => f.includes('packages/api/src/a.ts') && f.includes('packages/api/src/c.ts')));
+  assert.deepEqual(many.omitted, []);
+});

@@ -379,6 +379,8 @@ export interface ProjectConfig {
   setupCommand: string;
   lintCommand: string;
   testCommand: string;
+  /** Быстрые тесты для промежуточных кругов (например, unit без e2e); полный testCommand — один раз перед приёмкой. */
+  quickTestCommand?: string;
   runCommand?: string;
   appUrl?: string;
   /** Инструкция агенту визуальной проверки: тестовый вход, сид данных, куда идти. */

@@ -9,6 +9,7 @@ import { addUsage, c, crlf, emptyUsage, type AgentResult } from './agents/common
 import { detectTools, prependPath, which } from './env.js';
 import { createPr, failedJobLog, mergePr, prComments, prReadiness, prStatus, pushBranch } from './github.js';
 import { Git } from './git.js';
+import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from './reviewdiff.js';
 import { makeChangeId, makeTitle } from './ids.js';
 import { OpenSpec } from './openspec.js';
 import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
@@ -35,7 +36,8 @@ export interface CoreOptions {
 const IMPL_LIMIT = 3;
 const PLAN_RETRIES = 2;
 const MAX_TEST_OUTPUT = 12_000;
-const MAX_DIFF = 160_000;
+/** Дифф до такого размера кладётся в промпт ревьюера целиком, больше — списком файлов, ревьюер читает сам. */
+const INLINE_DIFF = 60_000;
 const RUN_JSON_GLOB = 'openspec/changes/**/run.json';
 
 export const STAGE_TITLES: Record<StageId, string> = {
@@ -1258,13 +1260,16 @@ export class Orchestrator {
     const tools = await this.tools(['git', 'claude']).catch(() => null);
     if (!tools) return;
     const files = run.roundFiles;
-    let diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
+    let diff = await new Git(tools.git, this.opts.env).diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run), ...GENERATED_GLOBS]);
     if (files?.length) diff = diff.split(/^(?=diff --git )/m).filter((d) => files.some((f) => d.startsWith(`diff --git a/${f} `))).join('');
     if (!diff.trim()) return;
+    // Сводке хватает одной части: код — первым, большие тексты урезаны, остальное — списком.
+    const packed = packReview(diff, 60_000, 1);
+    diff = (packed.parts[0] ?? '') + (packed.omitted.length ? `\n… ещё файлы, не вошедшие в дифф: ${packed.omitted.join(', ')}\n` : '');
     const s = this.opts.getSettings();
     const res = await runClaude({
       bin: tools.claude, cwd: os.tmpdir(), env: this.opts.env,
-      prompt: this.prompts.render('summary.md', { task: this.taskText(run), context: this.summaryContext(run), diff: diff.slice(0, 60_000) }),
+      prompt: this.prompts.render('summary.md', { task: this.taskText(run), context: this.summaryContext(run), diff }),
       model: this.claudeModel(s.agents, s.models) || undefined, timeoutMs: 3 * 60_000, group: `${run.id}:summary`, onOutput: () => {},
       proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, tools: [],
     }).catch(() => null);
@@ -1466,11 +1471,11 @@ export class Orchestrator {
   }
 
   /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
-  private async runChecks(run: RunFile): Promise<{ result: TestResult; failed: CheckResult[] }> {
+  private async runChecks(run: RunFile, testCommand = run.testCommand): Promise<{ result: TestResult; failed: CheckResult[] }> {
     const s = this.opts.getSettings();
     const plan: { kind: CheckResult['kind']; command: string }[] = [];
     if (run.lintCommand) plan.push({ kind: 'lint', command: run.lintCommand });
-    if (run.testCommand) plan.push({ kind: 'test', command: run.testCommand });
+    if (testCommand) plan.push({ kind: 'test', command: testCommand });
     const checks: CheckResult[] = [];
     for (const p of plan) checks.push(await this.runCheck(run, p.kind, p.command, s.testTimeoutMin));
     const failed = checks.filter((x) => !x.passed);
@@ -1636,17 +1641,38 @@ export class Orchestrator {
       : null;
     if (parallel) this.log(run, c.dim('Ревью идёт параллельно с проверками — его лог появится после них.') + '\n');
 
+    // Быстрые проверки (команда из настроек проекта) — на каждом круге; полный набор — один раз, когда всё остальное зелёное.
+    const quick = this.getProjectConfig(run.projectPath)?.quickTestCommand?.trim();
+    const useQuick = Boolean(quick && run.testCommand && quick !== run.testCommand);
+    const probe = async (r: TestResult, f: CheckResult[]) => {
+      const red = f.find((x) => x.kind === 'test' && !x.timedOut);
+      if (!red) return { result: r, failed: f };
+      const probed = await this.probeTests(run, red, reviewTask);
+      const checks = (r.checks ?? []).map((x) => (x === red ? probed : x));
+      const failedNow = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
+      return { result: { ...r, checks, passed: failedNow.length === 0, exitCode: failedNow[0]?.exitCode ?? 0, output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') }, failed: failedNow };
+    };
+
     let result: TestResult;
     let failed: CheckResult[];
     try {
-      const raw = await this.runChecks(run);
-      ({ result, failed } = this.compareWithBase(run, raw.result));
-      const red = failed.find((x) => x.kind === 'test' && !x.timedOut);
-      if (red) {
-        const probed = await this.probeTests(run, red, reviewTask);
-        const checks = (result.checks ?? []).map((x) => (x === red ? probed : x));
-        failed = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
-        result = { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0, output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') };
+      if (useQuick) this.log(run, c.dim(`Быстрые проверки: \`${quick}\` — полный набор \`${run.testCommand}\` пойдёт, когда остальное будет зелёным.`) + '\n');
+      const raw = await this.runChecks(run, useQuick ? quick : run.testCommand);
+      ({ result, failed } = await probe(...Object.values(this.compareWithBase(run, raw.result)) as [TestResult, CheckResult[]]));
+      if (useQuick && result.passed) {
+        // Полный набор — после ревью: если ревьюер вернёт задачу, гонять его сейчас незачем.
+        if (reviewTask && !reviewed && !reviewErr) {
+          this.log(run, c.dim('Быстрые проверки зелёные — жду ревью, чтобы решить, нужен ли полный набор…') + '\n');
+          await reviewTask;
+        }
+        const reviewBlocks = Boolean((reviewed as { review: ReviewResult } | null)?.review.blocking.length);
+        if (!reviewErr && !reviewBlocks) {
+          const s = this.opts.getSettings();
+          const full = await this.runCheck(run, 'test', run.testCommand, s.testTimeoutMin, 'полный набор перед приёмкой');
+          const checks = [...(result.checks ?? []).filter((x) => x.kind !== 'test'), full];
+          const merged: TestResult = { ...result, checks, command: checks.map((x) => x.command).join(' && '), passed: checks.every((x) => x.passed), exitCode: full.exitCode, durationMs: checks.reduce((n, x) => n + x.durationMs, 0), output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') };
+          ({ result, failed } = await probe(...Object.values(this.compareWithBase(run, merged)) as [TestResult, CheckResult[]]));
+        }
       }
       run.tests.push(result);
       this.emit({ type: 'tests.result', runId: run.id, result });
@@ -1841,6 +1867,7 @@ export class Orchestrator {
       setupCommand: cfg.setupCommand.trim(),
       lintCommand: cfg.lintCommand.trim(),
       testCommand: cfg.testCommand.trim(),
+      quickTestCommand: cfg.quickTestCommand?.trim() || undefined,
       runCommand: cfg.runCommand?.trim() || undefined,
       appUrl: cfg.appUrl?.trim() || undefined,
       visualNotes: cfg.visualNotes?.trim() || undefined,
@@ -2142,18 +2169,45 @@ export class Orchestrator {
     const out = (t: string) => { if (quiet) buffered += t; else this.log(run, t); };
     const attempt = this.begin(run, 'review', run.models.reviewer, quiet);
     const git = new Git(tools.git, this.opts.env);
-    let diff = await git.diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
-    if (diff.length > MAX_DIFF) diff = diff.slice(0, MAX_DIFF) + '\n… (дифф обрезан, остальное смотри через git diff)';
+    // Генерируемое (tsbuildinfo, lock-файлы, сборки) не ревьюим; код — первым; крупный дифф — нескольким ревьюерам.
+    const diff = await git.diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run), ...GENERATED_GLOBS]);
+    // Один ревьюер на весь дифф: он видит стыки модулей, где чаще всего ошибки. Небольшой дифф — в промпт,
+    // большой — списком файлов по важности, ревьюер читает их сам (packReview умеет делить на части — пока не делим).
+    const packed = packReview(diff, Number.MAX_SAFE_INTEGER, 1);
+    const stats = new Map(splitDiff(diff).map((f) => [f.path, lineStats(f.text)]));
+    const base8 = run.baseCommit.slice(0, 8);
+    // Небольшая часть — прямо в промпт (без лишних шагов); большая — списком файлов: ревьюер читает дифф сам.
+    const diffFor = (i: number) => {
+      const part = packed.parts[i] ?? '';
+      if (!part) return '(изменений кода нет)';
+      if (part.length <= INLINE_DIFF) return `Дифф:\n\n\`\`\`diff\n${part}\n\`\`\``;
+      const list = packed.files[i].map((f) => {
+        const st = stats.get(f);
+        return `- \`${f}\`${st ? ` (+${st.add} −${st.del})` : ''}`;
+      }).join('\n');
+      return `Изменённые файлы — по важности: сначала код, потом тесты, миграции, тексты. Прочитай дифф **каждого** файла из списка (\`git diff ${base8} -- <файл>\`, можно сразу несколько файлов одной командой), а где нужно — и файл целиком. Не пропускай файлы и не ограничивайся первыми — замечания по непрочитанному коду ничего не стоят.\n\n${list}`;
+    };
     const docs = await this.getChangeDocs(run.id);
     const lastTest = run.tests[run.tests.length - 1];
-    const prompt = this.prompts.render('review.md', {
+    const n = Math.max(1, packed.parts.length);
+    const extraFiles = [
+      packed.trimmed.length ? `Урезаны до начала (дочитай через \`git diff ${run.baseCommit.slice(0, 8)} -- <файл>\`, если нужно): ${packed.trimmed.map((f) => `\`${f}\``).join(', ')}.` : '',
+      packed.omitted.length ? `Не вошли в дифф выше — прочитай их сами через \`git diff ${run.baseCommit.slice(0, 8)} -- <файл>\`: ${packed.omitted.map((f) => `\`${f}\``).join(', ')}.` : '',
+    ].filter(Boolean).join('\n');
+    if (n > 1) out(c.dim(`Дифф большой — ревью на ${n} ревьюеров параллельно, по модулям.`) + '\n');
+
+    const promptFor = (i: number) => this.prompts.render('review.md', {
       changeId: run.changeId,
       proposal: docs.proposal || '(нет)',
       tasks: docs.tasks || '(нет)',
       specs: docs.specs.map((s) => `### ${s.path}\n\n${s.content}`).join('\n\n') || '(нет)',
       tests: quiet ? 'идут параллельно с ревью и проверяются отдельно — не запускай их, не оценивай, прошли ли они, и не пиши об этом замечаний' : lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
       base: run.baseCommit.slice(0, 8),
-      diff: diff || '(пусто)',
+      diff: diffFor(i),
+      scope: [
+        n > 1 ? `\n## Твоя часть\n\nДифф большой, его делят ${n} ревьюера. Ты смотришь часть ${i + 1} из ${n} — файлы ниже; остальные части смотрят другие. Замечания — по своим файлам; если проблема на стыке с чужим файлом — открой его и тоже напиши. Прошлые замечания по чужим файлам пропусти.\n\n${packed.files[i].map((f) => `- \`${f}\``).join('\n')}\n` : '',
+        extraFiles && (n === 1 || i === n - 1) ? `\n${extraFiles}\n` : '',
+      ].join(''),
       previous: this.previousReviewBlock(run),
       attachments: [
         run.attachments?.some(isImageFile) ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
@@ -2162,26 +2216,50 @@ export class Orchestrator {
       ].filter(Boolean).join('\n'),
     });
 
-    const res = await this.runRole(run, 'reviewer', {
-      prompt,
-      ...(quiet ? { onOutput: (t: string) => { buffered += t; } } : {}),
+    const bufs = new Array<string>(n).fill('');
+    const parallel = n > 1 || quiet;
+    const results = await Promise.all(Array.from({ length: n }, (_, i) => this.runRole(run, 'reviewer', {
+      prompt: promptFor(i),
+      ...(parallel ? { onOutput: (t: string) => { bufs[i] += t; } } : {}),
       readOnly: true,
       images: [...(run.attachments ?? []).filter(isImageFile), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
       outputSchema: this.prompts.json<object>('review.schema.json'),
-    });
-    if (quiet) buffered = '\n' + c.violet(c.bold(`━━ ${STAGE_TITLES.review} · попытка ${attempt.attempt}`)) + c.dim('  # шло параллельно с проверками') + '\n' + buffered;
+    })));
+    if (parallel) {
+      const head = (i: number) => '\n' + c.violet(c.bold(`━━ ${STAGE_TITLES.review} · попытка ${attempt.attempt}${n > 1 ? ` · часть ${i + 1}/${n}` : ''}`)) + (quiet ? c.dim('  # шло параллельно с проверками') : '') + '\n';
+      const text = bufs.map((b, i) => head(i) + b).join('');
+      if (quiet) buffered = text + buffered;
+      else this.log(run, text, false);
+    }
+    // Токены всех ревьюеров — в попытку; остановка или сбой любого — как у одного агента.
+    const merged: AgentResult = {
+      ok: results.every((r) => r.ok),
+      stopped: results.some((r) => r.stopped),
+      text: '',
+      usage: results.reduce((u, r) => addUsage(u, r.usage), emptyUsage()),
+      error: results.find((r) => !r.ok)?.error,
+    };
     try {
-      this.afterAgent(run, attempt, res);
+      this.afterAgent(run, attempt, merged);
     } catch (e) {
       if (quiet) this.log(run, buffered, false);
       throw e;
     }
 
-    const parsed = parseReview(res.text);
-    if (!parsed) {
+    const parsedAll = results.map((r) => parseReview(r.text));
+    const bad = parsedAll.findIndex((x) => !x);
+    if (bad >= 0) {
       if (quiet) this.log(run, buffered, false);
-      throw new Error(`Ревьюер вернул ответ не в формате JSON { blocking, notes }:\n${res.text.slice(0, 500)}`);
+      throw new Error(`Ревьюер${n > 1 ? ` (часть ${bad + 1})` : ''} вернул ответ не в формате JSON { blocking, notes }:\n${results[bad].text.slice(0, 500)}`);
     }
+    const seen = new Set<string>();
+    const uniq = (items: ReviewItem[]) => items.filter((i) => {
+      const k = `${i.file ?? ''}:${i.line ?? ''}:${i.message}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const parsed = { blocking: uniq(parsedAll.flatMap((x) => x!.blocking)), notes: uniq(parsedAll.flatMap((x) => x!.notes)) };
     const review: ReviewResult = { at: new Date().toISOString(), ...parsed };
     run.reviews.push(review);
     this.emit({ type: 'review.result', runId: run.id, result: review });

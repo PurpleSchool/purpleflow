@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   BookText, Check, ChevronDown, Settings2, FileLock2, FileText, FlaskConical, FolderGit2, FolderOpen, FolderTree, GitBranch, GitPullRequest, Globe, KeyRound, Layers,
-  Lightbulb, Minus, MonitorPlay, PackageOpen, PencilLine, Play, Plus, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert, Workflow, X,
+  Lightbulb, Minus, MonitorPlay, PackageOpen, PencilLine, Play, Plus, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert, Workflow, X, Zap,
 } from 'lucide-react';
 import type { CommandIssue, ProjectCommands, ProjectConfig, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, Workspace } from '@psflow/core';
 import { Button, Input, TextArea, Topbar } from '../components/ui';
@@ -24,6 +24,8 @@ export interface LoadedProject {
   workspace: Workspace;
   visualNotes: string;
   envFiles: string[];
+  /** Быстрые тесты для промежуточных кругов; пусто — всегда полный набор. */
+  quickTest?: string;
 }
 
 export const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -41,6 +43,7 @@ export async function loadProject(dir: string): Promise<LoadedProject> {
       workspace: cfg.workspace ?? 'worktree',
       visualNotes: cfg.visualNotes ?? '',
       envFiles: cfg.envFiles ?? det.envFiles,
+      quickTest: cfg.quickTestCommand ?? '',
     };
   }
   const from = det.detectedFrom ? `по ${det.detectedFrom}` : '';
@@ -54,9 +57,9 @@ export async function loadProject(dir: string): Promise<LoadedProject> {
   };
 }
 
-export function saveLoaded(p: Pick<LoadedProject, 'cmds' | 'notes' | 'workspace' | 'visualNotes' | 'envFiles'> & { path: string }) {
+export function saveLoaded(p: Pick<LoadedProject, 'cmds' | 'notes' | 'workspace' | 'visualNotes' | 'envFiles' | 'quickTest'> & { path: string }) {
   return window.psflow.core.saveProjectConfig(p.path, {
-    setupCommand: p.cmds.setup, lintCommand: p.cmds.lint, testCommand: p.cmds.test, runCommand: p.cmds.run, appUrl: p.cmds.url,
+    setupCommand: p.cmds.setup, lintCommand: p.cmds.lint, testCommand: p.cmds.test, quickTestCommand: p.quickTest, runCommand: p.cmds.run, appUrl: p.cmds.url,
     visualNotes: p.visualNotes, envFiles: p.envFiles, workspace: p.workspace,
     notes: { setup: p.notes.setup, lint: p.notes.lint, test: p.notes.test, run: p.notes.run },
   });
@@ -518,6 +521,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
   const [notes, setNotes] = useState<Cmds>(p.notes);
   const [workspace, setWorkspace] = useState<Workspace>(p.workspace);
   const [visualNotes, setVisualNotes] = useState(p.visualNotes);
+  const [quickTest, setQuickTest] = useState(p.quickTest ?? '');
   const [envFiles, setEnvFiles] = useState(p.envFiles.join(', '));
   const [saved, setSavedState] = useState<'saved' | 'draft' | 'dirty'>(p.cfg ? 'saved' : 'draft');
   const [issues, setIssues] = useState<Record<string, CommandIssue[]>>({});
@@ -565,7 +569,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
     setSaving(true);
     setError(null);
     try {
-      await saveLoaded({ path: repo, cmds, notes, workspace, visualNotes, envFiles: envFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean) });
+      await saveLoaded({ path: repo, cmds, notes, workspace, visualNotes, quickTest, envFiles: envFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean) });
       setSaved('saved');
       onSaved();
     } catch (e) {
@@ -590,6 +594,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
         <CmdRow icon={<PackageOpen size={17} />} title="Подготовка" hint="Установка зависимостей" placeholder="не нужна" value={cmds.setup} note={notes.setup} onChange={(v) => edit('setup', v)} loading={aiBusy} issues={issues.setup} />
         <CmdRow icon={<ScanSearch size={17} />} title="Линтер" hint="Линтер и проверка типов" placeholder="не задан" value={cmds.lint} note={notes.lint} onChange={(v) => edit('lint', v)} loading={aiBusy} issues={issues.lint} />
         <CmdRow icon={<TestTubeDiagonal size={17} />} title="Тесты" hint="Все тесты, без watch-режима" placeholder="не заданы" value={cmds.test} note={notes.test} onChange={(v) => edit('test', v)} loading={aiBusy} issues={issues.test} />
+        <CmdRow icon={<Zap size={17} />} title="Быстрые тесты" hint="Необязательно. На каждом круге — они, полный набор — один раз перед приёмкой" placeholder="например: npm run test:unit (пусто — всегда полный набор)" value={quickTest} note="" onChange={(v) => { setQuickTest(v); setSaved('dirty'); }} loading={false} />
         <CmdRow icon={<MonitorPlay size={17} />} title="Запуск приложения" hint="Для визуальной проверки; {port} — свободный порт" placeholder="например: npm run dev -- --port {port}" value={cmds.run} note={notes.run} onChange={(v) => edit('run', v)} loading={aiBusy} issues={issues.run} />
         <CmdRow icon={<Globe size={17} />} title="Адрес" hint="Главная страница приложения" placeholder="http://localhost:{port}" value={cmds.url} note={notes.url} onChange={(v) => edit('url', v)} loading={aiBusy} />
         <div className="cmd-row">
