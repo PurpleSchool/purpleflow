@@ -210,6 +210,8 @@ export function RunScreen({ runId }: { runId: string }) {
   const testIdx = Math.min(run.tests.length - 1, attemptIdx < 0 ? run.tests.length - 1 : attemptIdx);
   const reviewIdx = Math.min(run.reviews.length - 1, attemptIdx < 0 ? run.reviews.length - 1 : attemptIdx);
   const clarifyQuestions = drawer === 'clarify' && run.clarify?.questions.length ? run.clarify : null;
+  // Идущая попытка стадии, у которой результат появляется только в конце: вместо прошлой попытки — заглушка.
+  const inProgress = Boolean(attempt?.status === 'running' && (drawer === 'tests' || drawer === 'review' || drawer === 'plan'));
   const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer] && !clarifyQuestions
     ? { title: LOG_TITLE[drawer]!, attempt: attempt.attempt, stage: drawer, live: attempt.status === 'running' }
     : undefined;
@@ -358,11 +360,12 @@ export function RunScreen({ runId }: { runId: string }) {
                       <Button tone="quiet" icon={<X size={18} />} title="Свернуть детали (Esc)" onClick={close} />
                     </header>
                     <div className="drawer-body">
-                      {showPlan && run.mode === 'bug' && run.repro && <ReproView run={run} kind="bug" />}
-                      {showPlan && <PlanView docs={docs} run={run} comments={lineComments} onComments={setLineComments} editable={gate === 'gate1'} />}
+                      {inProgress && <InProgress stage={drawer} attempt={attempt} />}
+                      {showPlan && !inProgress && run.mode === 'bug' && run.repro && <ReproView run={run} kind="bug" />}
+                      {showPlan && !inProgress && <PlanView docs={docs} run={run} comments={lineComments} onComments={setLineComments} editable={gate === 'gate1'} />}
                       {slice && attempt && <AgentOutput key={`${drawer}-${slice.attempt}`} runId={runId} slice={slice} attempt={attempt} />}
-                      {drawer === 'tests' && <TestsView run={run} idx={testIdx} />}
-                      {drawer === 'review' && <ReviewView run={run} idx={reviewIdx} />}
+                      {drawer === 'tests' && !inProgress && <TestsView run={run} idx={testIdx} />}
+                      {drawer === 'review' && !inProgress && <ReviewView run={run} idx={reviewIdx} />}
                       {drawer === 'visual' && <VisualView key={`visual-${attempt?.attempt ?? 0}`} run={run} runId={runId} attempt={attempt} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
                       {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
                       {clarifyQuestions && <ClarifyView run={run} runId={runId} waiting={run.next === 'gate0' && (run.status === 'waiting' || run.status === 'stopped')} onDone={close} />}
@@ -910,6 +913,30 @@ function PlanView({ docs, run, comments, onComments, editable }: { docs: ChangeD
           </article>
         )}
       </div>
+    </div>
+  );
+}
+
+const IN_PROGRESS: Partial<Record<StageId, { title: string; text: string }>> = {
+  plan: { title: 'Планировщик пишет план', text: 'Документы изменения появятся, когда он закончит.' },
+  tests: { title: 'Проверки идут', text: 'Линтер и тесты запущены — результат появится, когда они завершатся.' },
+  review: { title: 'Идёт ревью', text: 'Ревьюер читает изменения — замечания появятся, когда он закончит.' },
+};
+
+function InProgress({ stage, attempt }: { stage: StageId; attempt: StageAttempt }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const sec = Math.max(0, Math.round((now - Date.parse(attempt.startedAt)) / 1000));
+  const c = IN_PROGRESS[stage] ?? { title: 'Выполняется', text: 'Результат появится, когда стадия завершится.' };
+  return (
+    <div className="in-progress">
+      <span className="spinner big" />
+      <h3>{c.title} · попытка #{attempt.attempt}</h3>
+      <p>{c.text}</p>
+      <small>{sec < 60 ? `${sec} с` : `${Math.floor(sec / 60)} мин ${String(sec % 60).padStart(2, '0')} с`}</small>
     </div>
   );
 }

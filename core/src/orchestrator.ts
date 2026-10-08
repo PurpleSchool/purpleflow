@@ -2185,7 +2185,7 @@ export class Orchestrator {
 
   /**
    * Запуск агента роли: claude или codex — как выбрано в настройках на момент старта прогона.
-   * readOnly — только чтение (ревью); иначе агент правит файлы в рабочей копии прогона.
+   * readOnly — стадия не меняет файлы (уточнение, ревью): у claude это требование промпта, инструменты не ограничены; у codex — песочница read-only.
    */
   private async runRole(run: RunFile, role: Role, o: {
     prompt: string; systemPrompt?: string; openspec?: boolean; readOnly?: boolean; images?: string[]; outputSchema?: object;
@@ -2210,7 +2210,6 @@ export class Orchestrator {
       systemPrompt,
       model,
       addDirs: dirs.length ? dirs : undefined,
-      tools: o.readOnly ? ['Read', 'Glob', 'Grep'] : undefined,
       sessionId: o.sessionId,
       resume: o.resume,
     });
