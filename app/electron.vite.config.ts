@@ -23,7 +23,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
-    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src') } },
+    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src'), '@psflow/route': resolve(__dirname, '../core/src/route.ts') } },
     plugins: [react()],
     worker: { format: 'es' },
   },

@@ -1,0 +1,132 @@
+/* ——— Движение ——— */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes ping { 0% { transform: scale(0.9); opacity: 0.8; } 80%, 100% { transform: scale(1.25); opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+@media (max-width: 1280px) {
+  :root { --page-x: 24px; }
+  .newtask { grid-template-columns: 1fr; }
+  .newtask-aside { position: static; }
+  
+  .diff { grid-template-columns: 200px minmax(0, 1fr) 260px; }
+  .plan { grid-template-columns: 1fr; }
+  .tool { grid-template-columns: 10px 140px 1fr; }
+  .tool-manual { grid-column: 2 / -1; }
+}
+
+/* Компактные карточки стадий: подробности — только у текущей и выбранной */
+
+.newtask-aside { position: static; }
+.input { background: var(--bg-1); }
+
+/* ——— Инструменты: чистый список с разделителями ——— */
+.tools.bezel { background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; gap: 0; }
+.tool { background: transparent; border-radius: 0; padding: var(--s-5) var(--s-1); grid-template-columns: 8px 180px minmax(0, 1fr) 280px; }
+.tool + .tool { border-top: 1px solid var(--line); }
+.tool-led { width: 6px; height: 6px; }
+.tool-id strong { font-size: var(--fs-14); }
+.tool-id span { color: var(--text-4); }
+.tool-path { color: var(--text-3); }
+.tool-manual .input { background: transparent; box-shadow: none; height: 34px; font-size: 12px; }
+.tool-manual .input:hover { box-shadow: inset 0 0 0 1px var(--line); }
+.tool-manual .input:focus, .tool-manual .input:not(:placeholder-shown) { background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-2); }
+.tool-manual .input::placeholder { color: transparent; }
+.tool:hover .tool-manual .input::placeholder, .tool-manual .input:focus::placeholder { color: var(--text-4); }
+.tool-manual .btn { color: var(--text-4); }
+.tool:hover .tool-manual .btn { color: var(--text-2); }
+
+/* ——— Переключатель ——— */
+.switch { display: inline-flex; align-items: center; gap: var(--s-3); height: 34px; padding: 0 var(--s-4) 0 4px; border-radius: var(--r-pill); background: var(--bg-2); color: var(--text-2); font-size: var(--fs-13); font-weight: 500; flex: none; transition: background 0.3s var(--ease); }
+.switch i { position: relative; width: 44px; height: 26px; border-radius: var(--r-pill); background: var(--bg-5); box-shadow: inset 0 0 0 1px var(--line); transition: background 0.35s var(--ease); }
+.switch i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #d6d7dc; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45); transition: transform 0.4s var(--ease), background 0.3s var(--ease); }
+.switch.is-on i { background: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.switch.is-on i::after { transform: translateX(18px); background: #fff; }
+.switch.is-on { color: var(--text-1); }
+
+/* ——— Прозрачное окно ———
+   Фон окна даёт ОС (vibrancy / acrylic). Тонировка лёгкая, плашки тёмные
+   и полупрозрачные — рабочий стол и окна позади заметно просвечивают. */
+html[data-material='vibrancy'] body, html[data-material='acrylic'] body { background: transparent; }
+html[data-material='vibrancy'] .app, html[data-material='acrylic'] .app { background: rgba(8, 9, 11, 0.16); }
+html[data-material='vibrancy'], html[data-material='acrylic'] {
+  --bg-0: rgba(0, 0, 0, 0.38);
+  --bg-1: rgba(0, 0, 0, 0.26);
+  --bg-2: rgba(0, 0, 0, 0.2);
+  --bg-3: rgba(8, 9, 11, 0.4);
+  --bg-4: rgba(20, 21, 25, 0.5);
+  --bg-5: rgba(255, 255, 255, 0.09);
+}
+
+/* Терминал: xterm меряет родителя без padding — отступы у внешней обёртки */
+.term { display: flex; overflow: hidden; }
+.term-host { flex: 1; min-width: 0; min-height: 0; position: relative; }
+.term-host .xterm { height: 100%; }
+
+/* Выбор авторизации claude */
+
+.segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: var(--r-pill); background: var(--bg-1); flex: none; }
+.segmented button { height: 32px; padding: 0 var(--s-4); border-radius: var(--r-pill); color: var(--text-3); font-size: var(--fs-12); font-weight: 500; transition: background 0.3s var(--ease), color 0.3s var(--ease); }
+.segmented button:hover { color: var(--text-1); }
+.segmented button.is-on { background: var(--bg-5); color: var(--text-1); }
+
+/* ——— Анимации ———
+   Движение отвечает на действие: переключение раздела, открытие прогона,
+   смена стадии. Без бесконечных декоративных эффектов. */
+
+/* Пилюли: подсветка переезжает к выбранной */
+.pilltabs { position: relative; display: inline-flex; isolation: isolate; }
+.pill-indicator {
+  position: absolute; top: 4px; bottom: 4px; left: 0; z-index: -1; border-radius: var(--r-pill);
+  background: var(--bg-5); pointer-events: none;
+}
+.pill-indicator.is-ready { transition: transform 0.5s var(--ease), width 0.5s var(--ease), opacity 0.3s var(--ease); }
+.tab.is-on, html[data-material] .tab.is-on { background: transparent !important; box-shadow: none !important; }
+.settings-tabs { padding: 0 var(--page-x) var(--s-6); flex: none; }
+.settings-tabs .tabs { margin: 0; }
+.settings { padding-top: 0; }
+
+/* Смена экрана и вкладки */
+.screen-enter { height: 100%; animation: screenIn 0.5s var(--ease) both; }
+.tab-enter { animation: tabIn 0.42s var(--ease) both; }
+.tab-body > .tab-enter { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tab-body > .tab-enter > .scroll, .tab-body > .tab-enter > .empty, .tab-body > .tab-enter > .center { flex: 1; }
+@keyframes screenIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes tabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Открытие прогона: метрики и стадии появляются по очереди */
+
+.run-main { animation: cardIn 0.6s var(--ease) 0.08s both; }
+
+@keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(0.985); } to { opacity: 1; transform: none; } }
+
+/* Стадия стала текущей — короткая вспышка, чтобы глаз нашёл её */
+
+@keyframes stageOn {
+  0% { box-shadow: inset 0 0 0 1px rgba(178, 165, 245, 0.7), 0 0 0 0 rgba(138, 116, 238, 0.35); }
+  100% { box-shadow: inset 0 0 0 1px var(--line-2), 0 0 0 10px rgba(138, 116, 238, 0); }
+}
+
+@keyframes gateOn {
+  0% { box-shadow: inset 0 0 0 1px rgba(214, 173, 102, 0.75), 0 0 0 0 rgba(214, 173, 102, 0.3); }
+  100% { box-shadow: inset 0 0 0 1px var(--line-2), 0 0 0 10px rgba(214, 173, 102, 0); }
+}
+
+/* Обновившееся число въезжает снизу */
+.num-in { display: inline-block; animation: numIn 0.45s var(--ease) both; }
+@keyframes numIn { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
+
+/* Подсказки и баннеры — мягкое появление, кнопки — отклик на нажатие */
+.composer.is-open, .check, .banner, .gate-comment { animation: rise 0.4s var(--ease) both; }
+.btn { transition: background 0.3s var(--ease), color 0.3s var(--ease), transform 0.25s var(--ease), opacity 0.3s var(--ease), box-shadow 0.3s var(--ease); }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.97); transition-duration: 0.08s; }
+.switch i::after { transition: transform 0.45s var(--ease), background 0.3s var(--ease), width 0.2s var(--ease); }
+.switch:active i::after { width: 24px; }
+.switch.is-on:active i::after { transform: translateX(14px); }
+.role .input { margin-top: auto; }
+.role p { min-height: 0; }

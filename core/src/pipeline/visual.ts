@@ -1,0 +1,184 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { c, crlf } from '../agents/common.js';
+import { prependPath } from '../env.js';
+import { Git } from '../git.js';
+import { formatItem } from '../items.js';
+import { killGroup, run as runProc } from '../proc.js';
+import { Screencast, findChrome, waitForCdp } from '../screencast.js';
+import type { VisualResult, RunFile } from '../types.js';
+import { expandPorts, freePort, parseReview, parseShots, parseUnverified, portEnv, waitForUrl } from '../shared.js';
+import type { Orchestrator } from '../orchestrator.js';
+export function visualDir(h: Orchestrator, run: RunFile, attempt: number) : string {
+  return path.join(h.opts.dataDir, 'visual', run.id, String(attempt));
+}
+
+/**
+ * Визуальная проверка: поднять приложение в worktree на свободном порту, дать агенту
+ * браузер (Playwright CLI через обёртку pw — служебные файлы остаются вне репозитория),
+ * собрать скриншоты и вердикт { blocking, notes, shots }.
+ */
+export async function stageVisual(h: Orchestrator, run: RunFile) {
+  const tools = await h.tools(['claude']);
+  const attempt = h.begin(run, 'visual', run.models.visual || h.claudeModel(run.agents, run.models) || 'claude');
+  const dir = h.visualDir(run, attempt.attempt);
+  fs.mkdirSync(dir, { recursive: true });
+  const { port, url, command } = await expandPorts(run.appUrl!, run.runCommand!);
+  const serverGroup = `${run.id}:server`;
+  let cast: Screencast | null = null;
+  /** Хвост вывода команды запуска — показать человеку, если проверить не удалось (упал API и т. п.). */
+  let serverOut = '';
+
+  h.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
+  let exited: number | null | undefined;
+  const server = runProc(command, [], {
+    cwd: run.worktreePath,
+    env: { ...h.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
+    shell: true,
+    group: serverGroup,
+    onStdout: (t) => { serverOut = (serverOut + t).slice(-6000); h.log(run, c.dim(crlf(t)), false); },
+    onStderr: (t) => { serverOut = (serverOut + t).slice(-6000); h.log(run, c.dim(crlf(t)), false); },
+  });
+  void server.then((r) => { exited = r.code; });
+
+  try {
+    const ready = await waitForUrl(url, 120_000, () => exited !== undefined || h.stopping.has(run.id));
+    h.checkStop(run);
+    if (!ready) {
+      throw new Error(exited !== undefined
+        ? `Приложение завершилось с кодом ${exited}, не открыв ${url}. Проверьте команду запуска в командах проекта.`
+        : `За 2 минуты приложение не ответило на ${url}. Проверьте команду запуска и адрес ({port} подставляется автоматически).`);
+    }
+    h.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
+
+    // pw: обёртка над Playwright CLI с отдельной сессией и рабочей папкой для скриншотов.
+    const session = `psflow-${run.id.slice(0, 8)}`;
+    const isWin = process.platform === 'win32';
+    if (isWin) {
+      fs.writeFileSync(path.join(dir, 'pw.cmd'), `@echo off\r\ncd /d "${dir}"\r\nnpx -y @playwright/cli@latest -s=${session} %*\r\n`);
+    } else {
+      fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
+    }
+
+    // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
+    const live = await h.startLiveBrowser(run, dir, url, serverGroup, session);
+    cast = live?.cast ?? null;
+    const docs = await h.getChangeDocs(run.id);
+    const tg = await h.tools(['git']);
+    const changed = await new Git(tg.git, h.opts.env).changedFiles(run.worktreePath, h.diffBase(run));
+    const prompt = h.prompts.render('visual.md', {
+      url,
+      dir,
+      task: h.taskText(run),
+      attachments: h.attachmentsBlock(run),
+      proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
+      specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
+      files: changed.filter((f) => !f.startsWith('openspec/')).map((f) => `- ${f}`).join('\n') || '(нет)',
+      // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
+      notes: h.getProjectConfig(run.projectPath)?.visualNotes || run.visualNotes || '(нет — если нужен вход или данные, которых нет, верни "unverified")',
+    });
+    const res = await h.claude({
+      ...h.agentBase(run, tools.claude),
+      env: prependPath(h.opts.env, dir),
+      prompt,
+      systemPrompt: h.prompts.raw('visual.system.md') + h.modeRules('visual', run)
+        + (live ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.` : ''),
+      // Визуальная проверка всегда на claude (браузер через pw); модель исполнителя — только если он тоже claude.
+      model: run.models.visual || h.claudeModel(run.agents, run.models),
+      addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
+      // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
+      tools: ['Bash', 'Read', 'Glob', 'Grep'],
+    });
+    h.afterAgent(run, attempt, res);
+
+    const parsed = parseReview(res.text);
+    if (!parsed) throw new Error(`Визуальная проверка вернула ответ не в формате JSON:\n${res.text.slice(0, 400)}`);
+    const shotsRaw = parseShots(res.text);
+    const shots = shotsRaw
+      .map((x) => ({ file: path.isAbsolute(x.file) ? x.file : path.join(dir, x.file), caption: x.caption }))
+      .filter((x) => x.file.startsWith(dir) && fs.existsSync(x.file));
+    // Скриншоты, которые агент снял, но не перечислил, тоже показываем.
+    for (const f of fs.readdirSync(dir).filter((n) => /\.(png|jpe?g|webp)$/i.test(n)).sort()) {
+      const full = path.join(dir, f);
+      if (!shots.some((x) => x.file === full)) shots.push({ file: full, caption: f });
+    }
+    const unverified = parseUnverified(res.text);
+    if (unverified) {
+      // Окружение не дало проверить (не поднялся API, нет входа): исполнитель тут не поможет — идём дальше, решает человек.
+      const result: VisualResult = { at: new Date().toISOString(), url, blocking: [], notes: [...parsed.blocking, ...parsed.notes], shots, unverified, command, serverOutput: serverOut.trim() || undefined };
+      run.visuals = [...(run.visuals ?? []), result];
+      h.log(run, c.amber(`! визуально проверить не удалось: ${unverified}`) + '\n' + c.dim('Задача не возвращается исполнителю — проверьте сами во вкладке «Браузер». Тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.') + '\n');
+      h.end(run, attempt, 'done', `Не удалось проверить: ${unverified}`);
+      run.next = 'gate2';
+      h.save(run);
+      return;
+    }
+    const result: VisualResult = { at: new Date().toISOString(), url, blocking: parsed.blocking, notes: parsed.notes, shots, command, serverOutput: serverOut.trim() || undefined };
+    run.visuals = [...(run.visuals ?? []), result];
+    if (result.blocking.length) h.log(run, c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) + result.blocking.map((i) => `  • ${formatItem(i)}`).join('\n') + '\n');
+    h.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
+    h.end(run, attempt, result.blocking.length ? 'failed' : 'done',
+      result.blocking.length ? `Проблем: ${result.blocking.length}, скриншотов: ${shots.length}` : `Выглядит верно, скриншотов: ${shots.length}`);
+
+    if (!result.blocking.length) {
+      run.next = 'gate2';
+      h.save(run);
+      return;
+    }
+    run.feedback = {
+      source: 'review',
+      text: 'Визуальная проверка в браузере нашла проблемы. Исправь каждую; скриншоты можно открыть инструментом Read:\n'
+        + result.blocking.map((i) => `- ${formatItem(i)}`).join('\n')
+        + (shots.length ? '\n\nСкриншоты:\n' + shots.map((x) => `- ${x.file} — ${x.caption}`).join('\n') : ''),
+    };
+    h.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
+  } finally {
+    cast?.stop();
+    h.emit({ type: 'visual.frame', runId: run.id, frame: null });
+    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=psflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: h.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+    await killGroup(serverGroup);
+    // Профиль Chrome (десятки МБ) после проверки не нужен — скриншоты остаются.
+    fs.rmSync(path.join(dir, 'chrome-profile'), { recursive: true, force: true });
+  }
+}
+
+/**
+ * Chrome без окна с портом отладки в группе процессов сервера (гаснет вместе с ним), pw подключается к нему.
+ * null — Chrome не найден или не поднялся: агент откроет свой браузер через `pw open`, без трансляции.
+ */
+export async function startLiveBrowser(h: Orchestrator, run: RunFile, dir: string, url: string, group: string, session: string) : Promise<{ cast: Screencast } | null> {
+  const chrome = findChrome(h.opts.env);
+  if (!chrome) return null;
+  const port = await freePort();
+  void runProc(chrome, [
+    '--headless=new', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1',
+    `--user-data-dir=${path.join(dir, 'chrome-profile')}`, '--no-first-run', '--no-default-browser-check',
+    // Плотность как у Retina: в трансляции и на скриншотах текст чёткий, а не растянутый вдвое.
+    '--window-size=1440,900', '--force-device-scale-factor=2', url,
+  ], { cwd: dir, env: h.opts.env, group }).catch(() => undefined);
+  if (!(await waitForCdp(port))) {
+    h.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
+    return null;
+  }
+  const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], { cwd: dir, env: h.opts.env, timeoutMs: 120_000 });
+  if (att.code !== 0) {
+    h.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
+    return null;
+  }
+  const cast = new Screencast(port, (frame) => h.emit({ type: 'visual.frame', runId: run.id, frame }));
+  cast.start();
+  h.log(run, c.dim('Браузер агента транслируется во вкладку «Браузер».') + '\n');
+  return { cast };
+}
+
+/** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
+export function getVisualShot(h: Orchestrator, id: string, file: string) : string | null {
+  if (!fs.existsSync(file)) return null;
+  // Сравниваем реальные пути: каталог данных может быть ссылкой.
+  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const root = real(path.join(h.opts.dataDir, 'visual', id));
+  const full = real(file);
+  if (!full.startsWith(root + path.sep)) return null;
+  const ext = path.extname(full).slice(1).toLowerCase();
+  return `data:image/${ext === 'jpg' ? 'jpeg' : ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`;
+}

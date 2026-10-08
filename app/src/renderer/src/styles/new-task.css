@@ -1,0 +1,41 @@
+/* ——— Новая задача ——— */
+.newtask { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--gap); padding: 0 var(--page-x) var(--s-12); }
+.newtask-main { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.newtask-main > .grid-2 { padding: var(--s-6) var(--s-8) var(--s-8); background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--highlight); }
+.project { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-5) var(--s-6); border-radius: var(--r-card); text-align: left; background: var(--bg-3); box-shadow: var(--highlight); transition: background 0.3s var(--ease); }
+.project:hover { background: var(--bg-4); }
+.project-icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--bg-5); color: var(--text-2); }
+.project.is-ok .project-icon { color: var(--accent-hi); }
+.project.is-bad .project-icon { color: var(--err); }
+.project-text { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 3px; }
+.project-text strong { font-weight: 500; font-size: 15px; letter-spacing: -0.01em; }
+.project-text span { color: var(--text-3); font-size: var(--fs-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.inline-error { display: flex; gap: var(--s-2); align-items: center; margin: 0; padding: 0 var(--s-6); color: var(--err); font-size: var(--fs-13); }
+
+.task-sheet { position: relative; transition: box-shadow 0.35s var(--ease); }
+.task-sheet:focus-within { box-shadow: var(--highlight), 0 0 0 1px var(--accent-line); }
+.task-label { position: absolute; top: var(--s-6); left: var(--s-8); font-size: var(--fs-12); font-weight: 500; color: var(--text-3); }
+.task-input {
+  display: block; width: 100%; min-height: 300px; resize: vertical; border: 0; outline: 0; background: transparent;
+  padding: 60px var(--s-8) var(--s-5); font-size: 22px; font-weight: 300; line-height: 1.55; letter-spacing: -0.02em; color: var(--text-1);
+}
+.task-input::placeholder { color: var(--text-4); }
+.task-foot { display: flex; justify-content: space-between; align-items: center; padding: var(--s-4) var(--s-6) var(--s-5) var(--s-8); font-size: var(--fs-12); }
+.kbd-hint { display: flex; gap: 4px; }
+
+.newtask-aside { padding: var(--s-8); align-self: start; position: sticky; top: 0; background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--highlight); }
+.newtask-aside h3 { margin: 0 0 var(--s-6); font-size: var(--fs-16); font-weight: 400; letter-spacing: -0.015em; color: var(--text-1); }
+.route { list-style: none; margin: 0; padding: 0; position: relative; }
+.route::before { content: ''; position: absolute; left: 11px; top: 14px; bottom: 14px; width: 1px; background: var(--line-2); }
+.route li { position: relative; display: flex; gap: var(--s-4); padding: var(--s-2) 0 var(--s-3); }
+.route-n { position: relative; z-index: 1; flex: none; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; font: 500 11px/1 var(--font-code); color: var(--text-2); background: var(--bg-5); }
+.route li.is-gate .route-n { background: var(--bg-3); }
+.route li.is-gate .route-n::before, .route li.is-gate .route-n::after { content: ''; position: absolute; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--wait); }
+.route li.is-gate .route-n::before { left: 8px; }
+.route li.is-gate .route-n::after { right: 8px; }
+.route li div { display: flex; flex-direction: column; line-height: 1.45; gap: 2px; }
+.route strong { font-size: var(--fs-13); font-weight: 500; }
+.route span { font-size: var(--fs-12); color: var(--text-3); }
+.route-note { display: flex; gap: var(--s-3); align-items: flex-start; margin: var(--s-6) 0 0; padding: var(--s-4); border-radius: var(--r-l); background: var(--bg-2); font-size: var(--fs-12); color: var(--text-3); line-height: 1.6; }
+.route-note svg { margin-top: 3px; }

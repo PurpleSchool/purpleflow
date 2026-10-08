@@ -1,4 +1,8 @@
 import type { RunFile, StageAttempt, StageId } from '@psflow/core';
+import { currentRow, limitRow, stagesOf } from '@psflow/route';
+
+// Маршрут — общий с ядром (core/src/route.ts).
+export { acceptTarget, limitRow, plannedRoute } from '@psflow/route';
 
 export interface StageDef {
   id: StageId;
@@ -64,12 +68,7 @@ const OVERRIDE: Partial<Record<Mode, Partial<Record<StageId, Partial<StageDef>>>
 
 /** Стадии режима по порядку — как в ядре (core/src/modes.ts). */
 export function stagesFor(mode: Mode = 'task', visual = false): StageDef[] {
-  const v: StageId[] = visual ? ['visual'] : [];
-  const ids: StageId[] =
-    mode === 'quick' ? ['implement', 'tests', 'review', ...v, 'gate2', 'finish']
-    : mode === 'refactor' ? ['baseline', 'clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish']
-    : ['clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
-  return ids.map((id) => ({ ...BASE[id], ...OVERRIDE[mode]?.[id] }));
+  return stagesOf(mode, visual).map((id) => ({ ...BASE[id], ...OVERRIDE[mode]?.[id] }));
 }
 
 /** Стадии прогона. У прогонов до появления «Уточнения» этой строки нет — не показываем пустую. */
@@ -87,36 +86,7 @@ export const stageTitle = (run: Pick<RunFile, 'mode' | 'visual'>, id: StageId) =
 
 export type NodeState = 'idle' | 'active' | 'waiting' | 'done' | 'failed' | 'stopped' | 'stale';
 
-/**
- * Строка ганта для «попытки исчерпаны»: стадия, которая не пропустила дальше (ревью, проверки, реализация),
- * — там и решение человека. upTo — индекс попытки limit в run.attempts (по умолчанию — текущая).
- */
-export function limitRow(run: Pick<RunFile, 'attempts'>, upTo = run.attempts.length): StageId {
-  // Проверки и ревью могут идти параллельно: берём ту из стадий после последней реализации, что упала (ревью — приоритетнее).
-  let first: StageId | null = null;
-  let failed: StageId | null = null;
-  for (let i = upTo - 1; i >= 0; i--) {
-    const a = run.attempts[i];
-    if (a.stage === 'gate2' || a.stage === 'limit') { if (first) break; continue; }
-    if (a.stage === 'review' || a.stage === 'tests' || a.stage === 'visual' || a.stage === 'implement') {
-      first ??= a.stage;
-      if (a.status === 'failed' && (!failed || a.stage === 'review')) failed = a.stage;
-      if (a.stage === 'implement') break;
-    }
-  }
-  return failed ?? first ?? 'gate2';
-}
 
-/** Куда «Дальше как есть» с гейта исчерпанных попыток (как acceptTarget в ядре). */
-export function acceptTarget(run: Pick<RunFile, 'attempts' | 'visual'>): 'visual' | 'gate2' {
-  if (!run.visual) return 'gate2';
-  for (let i = run.attempts.length - 1; i >= 0; i--) {
-    const s = run.attempts[i].stage;
-    if (s === 'visual') return 'gate2';
-    if (s === 'review' || s === 'tests' || s === 'implement') return 'visual';
-  }
-  return 'gate2';
-}
 
 function order(run: RunFile, id: StageId): number {
   const ids = runStages(run).map((s) => s.id);
@@ -134,7 +104,7 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   const cur = order(run, run.next);
   const me = order(run, stage);
   // «Попытки исчерпаны» рисуется в строке стадии, которая не пропустила дальше, — там и показываем, что ждём человека.
-  const nextRow = run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next;
+  const nextRow = currentRow(run);
   if (stage === nextRow) {
     if (run.status === 'waiting') return 'waiting';
     if (run.status === 'running') return 'active';
@@ -150,25 +120,6 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   return 'done';
 }
 
-/**
- * Куда прогон пойдёт дальше: стадии после текущей строки — 'planned' (пройдёт) или 'skip' (пропустится).
- * Повторяет маршрут ядра: быстрая правка и разрешение конфликтов — без ревью и визуальной проверки,
- * слияние базовой ветки без конфликтов — сразу в PR.
- */
-export function plannedRoute(run: RunFile): Partial<Record<StageId, 'planned' | 'skip'>> {
-  if (run.status === 'finished' || run.status === 'cancelled') return {};
-  const ids = runStages(run).map((s) => s.id);
-  const cur = run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next;
-  const from = ids.indexOf(cur);
-  if (from < 0) return {};
-  const skip = new Set<StageId>();
-  if (!run.visual) skip.add('visual');
-  if (run.quickFix || run.roundFiles?.length) { skip.add('review'); skip.add('visual'); }
-  if (run.mergeOnly) { skip.add('review'); skip.add('visual'); skip.add('gate2'); }
-  const out: Partial<Record<StageId, 'planned' | 'skip'>> = {};
-  for (const id of ids.slice(from + 1)) out[id] = skip.has(id) ? 'skip' : 'planned';
-  return out;
-}
 
 export function attemptsOf(run: RunFile, stage: StageId): StageAttempt[] {
   return run.attempts.filter((a) => a.stage === stage);

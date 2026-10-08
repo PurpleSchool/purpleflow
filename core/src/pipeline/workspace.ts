@@ -1,0 +1,108 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { c } from '../agents/common.js';
+import { Git } from '../git.js';
+import { OpenSpec } from '../openspec.js';
+import { run as runProc } from '../proc.js';
+import { modeOf } from '../modes.js';
+import type { RunFile } from '../types.js';
+import type { Orchestrator } from '../orchestrator.js';
+/** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
+export function diffBase(h: Orchestrator, run: RunFile) : string {
+  return run.prRound && run.roundBase ? run.roundBase : run.baseCommit;
+}
+
+/** Рабочая копия прогона: worktree или новая ветка в проекте, OpenSpec, файлы окружения. Для очереди — в момент старта. */
+export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
+  const tools = await h.tools(['git', 'openspec']);
+  const git = new Git(tools.git, h.opts.env);
+  if (run.workspace === 'branch') {
+    // Чужие незакоммиченные правки попали бы в коммит прогона — поэтому только с чистой копией.
+    const dirty = await git.dirtyFiles(run.projectPath);
+    if (dirty.length) {
+      throw new Error(`В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`);
+    }
+    run.originalBranch = (await git.currentBranch(run.projectPath)) ?? undefined;
+    await git.checkoutNewBranch(run.projectPath, run.branch, run.baseCommit);
+  } else {
+    await git.addWorktree(run.projectPath, run.worktreePath, run.branch, run.baseCommit);
+  }
+  if (modeOf(run) !== 'quick') await new OpenSpec(tools.openspec, h.opts.env).ensureInit(run.worktreePath, 'init');
+  run.workspacePending = undefined;
+  h.save(run);
+  h.copyEnvFiles(run);
+  await h.cloneDeps(run).catch((e) => h.warn(run, `Не удалось скопировать зависимости — команда подготовки поставит их заново: ${(e as Error).message}`));
+  h.save(run);
+  h.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
+}
+
+/** Файлы окружения прогона: явный список или найденные в проекте (у прогонов без списка — из команд проекта). */
+export function envFilesOf(h: Orchestrator, run: RunFile) : string[] {
+  if (run.workspace === 'branch') return [];
+  return run.envFiles ?? h.getProjectConfig(run.projectPath)?.envFiles ?? [];
+}
+
+/** Скопировать .env-файлы проекта в worktree прогона (только недостающие; в режиме «ветка» они и так на месте). */
+export function copyEnvFiles(h: Orchestrator, run: RunFile) {
+  const files = h.envFilesOf(run);
+  const copied: string[] = [];
+  for (const rel of files) {
+    const from = path.join(run.projectPath, rel);
+    const to = path.join(run.worktreePath, rel);
+    if (path.relative(run.projectPath, from).startsWith('..') || !fs.existsSync(from) || fs.existsSync(to)) continue;
+    try {
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+      copied.push(rel);
+    } catch { /* нет доступа — проверки покажут, чего не хватает */ }
+  }
+  if (copied.length) h.log(run, c.dim(`файлы окружения скопированы в worktree: ${copied.join(', ')}`) + '\n');
+}
+
+/**
+ * Зависимости в worktree — копией node_modules из проекта через copy-on-write (APFS `cp -c`, Linux `--reflink`):
+ * почти мгновенно, места не занимает, и копия независимая — установка пакетов в worktree не трогает проект.
+ * Lock-файлы совпадают — установка пропускается; нет — команда подготовки доустановит поверх копии.
+ */
+export async function cloneDeps(h: Orchestrator, run: RunFile) {
+  if (run.workspace === 'branch' || process.platform === 'win32') return;
+  const found: string[] = [];
+  const walk = (rel: string, depth: number) => {
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(path.join(run.projectPath, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name === '.git' || e.name.startsWith('.next') || e.name === 'dist' || e.name === 'build') continue;
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.name === 'node_modules') found.push(child);
+      else if (depth < 3) walk(child, depth + 1);
+    }
+  };
+  walk('', 0);
+  if (!found.length) return;
+  const t0 = Date.now();
+  const cloned: string[] = [];
+  for (const rel of found) {
+    const to = path.join(run.worktreePath, rel);
+    if (fs.existsSync(to) || !fs.existsSync(path.dirname(to))) continue;
+    const args = process.platform === 'darwin' ? ['-cR', path.join(run.projectPath, rel), to] : ['-R', '--reflink=auto', path.join(run.projectPath, rel), to];
+    const r = await runProc('cp', args, { cwd: run.worktreePath, env: h.opts.env, timeoutMs: 5 * 60_000, group: run.id });
+    h.checkStop(run);
+    if (r.code === 0) cloned.push(rel);
+    else fs.rmSync(to, { recursive: true, force: true });
+  }
+  if (!cloned.length) return;
+  const locks = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock'];
+  const same = locks.every((f) => {
+    const a = path.join(run.projectPath, f);
+    const b = path.join(run.worktreePath, f);
+    if (!fs.existsSync(a) && !fs.existsSync(b)) return true;
+    try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; }
+  });
+  const sec = Math.round((Date.now() - t0) / 1000);
+  if (same) {
+    run.prepared = true;
+    h.log(run, c.dim(`зависимости скопированы из проекта (${cloned.join(', ')}, ${sec} с) — lock-файлы совпадают, установка пропущена`) + '\n');
+  } else {
+    h.log(run, c.dim(`зависимости скопированы из проекта (${sec} с); lock-файлы отличаются — команда подготовки доустановит`) + '\n');
+  }
+}

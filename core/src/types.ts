@@ -209,6 +209,8 @@ export interface RunFile {
   autopilot?: boolean;
   /** Файлы диффа по пунктам плана — для приёмки «по смыслу»; attempt — номер приёмки, к которой посчитано. */
   taskMap?: { attempt: number; groups: { title: string; files: string[] }[] };
+  /** Что пошло не так, но прогон не остановило (не скопировались зависимости, не откатились артефакты…) — видно в окне. */
+  warnings?: { at: string; text: string }[];
   /** План покрывает первую часть большой задачи; остальные — в разделе «Next Parts» proposal. */
   nextParts?: boolean;
   /** Автопилот уже дал одну попытку сверх лимита. */

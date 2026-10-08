@@ -1,0 +1,46 @@
+/* ——— Настройки: секции-карточки ——— */
+.settings { max-width: 1100px; padding: 0 var(--page-x) var(--s-12); display: flex; flex-direction: column; gap: var(--gap); }
+.panel { display: flex; flex-direction: column; gap: var(--s-6); padding: var(--s-8); background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--highlight); }
+.panel-head { display: flex; gap: var(--s-6); justify-content: space-between; align-items: flex-start; }
+.panel-head h2 { margin: 0; font-size: var(--fs-20); font-weight: 400; letter-spacing: -0.025em; }
+.panel-head p { margin: 8px 0 0; color: var(--text-3); font-size: var(--fs-13); max-width: 62ch; line-height: 1.6; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-5); }
+.grid-2.narrow { max-width: 560px; }
+.saved-key { display: inline-flex; gap: 5px; align-items: center; color: var(--ok); font-size: var(--fs-12); }
+
+.welcome { display: flex; gap: var(--s-6); align-items: flex-start; padding: var(--s-12) var(--page-x) var(--s-10); max-width: 1100px; }
+.welcome .mark { margin-top: 8px; }
+.welcome h1 { margin: 0; font-size: 46px; font-weight: 300; letter-spacing: -0.045em; line-height: 1.05; }
+.welcome p { margin: var(--s-4) 0 0; color: var(--text-2); max-width: 60ch; font-size: 15px; line-height: 1.65; }
+
+.tools { display: flex; flex-direction: column; gap: 6px; }
+.tools.bezel { background: none; box-shadow: none; border-radius: 0; }
+.tool { display: grid; grid-template-columns: 10px 170px 1fr 300px; gap: var(--s-5); align-items: center; padding: var(--s-4) var(--s-5); border-radius: var(--r-l); background: var(--bg-2); }
+.tool-led { width: 7px; height: 7px; border-radius: 50%; background: var(--text-4); }
+.tool.is-ok .tool-led { background: var(--ok); }
+.tool.is-bad .tool-led { background: var(--err); }
+.tool.is-loading .tool-led { animation: breathe 1s infinite; }
+.tool-id { display: flex; flex-direction: column; line-height: 1.35; gap: 2px; }
+.tool-id strong { font-weight: 500; font-size: var(--fs-13); }
+.tool-id span { font-size: 11.5px; }
+.tool-path { min-width: 0; color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-miss { color: var(--err); white-space: normal; font-family: var(--font-ui); font-size: var(--fs-12); line-height: 1.6; }
+.tool-miss code { color: var(--text-2); }
+.tool-manual { display: flex; gap: 6px; }
+.tool-manual .input { height: 36px; }
+
+.roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--gap); }
+.role, .role.bezel { position: relative; padding: var(--s-5); border-radius: var(--r-l); background: var(--bg-2); box-shadow: none; display: flex; flex-direction: column; gap: var(--s-2); }
+.role-head { display: flex; align-items: center; justify-content: space-between; }
+.role-head strong { font-weight: 500; }
+.role-agent { font: 450 11px/1 var(--font-code); color: var(--text-3); }
+.role-claude .role-agent::before, .role-codex .role-agent::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--accent); }
+.role-codex .role-agent::before { background: var(--text-2); }
+.role p { margin: 0 0 var(--s-3); color: var(--text-3); font-size: var(--fs-12); min-height: 2.8em; line-height: 1.55; }
+
+.checks { display: flex; flex-direction: column; gap: 6px; }
+.check { display: flex; gap: var(--s-4); padding: var(--s-4) var(--s-5); border-radius: var(--r-l); background: var(--bg-2); animation: rise 0.45s var(--ease); }
+.check > svg { margin-top: 1px; }
+.check.is-ok > svg { color: var(--ok); }
+.check.is-bad > svg { color: var(--err); }
+.check p { margin: 4px 0 0; color: var(--text-2); font-size: var(--fs-13); user-select: text; }

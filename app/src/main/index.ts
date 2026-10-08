@@ -192,29 +192,8 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
   win.on('closed', () => (win = null));
-  if (process.env.PSFLOW_CAPTURE) setupCapture(win);
-}
-
-/**
- * Dev-инструмент: PSFLOW_CAPTURE=out.png [PSFLOW_CAPTURE_JS="…"] [PSFLOW_CAPTURE_DELAY=ms] —
- * выполнить JS в окне, снять скриншот и выйти. Используется для визуальной проверки без ручного кликанья.
- */
-function setupCapture(w: BrowserWindow) {
-  w.webContents.once('did-finish-load', async () => {
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    await wait(Number(process.env.PSFLOW_CAPTURE_DELAY ?? 2500));
-    const shots = (process.env.PSFLOW_CAPTURE ?? '').split(',');
-    const scripts = (process.env.PSFLOW_CAPTURE_JS ?? '').split('|||');
-    for (let i = 0; i < shots.length; i++) {
-      if (scripts[i]) {
-        await w.webContents.executeJavaScript(scripts[i]).catch((e) => console.error('[capture]', e));
-        await wait(Number(process.env.PSFLOW_CAPTURE_STEP ?? 1500));
-      }
-      const img = await w.webContents.capturePage();
-      fs.writeFileSync(shots[i], img.toPNG());
-    }
-    if (!process.env.PSFLOW_CAPTURE_KEEP) app.quit();
-  });
+  // Захват скриншотов — инструмент разработки, в собранном приложении не подключается.
+  if (process.env.PSFLOW_CAPTURE && !app.isPackaged) void import('./dev-capture').then((m) => m.setupCapture(win!));
 }
 
 ipcMain.handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));

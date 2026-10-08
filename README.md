@@ -210,6 +210,15 @@ CLI выбран вместо Playwright MCP ради экономии токе�
 
 Ядро (`core/src/orchestrator.ts`) не знает об Electron и общается только событиями и командами — из него можно собрать CLI (`core/scripts/e2e.ts` — пример такого headless-клиента).
 
+Устройство ядра:
+- `orchestrator.ts` — команды, очередь, цикл `drive`, гейты, восстановление после перезапуска; стадии и сервисы — тонкими обёртками над модулями ниже.
+- `route.ts` — маршрут прогона, одна правда для ядра и окна (окно импортирует его как `@psflow/route`): куда после проверок и ревью, что пропускается в каком круге, где «попытки исчерпаны», куда «Дальше как есть».
+- `pipeline/` — стадии и сервисы: `plan`, `implement`, `checks` (проверки, повтор нестабильных, сверка с исходным кодом), `review` (ревью, второй проход, сводка, карта по плану), `visual`, `finish`, `pr`, `projects` (проекты, знания, проверка окружения), `workspace` (worktree, зависимости, env-файлы).
+- `shared.ts` — константы и разбор ответов агентов; `json.ts` — единый разбор JSON из ответа; `items.ts` — форматирование замечаний; `reviewdiff.ts` — дифф для ревью.
+- Служебные вызовы claude — через `service()`, агенты стадий — через `claude()`/`codex()`: в тестах их подменяют (`CoreOptions.runners`). `pipeline.test.ts` гоняет конвейер целиком на временном репозитории с фейковыми агентами — за секунды.
+
+В окне: экран прогона — `screens/Run.tsx` с компонентами в `screens/run/` (стадии, шапка, гейт, `useRunGate`); стили — `styles/*.css` по разделам, порядок импорта в `app.css` важен.
+
 - События: `stage.started`, `agent.output` (поток для лога), `tests.result`, `review.result`, `gate.waiting`, `stage.failed`, `run.finished` и служебное `run.updated` (снимок run.json для перерисовки UI).
 - Команды: `run.start`, `gate.approve`, `gate.reject(comment, lineComments[])`, `gate.cancel`, `run.stop`, `run.resume`.
 
