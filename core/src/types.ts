@@ -338,6 +338,8 @@ export type CoreCommand =
   | { type: 'run.stop'; runId: string }
   /** Не ждать реализации и проверок: остановить текущую попытку и перейти к ревью (или приёмке). */
   | { type: 'run.skipChecks'; runId: string }
+  /** Ещё раз визуальная проверка (например, после правки команды запуска) — с приёмки или остановленного прогона. */
+  | { type: 'run.rerunVisual'; runId: string }
   | { type: 'run.merge'; runId: string; target: string }
   /** Отправить ветку на GitHub и открыть Pull Request в base. */
   | { type: 'run.pr'; runId: string; base: string }

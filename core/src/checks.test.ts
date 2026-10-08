@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { errorCount, failedTestNames } from './orchestrator.js';
+import { errorCount, failedTestNames, portEnv } from './orchestrator.js';
 
 test('errorCount: ESLint, суммирует несколько пакетов монорепо', () => {
   const out = 'apps/web ...\n✖ 3 problems (2 errors, 1 warning)\n\napps/api ...\n\x1b[31m✖ 191 problems (191 errors, 0 warnings)\x1b[39m';
@@ -74,4 +74,10 @@ test('failedTestNames: Vitest, pytest, go, node:test; нераспознанны
   assert.deepEqual(failedTestNames('--- FAIL: TestSum (0.00s)'), ['TestSum']);
   assert.deepEqual(failedTestNames('not ok 3 - padLeft keeps width'), ['padLeft keeps width']);
   assert.equal(failedTestNames('Error: something broke'), null);
+});
+
+test('portEnv: PORT только если в команде запуска нет {port}', () => {
+  assert.deepEqual(portEnv('npm run dev', 5173), { PORT: '5173' });
+  assert.deepEqual(portEnv('(cd api && npm run start:dev) & (cd web && next dev -p {port})', 5173), {});
+  assert.deepEqual(portEnv('vite --port {port:web}', 5173), {});
 });

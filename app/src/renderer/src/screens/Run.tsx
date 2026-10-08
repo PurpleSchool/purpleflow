@@ -770,6 +770,21 @@ function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: string;
     return () => { alive = false; };
   }, [runId, v]);
   const slice: LogSlice | null = attempt ? { title: 'Визуальная проверка', attempt: attempt.attempt, stage: 'visual', live: running } : null;
+  // Повторить можно последнюю проверку, пока прогон ждёт решения или остановлен (например, после правки команды запуска).
+  const canRerun = !running && idx === (run.visuals?.length ?? 0) - 1 && (run.status === 'waiting' || run.status === 'stopped');
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunErr, setRerunErr] = useState<string | null>(null);
+  const rerun = async () => {
+    setRerunning(true);
+    setRerunErr(null);
+    try {
+      await window.psflow.core.dispatch({ type: 'run.rerunVisual', runId });
+    } catch (e) {
+      setRerunErr(cleanErr(e));
+    } finally {
+      setRerunning(false);
+    }
+  };
   if (!v && !slice) return <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">Приложение запустится после ревью.</Empty>;
   const items = v ? [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [];
   const shown = v ? tab : 'log';
@@ -813,6 +828,13 @@ function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: string;
         ) : null}
         {v.unverified && v.serverOutput && /error|Missing script|EADDRINUSE|ECONNREFUSED/i.test(v.serverOutput) && (
           <button className="link server-link" onClick={() => setTab('server')}>В выводе сервера есть ошибки — открыть</button>
+        )}
+        {canRerun && (
+          <div className="visual-rerun">
+            <Button tone="ghost" icon={<RotateCcw size={14} />} busy={rerunning} onClick={() => void rerun()}>Проверить ещё раз</Button>
+            <span className="muted">Команда запуска и адрес — из настроек проекта: если вы их поправили, проверка возьмёт новые.</span>
+            {rerunErr && <span className="actionbar-error">{rerunErr}</span>}
+          </div>
         )}
         {!v.unverified && (
           <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>

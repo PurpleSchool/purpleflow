@@ -1654,3 +1654,5 @@ button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
 .origin-tag { display: inline-block; margin: 0 6px 4px 0; padding: 1px 7px; border-radius: var(--r-pill); font-size: 11px; line-height: 16px; background: var(--bg-4); color: var(--text-2); vertical-align: middle; }
 .origin-tag.o-unfixed { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
 .origin-tag.o-from_fix { color: var(--wait); background: color-mix(in srgb, var(--wait) 14%, transparent); }
+.visual-rerun { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; margin: var(--s-3) 0; }
+.visual-rerun .muted { font-size: var(--fs-13); }

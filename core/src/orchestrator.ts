@@ -123,6 +123,9 @@ export class Orchestrator {
       case 'run.skipChecks':
         await this.skipChecks(cmd.runId);
         return { runId: cmd.runId };
+      case 'run.rerunVisual':
+        await this.rerunVisual(cmd.runId);
+        return { runId: cmd.runId };
       case 'run.merge':
         await this.merge(cmd.runId, cmd.target);
         return { runId: cmd.runId };
@@ -845,7 +848,7 @@ export class Orchestrator {
     this.setPreview(id, { status: 'starting', url, command });
     const server = runProc(command, [], {
       cwd: r.worktreePath,
-      env: { ...this.opts.env, PORT: String(port), BROWSER: 'none' },
+      env: { ...this.opts.env, ...portEnv(runCommand, port), BROWSER: 'none' },
       shell: true,
       group,
       onStdout: tail,
@@ -929,6 +932,31 @@ export class Orchestrator {
       this.save(r);
       this.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message });
     }
+  }
+
+  /** Повторить визуальную проверку: команда запуска и URL берутся из настроек проекта — их могли поправить. */
+  private async rerunVisual(id: string) {
+    if (this.driving.has(id)) throw new Error('Прогон сейчас работает — дождитесь решения или остановите его');
+    const r = this.mustLoad(id);
+    if (r.status === 'finished' || r.status === 'cancelled') throw new Error('Прогон уже завершён');
+    if (!r.attempts.some((a) => a.stage === 'implement' && a.status === 'done')) throw new Error('Реализации ещё не было — проверять нечего');
+    const cfg = this.getProjectConfig(r.projectPath);
+    const runCommand = cfg?.runCommand?.trim() || r.runCommand;
+    const appUrl = cfg?.appUrl?.trim() || r.appUrl;
+    if (!runCommand || !appUrl) throw new Error('Нет команды запуска и адреса приложения — задайте их в настройках проекта');
+    await this.stopPreview(id);
+    await this.ensureOnBranch(r);
+    r.runCommand = runCommand;
+    r.appUrl = appUrl;
+    r.visual = true;
+    const now = new Date().toISOString();
+    for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'done', endedAt: now, summary: a.summary ?? 'Перезапуск визуальной проверки' });
+    this.log(r, c.violet('↻ визуальная проверка заново') + '\n');
+    r.message = undefined;
+    r.next = 'visual';
+    r.status = 'running';
+    this.save(r);
+    void this.drive(r);
   }
 
   /** Человек решил не ждать: текущая реализация или проверки останавливаются, проверки считаются пропущенными. */
@@ -1872,7 +1900,7 @@ export class Orchestrator {
     let exited: number | null | undefined;
     const server = runProc(command, [], {
       cwd: run.worktreePath,
-      env: { ...this.opts.env, PORT: String(port), BROWSER: 'none', CI: '1' },
+      env: { ...this.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
       shell: true,
       group: serverGroup,
       onStdout: (t) => { serverOut = (serverOut + t).slice(-6000); this.log(run, c.dim(crlf(t)), false); },
@@ -2511,6 +2539,14 @@ export function errorCount(output: string): number | null {
   if (goFails) return goFails.length;
   const lines = text.split('\n').filter((l) => /\berror\b/i.test(l)).length;
   return lines || null;
+}
+
+/**
+ * PORT для команды запуска — только если в ней нет {port}: иначе порт уже передан нужному процессу явно,
+ * а общий PORT подхватили бы все процессы команды (например, API вместе с фронтом) и столкнулись на одном порту.
+ */
+export function portEnv(runCommand: string, port: number): Record<string, string> {
+  return /\{port(:[\w-]+)?\}/.test(runCommand) ? {} : { PORT: String(port) };
 }
 
 /**
