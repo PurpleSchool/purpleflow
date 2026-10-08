@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { errorCount } from './orchestrator.js';
+import { errorCount, failedTestNames } from './orchestrator.js';
 
 test('errorCount: ESLint, суммирует несколько пакетов монорепо', () => {
   const out = 'apps/web ...\n✖ 3 problems (2 errors, 1 warning)\n\napps/api ...\n\x1b[31m✖ 191 problems (191 errors, 0 warnings)\x1b[39m';
@@ -53,4 +53,25 @@ test('вложения: изображения и небольшие текст�
   assert.equal(readSmallText(txt), '# Требования\nфункция padLeft');
   assert.equal(readSmallText(bin), null);
   assert.equal(readSmallText(big), null);
+});
+
+test('failedTestNames: Jest — имена из «●», без дублей и Console', () => {
+  const out = [
+    ' FAIL  test/carousel.e2e-spec.ts',
+    '  ● Carousel (e2e) › POST /slide/:index/image › отклоняет загрузку',
+    '  ● Console',
+    'Summary of all failing tests',
+    ' FAIL  ./carousel.e2e-spec.ts',
+    '\x1b[1m  ● Carousel (e2e) › POST /slide/:index/image › отклоняет загрузку\x1b[22m',
+    'Tests:       1 failed, 520 passed, 521 total',
+  ].join('\n');
+  assert.deepEqual(failedTestNames(out), ['Carousel (e2e) › POST /slide/:index/image › отклоняет загрузку']);
+});
+
+test('failedTestNames: Vitest, pytest, go, node:test; нераспознанный вывод — null', () => {
+  assert.deepEqual(failedTestNames(' FAIL  src/a.test.ts > sum > adds 12ms\n × src/b.test.ts > x > y'), ['src/a.test.ts > sum > adds', 'src/b.test.ts > x > y']);
+  assert.deepEqual(failedTestNames('FAILED tests/test_a.py::test_one - assert 1 == 2'), ['tests/test_a.py::test_one']);
+  assert.deepEqual(failedTestNames('--- FAIL: TestSum (0.00s)'), ['TestSum']);
+  assert.deepEqual(failedTestNames('not ok 3 - padLeft keeps width'), ['padLeft keeps width']);
+  assert.equal(failedTestNames('Error: something broke'), null);
 });

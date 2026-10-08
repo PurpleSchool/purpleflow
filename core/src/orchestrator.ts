@@ -120,6 +120,9 @@ export class Orchestrator {
       case 'run.stop':
         await this.stop(cmd.runId);
         return { runId: cmd.runId };
+      case 'run.skipChecks':
+        await this.skipChecks(cmd.runId);
+        return { runId: cmd.runId };
       case 'run.merge':
         await this.merge(cmd.runId, cmd.target);
         return { runId: cmd.runId };
@@ -155,6 +158,13 @@ export class Orchestrator {
       if (s.status !== 'running' || s.missing) continue;
       const r = this.store.load(s.id);
       if (!r) continue;
+      if (r.baseProbeStash) {
+        // Приложение закрылось во время проверки тестов на исходном коде — возвращаем изменения прогона из stash.
+        const sha = r.baseProbeStash;
+        await this.tools(['git']).then((t) => new Git(t.git, this.opts.env).restoreStash(r.worktreePath, sha))
+          .then(() => { r.baseProbeStash = undefined; })
+          .catch(() => { r.message = `Изменения прогона остались в git stash (${sha.slice(0, 8)}) — верните их: git stash apply ${sha.slice(0, 8)}`; });
+      }
       for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
       // Оборванная реализация — не вина исполнителя: попытку возвращаем.
       if (r.next === 'implement' && r.implAttemptsUsed > 0) r.implAttemptsUsed--;
@@ -342,7 +352,7 @@ export class Orchestrator {
     if (impl) parts.push(`## Что сделано\n\n${impl.slice(0, 4000)}`);
     if (docs?.proposal) parts.push(`## План (OpenSpec \`${r.changeId}\`)\n\n${docs.proposal.replace(/^#\s+.*\n+/, '').slice(0, 4000)}`);
     if (lastTest?.checks?.length) {
-      parts.push(`## Проверки\n\n${lastTest.checks.map((x) => `- ${x.kind === 'lint' ? 'Линтер' : 'Тесты'}: ${x.passed ? '✅' : x.preexisting ? '⚠️ красные и до задачи, новых ошибок нет' : '❌'} \`${x.command}\``).join('\n')}`);
+      parts.push(`## Проверки\n\n${lastTest.checks.map((x) => `- ${x.kind === 'lint' ? 'Линтер' : 'Тесты'}: ${x.unstable ? '⚠️ нестабильные, не из‑за задачи' : x.passed ? '✅' : x.preexisting ? '⚠️ красные и до задачи, новых ошибок нет' : '❌'} \`${x.command}\``).join('\n')}`);
     }
     if (review) {
       const notes = review.notes.map((n) => `- ${n.file ? `\`${n.file}${n.line ? ':' + n.line : ''}\` — ` : ''}${n.message}`).join('\n');
@@ -921,6 +931,32 @@ export class Orchestrator {
     }
   }
 
+  /** Человек решил не ждать: текущая реализация или проверки останавливаются, проверки считаются пропущенными. */
+  private async skipChecks(id: string) {
+    const before = this.mustLoad(id);
+    if (before.next !== 'implement' && before.next !== 'tests' && before.next !== 'limit') throw new Error('Пропустить проверки можно только на реализации или проверках');
+    if (!before.attempts.some((a) => a.stage === 'implement' && a.status === 'done')) throw new Error('Реализация ещё ни разу не завершилась — проверять нечего');
+    if (this.driving.has(id)) {
+      await this.stop(id);
+      for (let i = 0; i < 100 && this.driving.has(id); i++) await new Promise((r) => setTimeout(r, 200));
+      if (this.driving.has(id)) throw new Error('Не удалось остановить текущую стадию');
+    }
+    const r = this.mustLoad(id);
+    const now = new Date().toISOString();
+    for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: now });
+    const n = r.attempts.filter((a) => a.stage === 'tests').length + 1;
+    r.attempts.push({ stage: 'tests', attempt: n, startedAt: now, endedAt: now, status: 'done', summary: 'Пропущены человеком' });
+    r.tests.push({ at: now, command: '', passed: true, exitCode: 0, durationMs: 0, output: 'Проверки пропущены человеком.', checks: [] });
+    this.log(r, c.amber('↷ проверки пропущены человеком — дальше ревью') + '\n');
+    r.feedback = undefined;
+    r.message = undefined;
+    r.mergeOnly = undefined;
+    r.next = await this.reviewOrAccept(r);
+    r.status = 'running';
+    this.save(r);
+    void this.drive(r);
+  }
+
   private async decide(id: string, decision: 'approve' | 'reject' | 'cancel' | 'accept' | 'fix', comment?: string, lineComments?: LineComment[]) {
     const r = this.mustLoad(id);
     // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
@@ -1218,7 +1254,7 @@ export class Orchestrator {
       .map((g) => `- человек (${g.gate === 'gate1' ? 'план' : 'приёмка'}): ${g.comment ?? ''}${g.lineComments?.length ? ' ' + g.lineComments.map((l) => `[${l.file}:${l.line}] ${l.text}`).join('; ') : ''}`);
     const review = run.reviews.filter((r) => r.at >= since).flatMap((r) => [...r.blocking, ...r.notes]).slice(0, 12).map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
     const visual = (run.visuals ?? []).flatMap((v) => [...(v.unverified ? [`- визуальная проверка не смогла проверить: ${v.unverified}`] : []), ...v.blocking.map((b) => `- визуальная проверка: ${b.message}`)]);
-    const failed = run.tests.filter((t) => !t.passed).slice(0, 3).map((t) => `- проверки упали: ${(t.checks ?? []).filter((x) => !x.passed && !x.preexisting).map((x) => x.command).join(', ')}`);
+    const failed = run.tests.filter((t) => !t.passed).slice(0, 3).map((t) => `- проверки упали: ${(t.checks ?? []).filter((x) => !x.passed && !x.preexisting && !x.unstable).map((x) => x.command).join(', ')}`);
     const digest = [...prItems, ...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
     if (!digest.trim()) return;
     const known = this.knowledgeOf(run.projectPath).lessons ?? [];
@@ -1405,23 +1441,7 @@ export class Orchestrator {
     if (run.lintCommand) plan.push({ kind: 'lint', command: run.lintCommand });
     if (run.testCommand) plan.push({ kind: 'test', command: run.testCommand });
     const checks: CheckResult[] = [];
-    for (const p of plan) {
-      this.log(run, c.sky(`$ ${p.command}`) + c.dim(`  # ${CHECK_NAME[p.kind]}`) + '\n');
-      const r = await this.shell(run, p.command, s.testTimeoutMin);
-      this.checkStop(run);
-      const output = (r.stdout + (r.stderr ? '\n' + r.stderr : '')).trim();
-      const check: CheckResult = {
-        kind: p.kind,
-        command: p.command,
-        passed: r.code === 0 && !r.timedOut && !r.spawnError,
-        exitCode: r.code,
-        durationMs: r.durationMs,
-        output: r.spawnError ? `Не удалось запустить: ${r.spawnError}` : output.length > MAX_TEST_OUTPUT ? '…\n' + output.slice(-MAX_TEST_OUTPUT) : output,
-        timedOut: r.timedOut || undefined,
-      };
-      checks.push(check);
-      this.log(run, (check.passed ? c.mint(`✓ ${CHECK_NAME[p.kind]}: ok`) : c.coral(`✗ ${CHECK_NAME[p.kind]}: код ${check.exitCode}${check.timedOut ? ', таймаут' : ''}`)) + '\n');
-    }
+    for (const p of plan) checks.push(await this.runCheck(run, p.kind, p.command, s.testTimeoutMin));
     const failed = checks.filter((x) => !x.passed);
     const result: TestResult = checks.length
       ? {
@@ -1437,6 +1457,75 @@ export class Orchestrator {
       : { at: new Date().toISOString(), command: '', passed: true, exitCode: 0, durationMs: 0, output: 'Команды линтера и тестов не заданы — проверки пропущены.', checks: [] };
     if (!checks.length) this.log(run, c.amber(result.output) + '\n');
     return { result, failed };
+  }
+
+  private async runCheck(run: RunFile, kind: CheckResult['kind'], command: string, timeoutMin: number, note = ''): Promise<CheckResult> {
+    this.log(run, c.sky(`$ ${command}`) + c.dim(`  # ${CHECK_NAME[kind]}${note ? `, ${note}` : ''}`) + '\n');
+    const r = await this.shell(run, command, timeoutMin);
+    this.checkStop(run);
+    const output = (r.stdout + (r.stderr ? '\n' + r.stderr : '')).trim();
+    const check: CheckResult = {
+      kind,
+      command,
+      passed: r.code === 0 && !r.timedOut && !r.spawnError,
+      exitCode: r.code,
+      durationMs: r.durationMs,
+      output: r.spawnError ? `Не удалось запустить: ${r.spawnError}` : output.length > MAX_TEST_OUTPUT ? '…\n' + output.slice(-MAX_TEST_OUTPUT) : output,
+      timedOut: r.timedOut || undefined,
+    };
+    this.log(run, (check.passed ? c.mint(`✓ ${CHECK_NAME[kind]}: ok`) : c.coral(`✗ ${CHECK_NAME[kind]}: код ${check.exitCode}${check.timedOut ? ', таймаут' : ''}`)) + '\n');
+    return check;
+  }
+
+  /**
+   * Красные тесты — это задача или нестабильность проекта? Повторяем их один раз; если падают те же тесты —
+   * запускаем на исходном коде (изменения прогона на это время в stash). Не из‑за задачи — пометка unstable,
+   * иначе — результат повтора (он свежее) для исполнителя.
+   */
+  private async probeTests(run: RunFile, check: CheckResult): Promise<CheckResult> {
+    const s = this.opts.getSettings();
+    const first = failedTestNames(check.output);
+    this.log(run, c.amber('↻ тесты красные — повторяю один раз, чтобы отличить нестабильный тест от настоящей ошибки') + '\n');
+    const retry = await this.runCheck(run, 'test', check.command, s.testTimeoutMin, 'повтор');
+    if (retry.passed) {
+      this.log(run, c.amber(`! при повторе тесты прошли — нестабильные${first?.length ? `: ${first.join('; ')}` : ''}. Не блокирует, решение — на приёмке`) + '\n');
+      return { ...check, unstable: { reason: 'retry', tests: first ?? [] } };
+    }
+    if (retry.timedOut) return retry;
+    const second = failedTestNames(retry.output);
+    if (!first?.length || !second?.length) return retry;
+    const stable = second.filter((t) => first.includes(t));
+    if (!stable.length) {
+      this.log(run, c.amber(`! при повторе упали другие тесты (${first.join('; ')} → ${second.join('; ')}) — нестабильные. Не блокирует, решение — на приёмке`) + '\n');
+      return { ...retry, unstable: { reason: 'differs', tests: [...new Set([...first, ...second])] } };
+    }
+
+    // Те же тесты падают дважды: проверяем их на исходном коде.
+    const git = new Git((await this.tools(['git'])).git, this.opts.env);
+    const keep = [RUN_JSON_GLOB, ...this.envFilesOf(run)];
+    const stash = await git.stashExcept(run.worktreePath, `PurpleFlow ${run.id}: проверка тестов на исходном коде`, keep).catch((e) => {
+      this.log(run, c.dim(`Не удалось спрятать изменения для проверки на исходном коде: ${(e as Error).message}`) + '\n');
+      return undefined;
+    });
+    if (stash === undefined) return retry;
+    run.baseProbeStash = stash ?? undefined;
+    this.save(run);
+    let base: CheckResult | null = null;
+    try {
+      base = await this.runCheck(run, 'test', check.command, s.testTimeoutMin, 'на исходном коде, без изменений задачи');
+    } finally {
+      if (stash) await git.restoreStash(run.worktreePath, stash);
+      run.baseProbeStash = undefined;
+      this.save(run);
+    }
+    const onBase = base.passed ? [] : failedTestNames(base.output) ?? [];
+    const inherited = stable.filter((t) => onBase.includes(t));
+    if (inherited.length === stable.length) {
+      this.log(run, c.amber(`! эти тесты падают и без изменений задачи: ${stable.join('; ')}. Не блокирует, решение — на приёмке`) + '\n');
+      return { ...retry, unstable: { reason: 'base', tests: stable } };
+    }
+    this.log(run, c.dim(`На исходном коде ${base.passed ? 'тесты зелёные' : `падают другие тесты`} — ошибка из‑за изменений задачи.`) + '\n');
+    return retry;
   }
 
   private checksFeedback(failed: CheckResult[], base?: CheckResult[]): string {
@@ -1500,14 +1589,21 @@ export class Orchestrator {
     }
 
     const raw = await this.runChecks(run);
-    const { result, failed } = this.compareWithBase(run, raw.result);
+    let { result, failed } = this.compareWithBase(run, raw.result);
+    const red = failed.find((x) => x.kind === 'test' && !x.timedOut);
+    if (red) {
+      const probed = await this.probeTests(run, red);
+      const checks = (result.checks ?? []).map((x) => (x === red ? probed : x));
+      failed = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
+      result = { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0, output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') };
+    }
     run.tests.push(result);
     this.emit({ type: 'tests.result', runId: run.id, result });
     const checks = result.checks ?? [];
     const summary = !checks.length ? 'Пропущены'
       : failed.length ? `Красные: ${failed.map((x) => CHECK_NAME[x.kind]).join(' и ')}`
-      : checks.some((x) => x.preexisting)
-        ? checks.map((x) => `${CHECK_NAME[x.kind]}${x.preexisting ? ' — как до задачи' : ' — ok'}`).join(', ').replace(/^./, (m) => m.toUpperCase())
+      : checks.some((x) => x.preexisting || x.unstable)
+        ? checks.map((x) => `${CHECK_NAME[x.kind]}${x.preexisting ? ' — как до задачи' : x.unstable ? ' — нестабильные' : ' — ok'}`).join(', ').replace(/^./, (m) => m.toUpperCase())
         : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
     this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
 
@@ -2344,6 +2440,22 @@ const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
  * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
  * null — если вывод не распознан.
  */
+/** Имена упавших тестов из вывода раннера (Jest, Vitest, pytest, go test, node:test); null — не распознали. */
+export function failedTestNames(output: string): string[] | null {
+  // eslint-disable-next-line no-control-regex
+  const text = output.replace(/\x1b\[[0-9;]*m/g, '');
+  const names = new Set<string>();
+  for (const l of text.split('\n')) {
+    const m = l.match(/^\s*● (.+?)\s*$/) // Jest
+      ?? l.match(/^\s*(?:FAIL|×|✗)\s+(\S+\s+>\s+.+?)(?:\s+\d+m?s)?\s*$/) // Vitest
+      ?? l.match(/^FAILED (\S+)/) // pytest
+      ?? l.match(/^\s*--- FAIL: (\S+)/) // go test
+      ?? l.match(/^\s*not ok \d+ - (.+?)\s*$/); // node:test, TAP
+    if (m && !/^Console$/.test(m[1])) names.add(m[1]);
+  }
+  return names.size ? [...names] : null;
+}
+
 export function errorCount(output: string): number | null {
   // eslint-disable-next-line no-control-regex
   const text = output.replace(/\x1b\[[0-9;]*m/g, '');

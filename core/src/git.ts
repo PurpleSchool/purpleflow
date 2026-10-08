@@ -113,6 +113,26 @@ export class Git {
     await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message], 60_000);
   }
 
+  /**
+   * Спрятать изменения рабочей копии, кроме перечисленных путей (файлы прогона, .env), и вернуть ссылку на stash.
+   * null — прятать нечего.
+   */
+  async stashExcept(dir: string, message: string, keep: string[]): Promise<string | null> {
+    if (!(await this.dirtyFiles(dir)).length) return null;
+    const before = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
+    await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)], 60_000);
+    const top = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
+    return top && top !== before ? top : null;
+  }
+
+  /** Вернуть изменения из stash по ссылке и убрать его из списка. */
+  async restoreStash(dir: string, sha: string): Promise<void> {
+    await this.git(dir, ['stash', 'apply', sha], 60_000);
+    const list = (await this.git(dir, ['stash', 'list', '--format=%gd %H'])).trim().split('\n');
+    const ref = list.find((l) => l.endsWith(` ${sha}`))?.split(' ')[0];
+    if (ref) await this.git(dir, ['stash', 'drop', ref]);
+  }
+
   /** Отменить все незакоммиченные изменения: правки отслеживаемых файлов и новые файлы. Игнорируемые (.env, node_modules) не трогаем. */
   async discardAll(dir: string): Promise<void> {
     await this.git(dir, ['reset', '--hard', 'HEAD'], 60_000);

@@ -1647,3 +1647,5 @@ button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
 .in-progress h3 { margin: var(--s-3) 0 0; font-size: var(--fs-20); font-weight: 300; letter-spacing: -0.025em; color: var(--text-1); }
 .in-progress p { margin: 0; color: var(--text-3); font-size: var(--fs-13); line-height: 1.6; max-width: 46ch; }
 .in-progress small { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
+.unstable-banner { display: flex; gap: var(--s-2); align-items: flex-start; margin: 0 0 var(--s-3); }
+.unstable-banner svg { flex: none; margin-top: 2px; color: var(--wait); }

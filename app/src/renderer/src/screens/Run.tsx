@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Clock3, MessageCircleQuestion, GitPullRequest, Globe, Trash2, Wrench,
-  ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, Sparkles, UserRoundCheck, X,
+  ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, SkipForward, Sparkles, TriangleAlert, UserRoundCheck, X,
 } from 'lucide-react';
-import type { DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
+import type { CheckResult, DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline, useNow } from '../components/Timeline';
@@ -204,6 +204,8 @@ export function RunScreen({ runId }: { runId: string }) {
 
   const live = run.status === 'running' || run.status === 'waiting';
   const resumable = run.status === 'stopped';
+  // Реализация уже хоть раз завершилась, а прогон крутится между ней и проверками — можно не ждать зелёных тестов.
+  const canSkipChecks = (live || resumable) && (run.next === 'implement' || run.next === 'tests') && run.attempts.some((a) => a.stage === 'implement' && a.status === 'done');
   const gate = run.status === 'waiting' || (run.status === 'stopped' && (run.next === 'gate1' || run.next === 'gate2' || run.next === 'limit')) ? run.next : null;
   const lastReview = run.reviews[run.reviews.length - 1];
   const stageDef = drawer ? runStages(run).find((x) => x.id === drawer) : undefined;
@@ -211,6 +213,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const reviewIdx = Math.min(run.reviews.length - 1, attemptIdx < 0 ? run.reviews.length - 1 : attemptIdx);
   const clarifyQuestions = drawer === 'clarify' && run.clarify?.questions.length ? run.clarify : null;
   // Идущая попытка стадии, у которой результат появляется только в конце: вместо прошлой попытки — заглушка.
+  const unstableChecks = (run.tests.at(-1)?.checks ?? []).filter((x) => x.unstable);
   const inProgress = Boolean(attempt?.status === 'running' && (drawer === 'tests' || drawer === 'review' || drawer === 'plan'));
   const slice: LogSlice | undefined = drawer && attempt && LOG_TITLE[drawer] && !clarifyQuestions
     ? { title: LOG_TITLE[drawer]!, attempt: attempt.attempt, stage: drawer, live: attempt.status === 'running' }
@@ -282,6 +285,11 @@ export function RunScreen({ runId }: { runId: string }) {
           {(resumable || run.status === 'queued') && !gate && (
             <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
               {run.status === 'queued' || run.workspacePending ? 'Запустить сейчас' : 'Продолжить'}
+            </Button>
+          )}
+          {canSkipChecks && (
+            <Button tone="ghost" icon={<SkipForward size={14} />} busy={busy === 'skip'} title="Остановить текущую попытку и перейти к ревью, не дожидаясь зелёных проверок" onClick={() => act('skip', () => dispatch({ type: 'run.skipChecks', runId }))}>
+              Пропустить проверки
             </Button>
           )}
           {(live || run.status === 'queued') && (
@@ -372,7 +380,9 @@ export function RunScreen({ runId }: { runId: string }) {
                       {showDiff && (
                         diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
                         : !diff ? <div className="center"><span className="spinner big" /></div>
-                        : <DiffReview
+                        : <>
+                          {unstableChecks.length > 0 && <p className="check-old unstable-banner"><TriangleAlert size={14} /> {unstableText(unstableChecks[0].unstable!)}</p>}
+                          <DiffReview
                             files={diff}
                             review={lastReview}
                             comments={lineComments}
@@ -380,6 +390,7 @@ export function RunScreen({ runId }: { runId: string }) {
                             readOnly={!(gate === 'gate2')}
                             summary={gate === 'gate2' ? (run.changeSummary?.attempt === run.attempts.filter((a) => a.stage === 'gate2').length ? run.changeSummary.text : run.status === 'waiting' ? null : undefined) : undefined}
                           />
+                        </>
                       )}
                       {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && !clarifyQuestions && (
                         <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
@@ -951,8 +962,8 @@ function TestsView({ run, idx }: { run: RunFile; idx: number }) {
         {!checks.length && <p className="muted">{t.output}</p>}
         {checks.map((c, i) => (
           <section key={i} className="check-block">
-            <div className={`tests-head ${c.passed ? 'is-ok' : c.preexisting ? 'is-old' : 'is-bad'}`}>
-              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.passed ? 'ok' : c.preexisting ? 'красные и до задачи' : 'красные'}</strong>
+            <div className={`tests-head ${c.unstable ? 'is-old' : c.passed ? 'is-ok' : c.preexisting ? 'is-old' : 'is-bad'}`}>
+              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.unstable ? 'нестабильные' : c.passed ? 'ok' : c.preexisting ? 'красные и до задачи' : 'красные'}</strong>
               <span className="mono">{c.command}</span>
               <span className="muted">код {c.exitCode ?? '—'} · {(c.durationMs / 1000).toFixed(1)} с{c.timedOut ? ' · таймаут' : ''}</span>
             </div>
@@ -961,12 +972,21 @@ function TestsView({ run, idx }: { run: RunFile; idx: number }) {
                 Проверка была красной ещё до правок агента, новых ошибок не появилось ({c.preexisting.before ?? '?'} → {c.preexisting.after ?? '?'}). Не блокирует — старые ошибки лучше чинить отдельной задачей.
               </p>
             )}
+            {c.unstable && <p className="check-old">{unstableText(c.unstable)}</p>}
             <pre className="output">{stripAnsi(c.output) || 'нет вывода'}</pre>
           </section>
         ))}
       </div>
     </div>
   );
+}
+
+function unstableText(u: NonNullable<CheckResult['unstable']>): string {
+  const list = u.tests.length ? ` (${u.tests.slice(0, 4).join('; ')}${u.tests.length > 4 ? '…' : ''})` : '';
+  const why = u.reason === 'retry' ? `Тесты упали${list}, а при повторе прошли`
+    : u.reason === 'differs' ? `При повторе упали другие тесты${list}`
+    : `Эти тесты падают и на исходном коде, без изменений задачи${list}`;
+  return `${why} — похоже на нестабильность проекта, а не на ошибку задачи. На доработку не отправлено, решение за вами на приёмке; нестабильные тесты лучше чинить отдельной задачей.`;
 }
 
 /** Вывод команды запуска: строки с ошибками подсвечены, частые причины — подсказкой. */

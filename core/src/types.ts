@@ -118,6 +118,11 @@ export interface CheckResult {
   timedOut?: boolean;
   /** Проверка была красной и до задачи, а ошибок не прибавилось — не блокирует. */
   preexisting?: { before: number | null; after: number | null };
+  /**
+   * Тесты красные, но не из‑за задачи: при повторе прошли ('retry'), упали другие тесты ('differs')
+   * или те же тесты падают и на исходном коде ('base'). Не блокирует — решение за человеком на приёмке.
+   */
+  unstable?: { reason: 'retry' | 'differs' | 'base'; tests: string[] };
 }
 
 export interface TestResult {
@@ -209,6 +214,8 @@ export interface RunFile {
   repro?: TestResult;
   /** Линтер и тесты на базовом коммите, до работы агента: чтобы не требовать починки чужих старых ошибок. */
   baseChecks?: CheckResult[];
+  /** Изменения прогона спрятаны в stash на время проверки тестов на исходном коде; при аварии их вернёт recover(). */
+  baseProbeStash?: string;
   visuals?: VisualResult[];
   /** Команда подготовки (установка зависимостей) уже выполнена в worktree. */
   prepared?: boolean;
@@ -327,6 +334,8 @@ export type CoreCommand =
   /** Приёмка: небольшая правка в той же ветке — потом только проверки и снова приёмка, без ревью и визуальной. */
   | { type: 'gate.fix'; runId: string; comment: string; lineComments?: LineComment[] }
   | { type: 'run.stop'; runId: string }
+  /** Не ждать реализации и проверок: остановить текущую попытку и перейти к ревью (или приёмке). */
+  | { type: 'run.skipChecks'; runId: string }
   | { type: 'run.merge'; runId: string; target: string }
   /** Отправить ветку на GitHub и открыть Pull Request в base. */
   | { type: 'run.pr'; runId: string; base: string }
