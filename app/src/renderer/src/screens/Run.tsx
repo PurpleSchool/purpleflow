@@ -4,19 +4,19 @@ import {
   Clock3, MessageCircleQuestion, GitPullRequest, Globe, Trash2, Wrench,
   ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleCheck, CircleStop, ClipboardCheck, FolderOpen, GitMerge, MousePointerClick, GitBranch, Hand, Play, RotateCcw, ShieldAlert, SkipForward, Sparkles, TriangleAlert, UserRoundCheck, X,
 } from 'lucide-react';
-import type { CheckResult, DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
+import type { CheckResult, ReviewItem, DiffFile, LineComment, PrStatus, RunFile, StageAttempt, StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline, useNow } from '../components/Timeline';
 import { isGate } from '../lib/bars';
-import { MODES, nodeState, runStages, type Mode } from '../lib/stages';
+import { MODES, acceptTarget, limitRow, nodeState, runStages, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { activeClock, ms } from '../lib/clock';
 import { LiveLog, cut, finalMessage, type LogSlice } from '../components/Terminal';
 import { Markdown } from '../components/Markdown';
 import { CommentableMarkdown } from '../components/CommentableMarkdown';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
-import { DiffReview } from '../components/DiffReview';
+import { DiffReview, OriginTag } from '../components/DiffReview';
 import { PrPane, onPrRefreshed } from '../components/PrPane';
 import { Button, Empty, Input, StatusPill, TextArea } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
@@ -31,7 +31,7 @@ const LOG_TITLE: Partial<Record<StageId, string>> = { implement: 'Реализа
 /** Строка ганта, в которой сейчас прогон (или итоговая — для завершённого). */
 function currentStage(run: RunFile): StageId {
   if (run.status === 'finished') return 'gate2';
-  if (run.next === 'limit') return 'gate2';
+  if (run.next === 'limit') return limitRow(run);
   return run.next;
 }
 
@@ -101,7 +101,7 @@ export function RunScreen({ runId }: { runId: string }) {
     gateKey.current = key;
     if (run.status === 'waiting') {
       setView('timeline');
-      setDrawer(run.next === 'limit' ? 'gate2' : run.next === 'gate0' ? 'clarify' : run.next);
+      setDrawer(run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next);
       setAttemptNo(null);
     }
   }, [run]);
@@ -244,6 +244,7 @@ export function RunScreen({ runId }: { runId: string }) {
       onReject={() => act('reject', () => dispatch({ type: 'gate.reject', runId, comment, lineComments }))}
       onCancel={() => act('cancel', () => dispatch({ type: 'gate.cancel', runId }))}
       onAccept={gate === 'limit' ? () => act('accept', () => dispatch({ type: 'gate.accept', runId })) : undefined}
+      acceptTo={gate === 'limit' ? acceptTarget(run) : undefined}
       onFix={gate === 'gate2' ? () => act('fix', () => dispatch({ type: 'gate.fix', runId, comment, lineComments })) : undefined}
       onOpenAccept={() => open(gate === 'gate1' ? 'gate1' : 'gate2')}
       onOpenApp={gate === 'gate2' && canRunApp && view !== 'browser' ? openApp : undefined}
@@ -1008,6 +1009,12 @@ function ServerOutput({ command, output }: { command?: string; output: string })
   );
 }
 
+function originSummary(items: ReviewItem[]): string {
+  const n = (o: ReviewItem['origin']) => items.filter((x) => x.origin === o).length;
+  const parts = [n('unfixed') && `не исправлено с прошлого раза — ${n('unfixed')}`, n('from_fix') && `из‑за исправлений — ${n('from_fix')}`, n('new') && `новых — ${n('new')}`].filter(Boolean);
+  return parts.length ? ` Из блокирующих: ${parts.join(', ')}.` : '';
+}
+
 function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
   const r = run.reviews[idx];
   const items = useMemo(() => r ? [...r.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...r.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [], [r]);
@@ -1019,14 +1026,15 @@ function ReviewView({ run, idx }: { run: RunFile; idx: number }) {
           <span className="verdict-mark">{r.blocking.length ? r.blocking.length : <CircleCheck size={22} />}</span>
           <div>
             <strong>{r.blocking.length ? `Блокирующих замечаний: ${r.blocking.length}` : 'Блокирующих замечаний нет'}</strong>
-            <p>{r.blocking.length ? 'Задача вернулась исполнителю с этими замечаниями.' : 'Изменение передано вам на приёмку.'} Заметок: {r.notes.length}.</p>
+            <p>{r.blocking.length ? (run.next === 'limit' && idx === run.reviews.length - 1 ? 'Попытки реализации исчерпаны — решение за вами: ещё попытка или дальше как есть.' : 'Задача вернулась исполнителю с этими замечаниями.') : 'Изменение передано вам на приёмку.'} Заметок: {r.notes.length}.{originSummary(r.blocking)}</p>
           </div>
-          <span className="muted mono">codex · {run.models.reviewer || 'по умолчанию'}</span>
+          <span className="muted mono">{run.agents?.reviewer ?? 'codex'} · {run.models.reviewer || 'по умолчанию'}</span>
         </div>
         <ul className="review-list">
           {items.map((x, i) => (
             <li key={i} className={`note n-${x.kind}`}>
               {x.file && <span className="note-loc">{x.file}{x.line ? `:${x.line}` : ''}</span>}
+              <OriginTag origin={x.origin} />
               <p>{x.message}</p>
             </li>
           ))}
@@ -1041,6 +1049,8 @@ function GateBar(props: {
   onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; diffShown: boolean;
   onOpenApp?: () => void;
   onAccept?: () => void;
+  /** Куда ведёт «Дальше как есть» с гейта исчерпанных попыток. */
+  acceptTo?: 'visual' | 'gate2';
   onFix?: () => void;
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
@@ -1104,7 +1114,7 @@ function GateBar(props: {
         {gate === 'limit' ? (
           <>
             <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Остановить</Button>
-            {props.onAccept && <Button tone="ghost" icon={<ClipboardCheck size={14} />} busy={busy === 'accept'} onClick={props.onAccept} title="Посмотреть дифф и решить самому — без новых попыток">К приёмке как есть</Button>}
+            {props.onAccept && <Button tone="ghost" icon={<ClipboardCheck size={14} />} busy={busy === 'accept'} onClick={props.onAccept} title={props.acceptTo === 'visual' ? 'Без новых попыток: визуальная проверка, затем приёмка — решение за вами' : 'Посмотреть дифф и решить самому — без новых попыток'}>{props.acceptTo === 'visual' ? 'Дальше: визуальная проверка' : 'К приёмке как есть'}</Button>}
             <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>Ещё попытка <kbd className="kbd-mini">{mod}↵</kbd></Button>
           </>
         ) : (

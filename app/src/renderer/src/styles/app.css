@@ -1649,3 +1649,8 @@ button.file-chip:hover { background: var(--bg-5); color: var(--text-1); }
 .in-progress small { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 12px; }
 .unstable-banner { display: flex; gap: var(--s-2); align-items: flex-start; margin: 0 0 var(--s-3); }
 .unstable-banner svg { flex: none; margin-top: 2px; color: var(--wait); }
+
+/* Пометки повторного ревью */
+.origin-tag { display: inline-block; margin: 0 6px 4px 0; padding: 1px 7px; border-radius: var(--r-pill); font-size: 11px; line-height: 16px; background: var(--bg-4); color: var(--text-2); vertical-align: middle; }
+.origin-tag.o-unfixed { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
+.origin-tag.o-from_fix { color: var(--wait); background: color-mix(in srgb, var(--wait) 14%, transparent); }

@@ -305,6 +305,18 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
   );
 }
 
+const ORIGIN: Record<NonNullable<ReviewItem['origin']>, { label: string; title: string }> = {
+  unfixed: { label: 'не исправлено', title: 'Это замечание было и на прошлом ревью — исполнитель его не исправил или обошёл' },
+  from_fix: { label: 'из‑за исправления', title: 'Появилось в коде, который исполнитель поменял, исправляя прошлые замечания' },
+  new: { label: 'новое', title: 'В коде, который был и на прошлом ревью, — ревьюер заметил только сейчас' },
+};
+
+/** Пометка повторного ревью: ходит ли прогон по кругу. */
+export function OriginTag({ origin }: { origin?: ReviewItem['origin'] }) {
+  if (!origin) return null;
+  return <span className={`origin-tag o-${origin}`} title={ORIGIN[origin].title}>{ORIGIN[origin].label}</span>;
+}
+
 function NoteList({ title, kind, items, onJump }: { title: string; kind: 'blocking' | 'note'; items: ReviewItem[]; onJump: (r: ReviewItem) => void }) {
   if (!items.length) return null;
   return (
@@ -317,6 +329,7 @@ function NoteList({ title, kind, items, onJump }: { title: string; kind: 'blocki
               {r.file.split('/').pop()}{r.line ? `:${r.line}` : ''}
             </button>
           )}
+          <OriginTag origin={r.origin} />
           <p>{r.message}</p>
         </div>
       ))}

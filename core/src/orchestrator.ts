@@ -994,10 +994,13 @@ export class Orchestrator {
 
     if (decision === 'accept') {
       if (gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
-      // Человек берёт ответственность на себя: красные проверки или замечания ревью — на приёмку, без новых попыток.
-      if (gateAttempt) gateAttempt.summary = 'Принято как есть';
-      this.log(r, c.amber('→ человек принял результат как есть — к приёмке') + '\n');
-      r.next = 'gate2';
+      // Человек берёт ответственность на себя: красные проверки или замечания ревью — дальше без новых попыток.
+      // Визуальная проверка ещё не было — идём в неё (скриншоты пригодятся на приёмке), иначе — сразу на приёмку.
+      const toVisual = r.visual && acceptTarget(r) === 'visual';
+      if (gateAttempt) gateAttempt.summary = toVisual ? 'Дальше как есть — к визуальной проверке' : 'Принято как есть';
+      this.log(r, c.amber(`→ человек принял результат как есть — ${toVisual ? 'к визуальной проверке' : 'к приёмке'}`) + '\n');
+      r.feedback = undefined;
+      r.next = toVisual ? 'visual' : 'gate2';
       r.status = 'running';
       this.save(r);
       void this.drive(r);
@@ -2020,6 +2023,26 @@ export class Orchestrator {
     return `data:image/${ext === 'jpg' ? 'jpeg' : ext || 'png'};base64,${fs.readFileSync(full).toString('base64')}`;
   }
 
+  /**
+   * Повторное ревью — продолжение прошлого: ревьюер видит свои блокирующие замечания и ответ исполнителя,
+   * чтобы проверить исправления, а не читать большой дифф каждый раз заново и находить новое.
+   */
+  private previousReviewBlock(run: RunFile): string {
+    const prev = run.reviews.at(-1);
+    if (!prev?.blocking.length) return '';
+    const reviewAt = Date.parse(prev.at);
+    const impl = [...run.attempts].reverse().find((a) => a.stage === 'implement' && a.status === 'done');
+    if (!impl || Date.parse(impl.startedAt) < reviewAt) return '';
+    const fmt = (i: ReviewItem) => `- ${i.file ? `\`${i.file}${i.line ? ':' + i.line : ''}\` — ` : ''}${i.message}`;
+    const round = run.reviews.filter((r) => r.blocking.length).length + 1;
+    return this.prompts.render('review-again.md', {
+      round: String(round),
+      blocking: prev.blocking.map(fmt).join('\n'),
+      notes: prev.notes.length ? prev.notes.map(fmt).join('\n') : '(не было)',
+      report: (impl.output ?? impl.summary ?? '(исполнитель не оставил отчёта)').slice(0, 4000),
+    });
+  }
+
   private async stageReview(run: RunFile) {
     const tools = await this.tools(['git']);
     const attempt = this.begin(run, 'review', run.models.reviewer);
@@ -2036,6 +2059,7 @@ export class Orchestrator {
       tests: lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
       base: run.baseCommit.slice(0, 8),
       diff: diff || '(пусто)',
+      previous: this.previousReviewBlock(run),
       attachments: [
         run.attachments?.some(isImageFile) ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.' : '',
         this.filesBlock(run),
@@ -2059,7 +2083,8 @@ export class Orchestrator {
     run.reviews.push(review);
     this.emit({ type: 'review.result', runId: run.id, result: review });
     const fmt = (i: ReviewItem) => `${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`;
-    if (review.blocking.length) this.log(run, c.coral(`✗ блокирующие замечания (${review.blocking.length}):\n`) + review.blocking.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
+    const tag = (i: ReviewItem) => (i.origin === 'unfixed' ? '[не исправлено] ' : i.origin === 'from_fix' ? '[из‑за исправления] ' : '');
+    if (review.blocking.length) this.log(run, c.coral(`✗ блокирующие замечания (${review.blocking.length}):\n`) + review.blocking.map((i) => `  • ${tag(i)}${fmt(i)}`).join('\n') + '\n');
     if (review.notes.length) this.log(run, c.amber(`• заметки (${review.notes.length}):\n`) + review.notes.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
     this.end(run, attempt, review.blocking.length ? 'failed' : 'done', review.blocking.length ? `Блокирующих: ${review.blocking.length}` : `Без блокирующих, заметок: ${review.notes.length}`);
 
@@ -2072,7 +2097,7 @@ export class Orchestrator {
     }
     run.feedback = {
       source: 'review',
-      text: 'Ревьюер (другая модель) нашёл блокирующие проблемы. Исправь каждую:\n' + review.blocking.map((i) => `- ${fmt(i)}`).join('\n')
+      text: 'Ревьюер (другая модель) нашёл блокирующие проблемы. Исправь каждую по существу — не выключай проверку, не прячи поведение за флагом и не ослабляй требование спецификации; если по существу исправить нельзя, так и напиши в отчёте, почему:\n' + review.blocking.map((i) => `- ${tag(i)}${fmt(i)}`).join('\n')
         + (review.notes.length ? '\n\nНеобязательные заметки:\n' + review.notes.map((i) => `- ${fmt(i)}`).join('\n') : ''),
     };
     this.nextImplementOrLimit(run, `Ревьюер оставил блокирующие замечания, а ${run.implAttemptsUsed} попытки реализации исчерпаны.`);
@@ -2440,6 +2465,17 @@ const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
  * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
  * null — если вывод не распознан.
  */
+/** Куда «Дальше как есть» с гейта исчерпанных попыток: визуальная проверка, если не пропустила дальше не она сама. */
+export function acceptTarget(r: Pick<RunFile, 'attempts' | 'visual'>): 'visual' | 'gate2' {
+  if (!r.visual) return 'gate2';
+  for (let i = r.attempts.length - 1; i >= 0; i--) {
+    const s = r.attempts[i].stage;
+    if (s === 'visual') return 'gate2';
+    if (s === 'review' || s === 'tests' || s === 'implement') return 'visual';
+  }
+  return 'gate2';
+}
+
 /** Имена упавших тестов из вывода раннера (Jest, Vitest, pytest, go test, node:test); null — не распознали. */
 export function failedTestNames(output: string): string[] | null {
   // eslint-disable-next-line no-control-regex
@@ -2603,6 +2639,7 @@ export function parseReview(text: string): { blocking: ReviewItem[]; notes: Revi
                 file: (x as ReviewItem).file ?? null,
                 line: typeof (x as ReviewItem).line === 'number' ? (x as ReviewItem).line : null,
                 message: String((x as ReviewItem).message ?? JSON.stringify(x)),
+                ...(['new', 'unfixed', 'from_fix'].includes((x as ReviewItem).origin as string) ? { origin: (x as ReviewItem).origin } : {}),
               };
         return { blocking: j.blocking.map(norm), notes: j.notes.map(norm) };
       }

@@ -142,6 +142,8 @@ export interface ReviewItem {
   file: string | null;
   line: number | null;
   message: string;
+  /** Только в повторном ревью: новое, не исправлено с прошлого раза или появилось из‑за исправления. */
+  origin?: 'new' | 'unfixed' | 'from_fix';
 }
 
 export interface ReviewResult {

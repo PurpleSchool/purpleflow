@@ -25,3 +25,10 @@ test('planTitle: H1 из proposal.md', () => {
 test('planTitle: подчёркивания в идентификаторах сохраняются', () => {
   assert.equal(planTitle('# Константа `APP_ICON_COLORS` в strings.ts'), 'Константа APP_ICON_COLORS в strings.ts');
 });
+
+test('parseReview: origin повторного ревью сохраняется, неизвестный и null — отбрасываются', () => {
+  const r = parseReview('{"blocking":[{"file":"a.ts","line":3,"message":"x","origin":"unfixed"},{"file":null,"line":null,"message":"z","origin":"weird"}],"notes":[{"file":null,"line":null,"message":"y","origin":null}]}');
+  assert.equal(r?.blocking[0].origin, 'unfixed');
+  assert.equal(r?.blocking[1].origin, undefined);
+  assert.equal(r?.notes[0].origin, undefined);
+});

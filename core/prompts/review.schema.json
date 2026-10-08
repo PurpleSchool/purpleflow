@@ -1,20 +1,62 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["blocking", "notes"],
+  "required": [
+    "blocking",
+    "notes"
+  ],
   "properties": {
-    "blocking": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-    "notes": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+    "blocking": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
   },
   "$defs": {
     "item": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file", "line", "message"],
+      "required": [
+        "file",
+        "line",
+        "message",
+        "origin"
+      ],
       "properties": {
-        "file": { "type": ["string", "null"] },
-        "line": { "type": ["integer", "null"] },
-        "message": { "type": "string" }
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "new",
+            "unfixed",
+            "from_fix",
+            null
+          ]
+        }
       }
     }
   }

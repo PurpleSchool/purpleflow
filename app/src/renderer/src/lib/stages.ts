@@ -87,9 +87,33 @@ export const stageTitle = (run: Pick<RunFile, 'mode' | 'visual'>, id: StageId) =
 
 export type NodeState = 'idle' | 'active' | 'waiting' | 'done' | 'failed' | 'stopped' | 'stale';
 
+/**
+ * Строка ганта для «попытки исчерпаны»: стадия, которая не пропустила дальше (ревью, проверки, реализация),
+ * — там и решение человека. upTo — индекс попытки limit в run.attempts (по умолчанию — текущая).
+ */
+export function limitRow(run: Pick<RunFile, 'attempts'>, upTo = run.attempts.length): StageId {
+  for (let i = upTo - 1; i >= 0; i--) {
+    const s = run.attempts[i].stage;
+    if (s === 'review' || s === 'tests' || s === 'implement' || s === 'visual') return s;
+    if (s === 'gate2') break;
+  }
+  return 'gate2';
+}
+
+/** Куда «Дальше как есть» с гейта исчерпанных попыток (как acceptTarget в ядре). */
+export function acceptTarget(run: Pick<RunFile, 'attempts' | 'visual'>): 'visual' | 'gate2' {
+  if (!run.visual) return 'gate2';
+  for (let i = run.attempts.length - 1; i >= 0; i--) {
+    const s = run.attempts[i].stage;
+    if (s === 'visual') return 'gate2';
+    if (s === 'review' || s === 'tests' || s === 'implement') return 'visual';
+  }
+  return 'gate2';
+}
+
 function order(run: RunFile, id: StageId): number {
   const ids = runStages(run).map((s) => s.id);
-  return id === 'limit' ? ids.indexOf('gate2') - 0.5 : id === 'gate0' ? ids.indexOf('clarify') + 0.5 : ids.indexOf(id);
+  return id === 'limit' ? ids.indexOf(limitRow(run)) + 0.5 : id === 'gate0' ? ids.indexOf('clarify') + 0.5 : ids.indexOf(id);
 }
 
 export function lastAttempt(run: RunFile, stage: StageId): StageAttempt | undefined {
@@ -102,8 +126,8 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   if (run.status === 'finished') return 'done';
   const cur = order(run, run.next);
   const me = order(run, stage);
-  // «Попытки исчерпаны» рисуется в строке приёмки — там и показываем, что ждём человека.
-  const nextRow = run.next === 'limit' ? 'gate2' : run.next === 'gate0' ? 'clarify' : run.next;
+  // «Попытки исчерпаны» рисуется в строке стадии, которая не пропустила дальше, — там и показываем, что ждём человека.
+  const nextRow = run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next;
   if (stage === nextRow) {
     if (run.status === 'waiting') return 'waiting';
     if (run.status === 'running') return 'active';
