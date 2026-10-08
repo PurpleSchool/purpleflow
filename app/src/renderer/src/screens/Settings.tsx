@@ -311,7 +311,7 @@ export function SettingsScreen() {
               </p>
             </div>
             <div className="grid-2 narrow">
-              <Field label="Таймаут стадии агента, мин">
+              <Field label="Агент молчит дольше, мин" hint="Столько без вывода — агент считается зависшим и останавливается. Долгую работу не обрывает: после этого времени покажем предупреждение, предел — ×4.">
                 <Input type="number" min={1} value={agentTimeout} onChange={(e) => setAgentTimeout(Number(e.target.value) || 30)} />
               </Field>
               <Field label="Таймаут тестов, мин">

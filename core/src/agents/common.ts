@@ -8,6 +8,8 @@ export interface AgentRunOptions {
   systemPrompt?: string;
   model?: string;
   timeoutMs: number;
+  /** Остановить агента, если он столько молчит; общий timeoutMs — жёсткий потолок. */
+  idleTimeoutMs?: number;
   group: string;
   onOutput: (text: string) => void;
   proxy?: { baseUrl: string; apiKey: string; codexBaseUrl?: string };

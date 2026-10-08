@@ -67,6 +67,7 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
     env,
     input: prompt,
     timeoutMs: o.timeoutMs,
+    idleTimeoutMs: o.idleTimeoutMs,
     group: o.group,
     onStdoutLine: (line) => {
       let ev: Record<string, unknown>;
@@ -129,7 +130,7 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
   fs.rmSync(tmp, { recursive: true, force: true });
 
   if (r.killed) return { ok: false, text, usage, stopped: true, error: 'Остановлено' };
-  if (r.timedOut) return { ok: false, text, usage, error: `codex: превышен таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
+  if (r.timedOut) return { ok: false, text, usage, error: r.idle ? `codex: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен` : `codex: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
   if (r.spawnError) return { ok: false, text: '', usage, error: `codex не запустился: ${r.spawnError}` };
   if (r.code !== 0 || (errors.length && !text.trim())) {
     return { ok: false, text, usage, error: explainError('codex', [...errors, r.stderr].join('\n') || `код выхода ${r.code}`) };

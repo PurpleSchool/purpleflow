@@ -10,6 +10,8 @@ export interface RunOptions {
   /** Запуск строки через системный шелл (команда тестов). */
   shell?: boolean;
   timeoutMs?: number;
+  /** Остановить, если процесс столько молчит (ни stdout, ни stderr) — признак зависания. */
+  idleTimeoutMs?: number;
   onStdoutLine?: (line: string) => void;
   onStderr?: (chunk: string) => void;
   onStdout?: (chunk: string) => void;
@@ -23,6 +25,8 @@ export interface RunResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** Остановлен по idleTimeoutMs — молчал слишком долго. */
+  idle?: boolean;
   killed: boolean;
   durationMs: number;
   spawnError?: string;
@@ -117,12 +121,25 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
     let stderr = '';
     let pending = '';
     let timedOut = false;
+    let idle = false;
     let spawnError: string | undefined;
+    let idleTimer: NodeJS.Timeout | null = null;
+    const touch = () => {
+      if (!opts.idleTimeoutMs) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        timedOut = true;
+        idle = true;
+        void killTree(child);
+      }, opts.idleTimeoutMs);
+    };
+    touch();
 
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => {
       stdout = append(stdout, chunk);
+      touch();
       opts.onStdout?.(chunk);
       if (opts.onStdoutLine) {
         pending += chunk;
@@ -136,6 +153,7 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
     });
     child.stderr?.on('data', (chunk: string) => {
       stderr = append(stderr, chunk);
+      touch();
       opts.onStderr?.(chunk);
     });
 
@@ -156,11 +174,12 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
 
     child.on('close', (code, signal) => {
       if (timer) clearTimeout(timer);
+      if (idleTimer) clearTimeout(idleTimer);
       live.get(group)?.delete(child);
       if (pid != null) tracker?.remove(group, pid);
       if (pending && opts.onStdoutLine) opts.onStdoutLine(pending);
       resolve({
-        code, signal, stdout, stderr, timedOut,
+        code, signal, stdout, stderr, timedOut, idle: idle || undefined,
         killed: killedByUs.has(child) && !timedOut,
         durationMs: Date.now() - started,
         spawnError,

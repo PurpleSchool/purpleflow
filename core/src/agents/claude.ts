@@ -97,6 +97,7 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
     env: claudeEnv(o),
     input: o.prompt,
     timeoutMs: o.timeoutMs,
+    idleTimeoutMs: o.idleTimeoutMs,
     group: o.group,
     onStdoutLine: (line) => {
       let ev: Record<string, unknown>;
@@ -141,7 +142,7 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   });
 
   if (r.killed) return { ok: false, text: finalText, usage, stopped: true, error: 'Остановлено' };
-  if (r.timedOut) return { ok: false, text: finalText, usage, error: `claude: превышен таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
+  if (r.timedOut) return { ok: false, text: finalText, usage, error: r.idle ? `claude: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен` : `claude: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
   if (r.spawnError) return { ok: false, text: '', usage, error: `claude не запустился: ${r.spawnError}` };
   if (resultError || r.code !== 0 || !gotResult) {
     // Хвост stdout — это JSON-события; в них бывают картинки в base64 (ответ Read на скриншот), они не должны вытеснять причину.

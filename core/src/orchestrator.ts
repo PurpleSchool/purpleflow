@@ -1513,7 +1513,7 @@ export class Orchestrator {
    * запускаем на исходном коде (изменения прогона на это время в stash). Не из‑за задачи — пометка unstable,
    * иначе — результат повтора (он свежее) для исполнителя.
    */
-  private async probeTests(run: RunFile, check: CheckResult): Promise<CheckResult> {
+  private async probeTests(run: RunFile, check: CheckResult, beforeStash?: Promise<unknown> | null): Promise<CheckResult> {
     const s = this.opts.getSettings();
     const first = failedTestNames(check.output);
     this.log(run, c.amber('↻ тесты красные — повторяю один раз, чтобы отличить нестабильный тест от настоящей ошибки') + '\n');
@@ -1531,7 +1531,13 @@ export class Orchestrator {
       return { ...retry, unstable: { reason: 'differs', tests: [...new Set([...first, ...second])] } };
     }
 
-    // Те же тесты падают дважды: проверяем их на исходном коде.
+    // Те же тесты падают дважды: проверяем их на исходном коде. Параллельное ревью читает рабочую копию —
+    // прятать изменения можно только после него.
+    if (beforeStash) {
+      this.log(run, c.dim('Жду конца ревью, чтобы проверить тесты на исходном коде…') + '\n');
+      await beforeStash;
+      this.checkStop(run);
+    }
     const git = new Git((await this.tools(['git'])).git, this.opts.env);
     const keep = [RUN_JSON_GLOB, ...this.envFilesOf(run)];
     const stash = await git.stashExcept(run.worktreePath, `PurpleFlow ${run.id}: проверка тестов на исходном коде`, keep).catch((e) => {
@@ -1619,24 +1625,65 @@ export class Orchestrator {
       }
     }
 
-    const raw = await this.runChecks(run);
-    let { result, failed } = this.compareWithBase(run, raw.result);
-    const red = failed.find((x) => x.kind === 'test' && !x.timedOut);
-    if (red) {
-      const probed = await this.probeTests(run, red);
-      const checks = (result.checks ?? []).map((x) => (x === red ? probed : x));
-      failed = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
-      result = { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0, output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') };
+    // Ревью не нужен результат тестов — запускаем его одновременно с проверками: один круг вместо двух,
+    // исполнитель получит и упавшие тесты, и замечания ревью одним возвратом.
+    const epicMore = modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases;
+    const parallel = !run.mergeOnly && !run.quickFix && !run.roundFiles?.length && !epicMore && (await this.reviewOrAccept(run)) === 'review';
+    let reviewed: { review: ReviewResult; log: string } | null = null;
+    let reviewErr: unknown = null;
+    const reviewTask = parallel
+      ? this.reviewPass(run, true).then((r) => { reviewed = r; }, (e) => { reviewErr = e; })
+      : null;
+    if (parallel) this.log(run, c.dim('Ревью идёт параллельно с проверками — его лог появится после них.') + '\n');
+
+    let result: TestResult;
+    let failed: CheckResult[];
+    try {
+      const raw = await this.runChecks(run);
+      ({ result, failed } = this.compareWithBase(run, raw.result));
+      const red = failed.find((x) => x.kind === 'test' && !x.timedOut);
+      if (red) {
+        const probed = await this.probeTests(run, red, reviewTask);
+        const checks = (result.checks ?? []).map((x) => (x === red ? probed : x));
+        failed = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
+        result = { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0, output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n') };
+      }
+      run.tests.push(result);
+      this.emit({ type: 'tests.result', runId: run.id, result });
+      const checks = result.checks ?? [];
+      const summary = !checks.length ? 'Пропущены'
+        : failed.length ? `Красные: ${failed.map((x) => CHECK_NAME[x.kind]).join(' и ')}`
+        : checks.some((x) => x.preexisting || x.unstable)
+          ? checks.map((x) => `${CHECK_NAME[x.kind]}${x.preexisting ? ' — как до задачи' : x.unstable ? ' — нестабильные' : ' — ok'}`).join(', ').replace(/^./, (m) => m.toUpperCase())
+          : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
+      this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
+    } finally {
+      if (reviewTask) {
+        if (!reviewed) this.log(run, c.dim('Проверки закончились — жду ревью…') + '\n');
+        await reviewTask;
+        if (reviewed) this.log(run, (reviewed as { log: string }).log, false);
+      }
     }
-    run.tests.push(result);
-    this.emit({ type: 'tests.result', runId: run.id, result });
-    const checks = result.checks ?? [];
-    const summary = !checks.length ? 'Пропущены'
-      : failed.length ? `Красные: ${failed.map((x) => CHECK_NAME[x.kind]).join(' и ')}`
-      : checks.some((x) => x.preexisting || x.unstable)
-        ? checks.map((x) => `${CHECK_NAME[x.kind]}${x.preexisting ? ' — как до задачи' : x.unstable ? ' — нестабильные' : ' — ok'}`).join(', ').replace(/^./, (m) => m.toUpperCase())
-        : checks.map((x) => CHECK_NAME[x.kind]).join(' и ').replace(/^./, (m) => m.toUpperCase()) + ' — ok';
-    this.end(run, attempt, result.passed ? 'done' : 'failed', summary);
+    if (reviewErr) throw reviewErr;
+
+    if (parallel) {
+      const review = (reviewed as { review: ReviewResult } | null)!.review;
+      if (result.passed && !review.blocking.length) {
+        run.feedback = undefined;
+        run.next = run.visual ? 'visual' : 'gate2';
+        this.save(run);
+        return;
+      }
+      const parts = [
+        result.passed ? '' : this.checksFeedback(failed, run.baseChecks),
+        review.blocking.length ? this.reviewFeedback(review) : '',
+      ].filter(Boolean);
+      run.feedback = { source: result.passed ? 'review' : 'tests', text: parts.join('\n\n---\n\n') };
+      const why = !result.passed && review.blocking.length ? 'Проверки красные и ревьюер оставил блокирующие замечания'
+        : !result.passed ? 'Проверки красные' : 'Ревьюер оставил блокирующие замечания';
+      this.nextImplementOrLimit(run, `${why}, а ${run.implAttemptsUsed} попытки реализации исчерпаны.`);
+      return;
+    }
 
     if (result.passed) {
       run.feedback = undefined;
@@ -2072,8 +2119,28 @@ export class Orchestrator {
   }
 
   private async stageReview(run: RunFile) {
+    const { review } = await this.reviewPass(run);
+    if (!review.blocking.length) {
+      // Порядок: ревью диффа (дёшево, без окружения) → визуальная проверка → приёмка со свежими скриншотами.
+      run.next = run.visual ? 'visual' : 'gate2';
+      run.feedback = undefined;
+      this.save(run);
+      return;
+    }
+    run.feedback = { source: 'review', text: this.reviewFeedback(review) };
+    this.nextImplementOrLimit(run, `Ревьюер оставил блокирующие замечания, а ${run.implAttemptsUsed} попытки реализации исчерпаны.`);
+  }
+
+  /**
+   * Ревью диффа: попытка стадии, агент, разбор ответа, запись в run.reviews. Куда дальше — решает вызывающий.
+   * quiet — вывод ревьюера копится и пишется в лог одним куском в конце (ревью идёт параллельно с проверками).
+   */
+  private async reviewPass(run: RunFile, quiet = false): Promise<{ review: ReviewResult; log: string }> {
     const tools = await this.tools(['git']);
-    const attempt = this.begin(run, 'review', run.models.reviewer);
+    let buffered = '';
+    // Параллельно с проверками весь лог ревью копится и пишется одним куском: иначе строки двух стадий перемешаются.
+    const out = (t: string) => { if (quiet) buffered += t; else this.log(run, t); };
+    const attempt = this.begin(run, 'review', run.models.reviewer, quiet);
     const git = new Git(tools.git, this.opts.env);
     let diff = await git.diffText(run.worktreePath, this.diffBase(run), [RUN_JSON_GLOB, ...this.envFilesOf(run)]);
     if (diff.length > MAX_DIFF) diff = diff.slice(0, MAX_DIFF) + '\n… (дифф обрезан, остальное смотри через git diff)';
@@ -2084,7 +2151,7 @@ export class Orchestrator {
       proposal: docs.proposal || '(нет)',
       tasks: docs.tasks || '(нет)',
       specs: docs.specs.map((s) => `### ${s.path}\n\n${s.content}`).join('\n\n') || '(нет)',
-      tests: lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
+      tests: quiet ? 'идут параллельно с ревью и проверяются отдельно — не запускай их, не оценивай, прошли ли они, и не пиши об этом замечаний' : lastTest ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}` : 'не запускались',
       base: run.baseCommit.slice(0, 8),
       diff: diff || '(пусто)',
       previous: this.previousReviewBlock(run),
@@ -2097,14 +2164,22 @@ export class Orchestrator {
 
     const res = await this.runRole(run, 'reviewer', {
       prompt,
+      ...(quiet ? { onOutput: (t: string) => { buffered += t; } } : {}),
       readOnly: true,
       images: [...(run.attachments ?? []).filter(isImageFile), ...((run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file))],
       outputSchema: this.prompts.json<object>('review.schema.json'),
     });
-    this.afterAgent(run, attempt, res);
+    if (quiet) buffered = '\n' + c.violet(c.bold(`━━ ${STAGE_TITLES.review} · попытка ${attempt.attempt}`)) + c.dim('  # шло параллельно с проверками') + '\n' + buffered;
+    try {
+      this.afterAgent(run, attempt, res);
+    } catch (e) {
+      if (quiet) this.log(run, buffered, false);
+      throw e;
+    }
 
     const parsed = parseReview(res.text);
     if (!parsed) {
+      if (quiet) this.log(run, buffered, false);
       throw new Error(`Ревьюер вернул ответ не в формате JSON { blocking, notes }:\n${res.text.slice(0, 500)}`);
     }
     const review: ReviewResult = { at: new Date().toISOString(), ...parsed };
@@ -2112,23 +2187,18 @@ export class Orchestrator {
     this.emit({ type: 'review.result', runId: run.id, result: review });
     const fmt = (i: ReviewItem) => `${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`;
     const tag = (i: ReviewItem) => (i.origin === 'unfixed' ? '[не исправлено] ' : i.origin === 'from_fix' ? '[из‑за исправления] ' : '');
-    if (review.blocking.length) this.log(run, c.coral(`✗ блокирующие замечания (${review.blocking.length}):\n`) + review.blocking.map((i) => `  • ${tag(i)}${fmt(i)}`).join('\n') + '\n');
-    if (review.notes.length) this.log(run, c.amber(`• заметки (${review.notes.length}):\n`) + review.notes.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
+    if (review.blocking.length) out(c.coral(`✗ блокирующие замечания (${review.blocking.length}):\n`) + review.blocking.map((i) => `  • ${tag(i)}${fmt(i)}`).join('\n') + '\n');
+    if (review.notes.length) out(c.amber(`• заметки (${review.notes.length}):\n`) + review.notes.map((i) => `  • ${fmt(i)}`).join('\n') + '\n');
     this.end(run, attempt, review.blocking.length ? 'failed' : 'done', review.blocking.length ? `Блокирующих: ${review.blocking.length}` : `Без блокирующих, заметок: ${review.notes.length}`);
 
-    if (!review.blocking.length) {
-      // Порядок: ревью диффа (дёшево, без окружения) → визуальная проверка → приёмка со свежими скриншотами.
-      run.next = run.visual ? 'visual' : 'gate2';
-      run.feedback = undefined;
-      this.save(run);
-      return;
-    }
-    run.feedback = {
-      source: 'review',
-      text: 'Ревьюер (другая модель) нашёл блокирующие проблемы. Исправь каждую по существу — не выключай проверку, не прячи поведение за флагом и не ослабляй требование спецификации; если по существу исправить нельзя, так и напиши в отчёте, почему:\n' + review.blocking.map((i) => `- ${tag(i)}${fmt(i)}`).join('\n')
-        + (review.notes.length ? '\n\nНеобязательные заметки:\n' + review.notes.map((i) => `- ${fmt(i)}`).join('\n') : ''),
-    };
-    this.nextImplementOrLimit(run, `Ревьюер оставил блокирующие замечания, а ${run.implAttemptsUsed} попытки реализации исчерпаны.`);
+    return { review, log: quiet ? buffered : '' };
+  }
+
+  private reviewFeedback(review: ReviewResult): string {
+    const tag = (i: ReviewItem) => (i.origin === 'unfixed' ? '[не исправлено] ' : i.origin === 'from_fix' ? '[из‑за исправления] ' : '');
+    const fmt = (i: ReviewItem) => `${i.file ? `${i.file}${i.line ? ':' + i.line : ''} — ` : ''}${i.message}`;
+    return 'Ревьюер (другая модель) нашёл блокирующие проблемы. Исправь каждую по существу — не выключай проверку, не прячи поведение за флагом и не ослабляй требование спецификации; если по существу исправить нельзя, так и напиши в отчёте, почему:\n' + review.blocking.map((i) => `- ${tag(i)}${fmt(i)}`).join('\n')
+      + (review.notes.length ? '\n\nНеобязательные заметки:\n' + review.notes.map((i) => `- ${fmt(i)}`).join('\n') : '');
   }
 
   private async stageFinish(run: RunFile) {
@@ -2238,12 +2308,12 @@ export class Orchestrator {
     if (gate === 'gate2') void this.summarizeChanges(run.id).catch(() => undefined);
   }
 
-  private begin(run: RunFile, stage: StageId, model?: string): StageAttempt {
+  private begin(run: RunFile, stage: StageId, model?: string, quiet = false): StageAttempt {
     const n = run.attempts.filter((a) => a.stage === stage).length + 1;
     const a: StageAttempt = { stage, attempt: n, startedAt: new Date().toISOString(), status: 'running', model: model || undefined };
     run.attempts.push(a);
     this.save(run);
-    if (!isGate(stage)) this.log(run, '\n' + c.violet(c.bold(`━━ ${STAGE_TITLES[stage]} · попытка ${n}`)) + '\n');
+    if (!isGate(stage) && !quiet) this.log(run, '\n' + c.violet(c.bold(`━━ ${STAGE_TITLES[stage]} · попытка ${n}`)) + '\n');
     this.emit({ type: 'stage.started', runId: run.id, stage, attempt: n });
     return a;
   }
@@ -2339,10 +2409,12 @@ export class Orchestrator {
   private async runRole(run: RunFile, role: Role, o: {
     prompt: string; systemPrompt?: string; openspec?: boolean; readOnly?: boolean; images?: string[]; outputSchema?: object;
     sessionId?: string; resume?: string;
+    /** Свой приёмник вывода (параллельное ревью копит вывод, чтобы не перемешать лог с проверками). */
+    onOutput?: (text: string) => void;
   }): Promise<AgentResult> {
     const agent = run.agents?.[role] ?? DEFAULT_AGENTS[role];
     const tools = await this.tools(o.openspec ? [agent, 'openspec'] : [agent]);
-    const base = this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined);
+    const base = { ...this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined), ...(o.onOutput ? { onOutput: o.onOutput } : {}) };
     const model = run.models[role] || undefined;
     // Знания о проекте (профиль и уроки) — всем ролям; в продолжении сессии они уже в контексте.
     const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${this.knowledgeBlock(run)}` || undefined;
@@ -2372,7 +2444,10 @@ export class Orchestrator {
       bin,
       cwd: run.worktreePath,
       env,
-      timeoutMs: Math.max(1, s.agentTimeoutMin) * 60_000,
+      // Агента не обрываем за долгую работу: останавливаем, только если он молчит agentTimeoutMin (завис),
+      // или по жёсткому потолку ×4. О долгой работе человеку подсказывает окно прогона.
+      timeoutMs: Math.max(1, s.agentTimeoutMin) * 4 * 60_000,
+      idleTimeoutMs: Math.max(1, s.agentTimeoutMin) * 60_000,
       group: run.id,
       onOutput: (text: string) => this.log(run, text, false),
       proxy: s.proxy.baseUrl ? s.proxy : undefined,

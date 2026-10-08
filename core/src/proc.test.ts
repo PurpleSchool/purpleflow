@@ -12,3 +12,13 @@ test('killGroup убивает всё дерево процессов', { skip: 
   assert.equal(r.killed, true);
   assert.equal(liveCount('g1'), 0);
 });
+
+test('idleTimeoutMs: молчащий процесс останавливается, говорящий — нет', async () => {
+  const quiet = await run('sh', ['-c', 'echo start; sleep 5'], { cwd: process.cwd(), env: process.env, idleTimeoutMs: 400 });
+  assert.equal(quiet.idle, true);
+  assert.equal(quiet.timedOut, true);
+  assert.ok(quiet.durationMs < 3000);
+  const chatty = await run('sh', ['-c', 'for i in 1 2 3 4 5; do echo $i; sleep 0.2; done'], { cwd: process.cwd(), env: process.env, idleTimeoutMs: 600 });
+  assert.equal(chatty.idle, undefined);
+  assert.equal(chatty.code, 0);
+});

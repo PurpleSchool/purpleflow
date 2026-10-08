@@ -92,12 +92,19 @@ export type NodeState = 'idle' | 'active' | 'waiting' | 'done' | 'failed' | 'sto
  * — там и решение человека. upTo — индекс попытки limit в run.attempts (по умолчанию — текущая).
  */
 export function limitRow(run: Pick<RunFile, 'attempts'>, upTo = run.attempts.length): StageId {
+  // Проверки и ревью могут идти параллельно: берём ту из стадий после последней реализации, что упала (ревью — приоритетнее).
+  let first: StageId | null = null;
+  let failed: StageId | null = null;
   for (let i = upTo - 1; i >= 0; i--) {
-    const s = run.attempts[i].stage;
-    if (s === 'review' || s === 'tests' || s === 'implement' || s === 'visual') return s;
-    if (s === 'gate2') break;
+    const a = run.attempts[i];
+    if (a.stage === 'gate2' || a.stage === 'limit') { if (first) break; continue; }
+    if (a.stage === 'review' || a.stage === 'tests' || a.stage === 'visual' || a.stage === 'implement') {
+      first ??= a.stage;
+      if (a.status === 'failed' && (!failed || a.stage === 'review')) failed = a.stage;
+      if (a.stage === 'implement') break;
+    }
   }
-  return 'gate2';
+  return failed ?? first ?? 'gate2';
 }
 
 /** Куда «Дальше как есть» с гейта исчерпанных попыток (как acceptTarget в ядре). */

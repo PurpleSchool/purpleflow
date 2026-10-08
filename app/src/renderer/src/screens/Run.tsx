@@ -328,6 +328,7 @@ export function RunScreen({ runId }: { runId: string }) {
         </div>
 
         <Banner run={run} runId={runId} />
+        <LongRunBanner run={run} limitMin={state.settings?.agentTimeoutMin ?? 30} />
 
         <div className="tab-body">
           <div className={`pane ${view === 'log' ? '' : 'is-hidden'}`}><LiveLog runId={runId} /></div>
@@ -555,6 +556,32 @@ function Banner({ run, runId }: { run: RunFile; runId: string }) {
   }
   return null;
 }
+
+const AGENT_STAGES: StageId[] = ['clarify', 'plan', 'implement', 'review', 'visual'];
+
+/**
+ * Агент работает дольше обычного: прогон его не обрывает (останавливает только молчание или потолок ×4) —
+ * решать человеку, ждать или остановить.
+ */
+function LongRunBanner({ run, limitMin }: { run: RunFile; limitMin: number }) {
+  const now = useNow(run);
+  if (run.status !== 'running') return null;
+  const a = [...run.attempts].reverse().find((x) => x.status === 'running' && AGENT_STAGES.includes(x.stage));
+  if (!a) return null;
+  const min = Math.floor((now - Date.parse(a.startedAt)) / 60_000);
+  if (min < limitMin) return null;
+  return (
+    <div className="banner b-amber">
+      <Clock3 size={18} />
+      <div>
+        <strong>{STAGE_TITLES_RU[a.stage] ?? 'Агент'} идёт уже {min} мин — дольше обычного</strong>
+        <p>Агент не завис: его останавливают, только если он молчит {limitMin} мин, или через {limitMin * 4} мин. Посмотрите «Лог» — если он ходит по кругу, нажмите «Стоп» и дайте подсказку при продолжении; иначе можно подождать.</p>
+      </div>
+    </div>
+  );
+}
+
+const STAGE_TITLES_RU: Partial<Record<StageId, string>> = { clarify: 'Уточнение', plan: 'План', implement: 'Реализация', review: 'Ревью', visual: 'Визуальная проверка' };
 
 /** Готовый прогон: влить ветку psflow/<id> в выбранную ветку — прямо в строке статуса. */
 function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
