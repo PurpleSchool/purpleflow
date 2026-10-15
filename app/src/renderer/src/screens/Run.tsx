@@ -18,11 +18,12 @@ import type { ChangeDocs } from '../../../shared/ipc';
 import { GateBar } from './run/GateBar';
 import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInline, Warnings } from './run/RunHeader';
 import { ManagerChat } from './run/ManagerChat';
+import { CodePane, useChangedFiles } from './run/CodePane';
 import { AgentOutput, ClarifyView, InProgress, PlanView, ReproView, ReviewView, TestsView, VisualView } from './run/StageViews';
 import { LOG_TITLE, cleanErr, currentStage, unstableText, withPicked } from './run/util';
 import { useRunGate } from './run/useRunGate';
 
-type View = 'timeline' | 'log' | 'browser' | 'pr';
+type View = 'timeline' | 'log' | 'browser' | 'code' | 'pr';
 
 export function RunScreen({ runId }: { runId: string }) {
   const { state, loadRun, go } = useStore();
@@ -148,6 +149,9 @@ export function RunScreen({ runId }: { runId: string }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  // До проверки «прогон загружен»: порядок хуков не должен зависеть от загрузки.
+  const changed = useChangedFiles(run);
 
   if (!run) {
     return (
@@ -321,6 +325,7 @@ export function RunScreen({ runId }: { runId: string }) {
                 label: 'Браузер',
                 extra: agentScreen.frame ? <span className="tab-dot is-live" title="Агент работает в браузере" /> : preview.state.status === 'ready' ? <span className="tab-dot is-ok" /> : preview.state.status === 'starting' ? <span className="tab-live" /> : undefined,
               },
+              { id: 'code', label: 'Код', extra: changed?.length ? <span className="tab-badge">{changed.length}</span> : undefined },
               ...(run.pr ? [{ id: 'pr' as const, label: 'Pull Request', extra: run.prRound && run.status !== 'finished' ? <span className="tab-live" /> : undefined }] : []),
             ]}
           />
@@ -342,6 +347,7 @@ export function RunScreen({ runId }: { runId: string }) {
           {(view === 'browser' || preview.state.status === 'ready') && (
             <div className={`pane pane-browser ${view === 'browser' && !agentLive ? '' : 'is-hidden'}`}><BrowserPane preview={preview} canRun={canRunApp} /></div>
           )}
+          {view === 'code' && <CodePane run={run} changed={changed} />}
           {view === 'pr' && run.pr && <div className="pane"><PrPane run={run} runId={runId} onStarted={() => setView('timeline')} /></div>}
           {view === 'timeline' && (
             <div className={`split ${drawer && !closing ? 'is-open' : ''} ${showDiff && !closing ? 'is-wide' : ''}`}>
@@ -433,6 +439,7 @@ export function RunScreen({ runId }: { runId: string }) {
     </div>
   );
 }
+
 
 
 

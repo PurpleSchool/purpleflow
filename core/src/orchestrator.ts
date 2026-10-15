@@ -183,13 +183,29 @@ export class Orchestrator {
     const r = this.mustLoad(id);
     const tools = await this.tools(['git']);
     const git = new Git(tools.git, this.opts.env);
-    const env = new Set(this.envFilesOf(r));
-    // Круг с разрешёнными конфликтами: показываем только эти файлы, а не весь влитый код базовой ветки.
-    const only = r.status !== 'finished' && r.roundFiles?.length ? new Set(r.roundFiles) : null;
-    const skip = (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p) || Boolean(only && !only.has(p));
+    const skip = this.diffSkip(r);
     // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
     if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
     return git.diff(r.worktreePath, this.diffBase(r), skip);
+  }
+
+  /** Какие файлы не показывать в диффе: run.json, файлы окружения; в круге конфликтов — всё, кроме разрешённых. */
+  diffSkip(r: RunFile): (p: string) => boolean {
+    const env = new Set(this.envFilesOf(r));
+    const only = r.status !== 'finished' && r.roundFiles?.length ? new Set(r.roundFiles) : null;
+    return (p: string) => (p.startsWith('openspec/') && p.endsWith('/run.json')) || env.has(p) || Boolean(only && !only.has(p));
+  }
+
+  /** Изменённые файлы без содержимого — для счётчика на вкладке «Код». */
+  async getChangedFiles(id: string): Promise<string[]> {
+    const r = this.mustLoad(id);
+    if (r.workspacePending || r.worktreeRemoved && r.status !== 'finished') return [];
+    const git = new Git((await this.tools(['git'])).git, this.opts.env);
+    const skip = this.diffSkip(r);
+    const files = r.status === 'finished'
+      ? await git.namesBetween(r.projectPath, r.baseCommit, r.branch)
+      : await git.changedFiles(r.worktreePath, this.diffBase(r));
+    return files.filter((f) => !skip(f));
   }
 
   /**

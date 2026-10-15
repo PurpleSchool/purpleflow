@@ -19,6 +19,7 @@ function api(c: Orchestrator): CoreApi {
     getRun: async (id) => c.getRun(id),
     getLog: async (id) => c.getLog(id),
     getDiff: (id) => c.getDiff(id),
+    getChangedFiles: (id) => c.getChangedFiles(id),
     getChangeDocs: async (id) => c.getChangeDocs(id),
     detectTools: () => c.detectTools(),
     testConnection: () => c.testConnection(),

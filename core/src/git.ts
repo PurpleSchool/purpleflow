@@ -194,15 +194,23 @@ export class Git {
     return out.split('\n').some((l) => l.startsWith('worktree ') && norm(l.slice(9)) === norm(worktreePath));
   }
 
-  /** Дифф ветки против базового коммита, включая новые неотслеживаемые файлы. */
+  /**
+   * Дифф ветки против базового коммита, включая новые неотслеживаемые файлы.
+   * Только читает: index не трогает — агент может в это время работать в той же рабочей копии.
+   */
   diff(worktree: string, base: string, skip: (path: string) => boolean = () => false): Promise<DiffFile[]> {
     return serialized(worktree, () => this.diffUnsafe(worktree, base, skip));
   }
 
+  /** Новые файлы, которых git ещё не видит, — без записи в index. */
+  private async untracked(worktree: string): Promise<string[]> {
+    const out = await this.git(worktree, ['--no-optional-locks', 'ls-files', '--others', '--exclude-standard', '-z']);
+    return out.split('\0').filter(Boolean);
+  }
+
   private async diffUnsafe(worktree: string, base: string, skip: (path: string) => boolean): Promise<DiffFile[]> {
-    // intent-to-add делает новые файлы видимыми для git diff, не меняя их содержимого.
-    await this.git(worktree, ['add', '-A', '-N']);
-    const out = await this.git(worktree, ['diff', '--name-status', '-M', '-z', base]);
+    const tracked = await this.git(worktree, ['--no-optional-locks', 'diff', '--name-status', '-M', '-z', base]);
+    const out = tracked + (await this.untracked(worktree)).map((f) => `A\0${f}\0`).join('');
     const parts = out.split('\0').filter(Boolean);
     const files: DiffFile[] = [];
     for (let i = 0; i < parts.length; ) {
@@ -232,12 +240,11 @@ export class Git {
     return files;
   }
 
-  /** Пути изменённых файлов ветки против базового коммита (с новыми неотслеживаемыми). */
+  /** Пути изменённых файлов против базового коммита, включая новые неотслеживаемые. Только читает, index не трогает. */
   changedFiles(worktree: string, base: string): Promise<string[]> {
     return serialized(worktree, async () => {
-      await this.git(worktree, ['add', '-A', '-N']);
-      const out = await this.git(worktree, ['diff', '--name-only', base]);
-      return out.split('\n').map((x) => x.trim()).filter(Boolean);
+      const out = await this.git(worktree, ['--no-optional-locks', 'diff', '--name-only', '-z', base]);
+      return [...new Set([...out.split('\0').filter(Boolean), ...(await this.untracked(worktree))])];
     });
   }
 
@@ -276,6 +283,12 @@ export class Git {
         fs.rmSync(index, { force: true });
       }
     });
+  }
+
+  /** Имена файлов, изменённых между двумя коммитами. */
+  async namesBetween(repo: string, base: string, head: string): Promise<string[]> {
+    const out = await this.git(repo, ['diff', '--name-only', '-z', base, head]);
+    return out.split('\0').filter(Boolean);
   }
 
   /** Унифицированный дифф текстом — для промпта ревьюера. */

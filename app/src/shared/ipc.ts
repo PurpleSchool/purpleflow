@@ -49,6 +49,8 @@ export interface CoreApi {
   getRun(id: string): Promise<RunFile | null>;
   getLog(id: string): Promise<string>;
   getDiff(id: string): Promise<DiffFile[]>;
+  /** Изменённые файлы без содержимого — счётчик на вкладке «Код». */
+  getChangedFiles(id: string): Promise<string[]>;
   getChangeDocs(id: string): Promise<ChangeDocs>;
   detectTools(): Promise<Record<ToolName, ToolInfo>>;
   testConnection(): Promise<ConnectionCheck[]>;
