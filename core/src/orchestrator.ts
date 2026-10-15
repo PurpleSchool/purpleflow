@@ -16,7 +16,7 @@ import { Screencast } from './screencast.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js';
 import { MODE_FIRST, MODE_LIMIT, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
-import type { NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
+import type { ControlAction, ManagerMessage, NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
 import { CoreOptions, IMPL_LIMIT, Listener, STAGE_TITLES, StopSignal, Tools, expandPorts, isGate, isImageFile, portEnv, readSmallText, waitForUrl } from './shared.js';
 export * from './shared.js';
 import { runChecks, runCheck, probeTests, checksFeedback, captureBaseChecks, compareWithBase, stageTests, stageBaseline, needsReview } from './pipeline/checks.js';
@@ -25,6 +25,8 @@ import { visualDir, stageVisual, startLiveBrowser, getVisualShot } from './pipel
 import { stageClarify, answer, stagePlan, startFilesBlock } from './pipeline/plan.js';
 import { stageImplement, dropArtifacts } from './pipeline/implement.js';
 import { stageFinish } from './pipeline/finish.js';
+import { applyPending, control } from './pipeline/control.js';
+import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
 import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
 import { knowledgeOf, updateKnowledge, knowledgeBlock, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
 import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps } from './pipeline/workspace.js';
@@ -88,6 +90,9 @@ export class Orchestrator {
         return { runId: cmd.runId };
       case 'run.stop':
         await this.stop(cmd.runId);
+        return { runId: cmd.runId };
+      case 'run.control':
+        await this.control(cmd.runId, cmd.action);
         return { runId: cmd.runId };
       case 'run.skipChecks':
         await this.skipChecks(cmd.runId);
@@ -208,6 +213,7 @@ export class Orchestrator {
     }
     await killGroup(id);
     await killGroup(`${id}:server`);
+    await killGroup(`${id}:manager`);
     await this.stopPreview(id);
     if (r) {
       if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath)) await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => undefined);
@@ -690,11 +696,7 @@ export class Orchestrator {
     const before = this.mustLoad(id);
     if (before.next !== 'implement' && before.next !== 'tests' && before.next !== 'limit') throw new Error('Пропустить проверки можно только на реализации или проверках');
     if (!before.attempts.some((a) => a.stage === 'implement' && a.status === 'done')) throw new Error('Реализация ещё ни разу не завершилась — проверять нечего');
-    if (this.driving.has(id)) {
-      await this.stop(id);
-      for (let i = 0; i < 100 && this.driving.has(id); i++) await new Promise((r) => setTimeout(r, 200));
-      if (this.driving.has(id)) throw new Error('Не удалось остановить текущую стадию');
-    }
+    await this.halt(id);
     const r = this.mustLoad(id);
     const now = new Date().toISOString();
     for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: now });
@@ -709,6 +711,27 @@ export class Orchestrator {
     r.status = 'running';
     this.save(r);
     void this.drive(r);
+  }
+
+  // ——— Управление на ходу и менеджер прогона ———
+
+  /** Прогоны, по которым менеджер сейчас готовит ответ. */
+  managerBusy = new Set<string>();
+
+  control(id: string, action: ControlAction) { return control(this, id, action); }
+
+  getManagerChat(id: string): { messages: ManagerMessage[]; thinking: boolean } { return { messages: getManagerChat(this, id), thinking: this.managerBusy.has(id) }; }
+
+  askManager(id: string, text: string): Promise<ManagerMessage[]> { return askManager(this, id, text); }
+
+  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> { return resolveManagerAction(this, id, messageId, apply); }
+
+  /** Остановить крутящийся цикл стадий и дождаться, пока он отпустит прогон, — перед тем как самим поменять маршрут. */
+  async halt(id: string) {
+    if (!this.driving.has(id)) return;
+    await this.stop(id);
+    for (let i = 0; i < 100 && this.driving.has(id); i++) await new Promise((r) => setTimeout(r, 200));
+    if (this.driving.has(id)) throw new Error('Не удалось остановить текущую стадию');
   }
 
   async decide(id: string, decision: 'approve' | 'reject' | 'cancel' | 'accept' | 'fix', comment?: string, lineComments?: LineComment[]) {
@@ -781,7 +804,9 @@ export class Orchestrator {
     } else if (gate === 'gate1') {
       if (decision === 'approve') {
         r.next = 'implement';
-        r.feedback = undefined;
+        // План обновлён после возврата с реализации — исполнитель должен узнать, что и почему поменялось.
+        r.feedback = r.replanNote ? human(`План обновлён: человек вернул задачу на план с реализации — «${r.replanNote}». Сверься с обновлённым proposal и tasks.md и продолжай по ним; то, что новому плану противоречит, переделай.`) : undefined;
+        r.replanNote = undefined;
         if (modeOf(r) === 'epic') r.phase = 1;
       } else {
         r.next = 'plan';
@@ -823,6 +848,7 @@ export class Orchestrator {
           this.waitGate(run, run.next as GateId, this.gateMessage(run));
           break;
         }
+        if (applyPending(this, run)) break;
         switch (run.next) {
           case 'baseline': await this.stageBaseline(run); break;
           case 'visual': await this.stageVisual(run); break;
@@ -986,6 +1012,13 @@ export class Orchestrator {
   waitGate(run: RunFile, gate: GateId, message?: string) {
     const open = run.attempts.find((a) => a.stage === gate && a.status === 'running');
     if (!open) this.begin(run, gate);
+    // Гейт сам по себе пауза: отложенная пауза здесь исполнена, после решения прогон пойдёт дальше.
+    if (run.pending?.some((p) => p.kind === 'pause')) {
+      const at = new Set(run.pending.filter((p) => p.kind === 'pause').map((p) => p.at));
+      for (const i of run.interventions ?? []) if (at.has(i.at)) i.appliedAt ??= new Date().toISOString();
+      run.pending = run.pending.filter((p) => p.kind !== 'pause');
+      if (!run.pending.length) run.pending = undefined;
+    }
     run.status = 'waiting';
     run.next = gate;
     run.message = message;
@@ -1005,6 +1038,10 @@ export class Orchestrator {
    */
   async autopilotGate(run: RunFile, gate: GateId) {
     if (gate === 'gate1') {
+      if (run.replanNote) {
+        this.log(run, c.amber('Автопилот: план переписан после возврата с реализации — проверьте его сами.') + '\n');
+        return;
+      }
       const docs = await this.getChangeDocs(run.id).catch(() => null);
       if (docs && /^##\s+Next Parts/m.test(docs.proposal)) {
         this.log(run, c.amber('Автопилот: планировщик предлагает разбить задачу на части — план ждёт вашего решения.') + '\n');

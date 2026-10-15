@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { exec, run } from './proc.js';
 import type { DiffFile } from './types.js';
@@ -250,6 +251,29 @@ export class Git {
           await run(this.bin, ['reset', '-q', '--', f], { cwd: worktree, env: this.env });
           fs.rmSync(path.join(worktree, f), { force: true });
         }
+      }
+    });
+  }
+
+  /**
+   * Снимок рабочей копии вместе с новыми файлами — коммитом в отдельный ref (refs/psflow/…).
+   * Ветку, index и файлы не трогает: работу до отката можно достать потом через `git checkout <ref> -- .`.
+   */
+  snapshot(worktree: string, ref: string, message: string): Promise<string> {
+    return serialized(worktree, async () => {
+      const index = path.join(os.tmpdir(), `psflow-index-${process.pid}-${Date.now()}`);
+      const env = { ...this.env, GIT_INDEX_FILE: index };
+      try {
+        await exec(this.bin, ['read-tree', 'HEAD'], worktree, env);
+        await exec(this.bin, ['add', '-A'], worktree, env, 60_000);
+        const tree = (await exec(this.bin, ['write-tree'], worktree, env)).trim();
+        const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
+        const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+        const commit = (await exec(this.bin, [...identity, 'commit-tree', tree, '-p', 'HEAD', '-m', message], worktree, env)).trim();
+        await this.git(worktree, ['update-ref', ref, commit]);
+        return commit;
+      } finally {
+        fs.rmSync(index, { force: true });
       }
     });
   }

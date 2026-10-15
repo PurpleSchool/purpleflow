@@ -16,7 +16,8 @@ import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 import { GateBar } from './run/GateBar';
-import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, Metrics, Warnings } from './run/RunHeader';
+import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInline, Warnings } from './run/RunHeader';
+import { ManagerChat } from './run/ManagerChat';
 import { AgentOutput, ClarifyView, InProgress, PlanView, ReproView, ReviewView, TestsView, VisualView } from './run/StageViews';
 import { LOG_TITLE, cleanErr, currentStage, unstableText, withPicked } from './run/util';
 import { useRunGate } from './run/useRunGate';
@@ -266,6 +267,7 @@ export function RunScreen({ runId }: { runId: string }) {
             {run.status === 'finished' && <MergeControl run={run} runId={runId} />}
             <span className="muted mono path" title={run.projectPath}>{shortPath(run.projectPath)}</span>
           </div>
+          <MetricsInline run={run} />
         </div>
         <div className="run-actions">
           <Button tone="quiet" icon={<FolderOpen size={16} />} title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'} onClick={() => void window.psflow.openPath(run.worktreePath)} />
@@ -303,7 +305,7 @@ export function RunScreen({ runId }: { runId: string }) {
       </header>
 
       <div className="run-body">
-      <Metrics run={run} />
+      <ManagerChat run={run} runId={runId} />
 
       <section className="run-main">
         <div className="tab-groups">

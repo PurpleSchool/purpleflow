@@ -14,8 +14,11 @@ export type Role = 'planner' | 'executor' | 'reviewer';
 /** CLI-агент, который выполняет роль. */
 export type AgentKind = 'claude' | 'codex';
 
-/** Модели ролей; visual — модель claude для визуальной проверки (пусто — как у исполнителя-claude). */
-export type Models = Record<Role, string> & { visual?: string };
+/**
+ * Модели ролей; visual — модель claude для визуальной проверки (пусто — как у исполнителя-claude),
+ * manager — модель claude менеджера прогона (пусто — как у служебных вызовов).
+ */
+export type Models = Record<Role, string> & { visual?: string; manager?: string };
 
 export const DEFAULT_AGENTS: Record<Role, AgentKind> = { planner: 'claude', executor: 'claude', reviewer: 'codex' };
 
@@ -175,6 +178,41 @@ export interface Feedback {
   lineComments?: LineComment[];
 }
 
+/**
+ * Управление прогоном на ходу: от человека или предложенное менеджером и подтверждённое человеком.
+ * note — заметка следующему запуску планировщика или исполнителя; pause — остановиться перед следующей стадией;
+ * restart — прервать реализацию и сделать попытку заново с заметкой; replan — прервать и вернуться к плану.
+ */
+export type ControlAction =
+  | { kind: 'note'; text: string }
+  | { kind: 'pause' }
+  | { kind: 'restart'; text: string }
+  | { kind: 'replan'; text: string; keepCode?: boolean };
+
+/** Вмешательство человека в ход прогона — для журнала, таймлайна и менеджера. */
+export interface Intervention {
+  at: string;
+  kind: ControlAction['kind'];
+  text?: string;
+  /** Применено (для отложенных: заметка ушла агенту, пауза сработала). */
+  appliedAt?: string;
+  /** Возврат к плану: снимок работы до него (ref в репозитории) и сохранён ли код. */
+  snapshot?: string;
+  keepCode?: boolean;
+}
+
+/** Сообщение в чате менеджера прогона. */
+export interface ManagerMessage {
+  id: string;
+  at: string;
+  role: 'user' | 'manager';
+  text: string;
+  /** Действие, которое менеджер предлагает; применяется только по кнопке человека. */
+  action?: ControlAction;
+  actionState?: 'proposed' | 'applied' | 'dismissed';
+  error?: boolean;
+}
+
 export interface RunFile {
   version: 1;
   id: string;
@@ -274,6 +312,11 @@ export interface RunFile {
   roundFiles?: string[];
   /** «Что изменилось»: короткая сводка диффа для приёмки. */
   changeSummary?: { at: string; text: string; attempt: number };
+  /** Отложенные действия человека: применяются на ближайшей контрольной точке (перед стадией). */
+  pending?: (ControlAction & { at: string })[];
+  interventions?: Intervention[];
+  /** Причина последнего возврата к плану — передаётся исполнителю после принятия нового плана. */
+  replanNote?: string;
 }
 
 export interface RunSummary {
@@ -309,6 +352,8 @@ export type CoreEvent =
   | { type: 'preview.state'; runId: string; state: PreviewState }
   /** Снимок run.json после каждого изменения — UI просто перерисовывается. */
   | { type: 'run.updated'; run: RunFile }
+  /** Чат менеджера прогона изменился; thinking — менеджер готовит ответ. */
+  | { type: 'manager.updated'; runId: string; messages: ManagerMessage[]; thinking: boolean }
   | { type: 'run.deleted'; runId: string };
 
 // ——— Команды (UI → ядро) ———
@@ -349,6 +394,8 @@ export type CoreCommand =
   /** Приёмка: небольшая правка в той же ветке — потом только проверки и снова приёмка, без ревью и визуальной. */
   | { type: 'gate.fix'; runId: string; comment: string; lineComments?: LineComment[] }
   | { type: 'run.stop'; runId: string }
+  /** Управление на ходу: заметка, пауза, переделать попытку, вернуться к плану. */
+  | { type: 'run.control'; runId: string; action: ControlAction }
   /** Не ждать реализации и проверок: остановить текущую попытку и перейти к ревью (или приёмке). */
   | { type: 'run.skipChecks'; runId: string }
   /** Ещё раз визуальная проверка (например, после правки команды запуска) — с приёмки или остановленного прогона. */

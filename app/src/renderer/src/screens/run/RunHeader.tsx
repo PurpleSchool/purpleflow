@@ -264,18 +264,17 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
   );
 }
 
-export function Metrics({ run }: { run: RunFile }) {
+/** Цифры прогона строкой в шапке. */
+export function MetricsInline({ run }: { run: RunFile }) {
   const now = useNow(run);
   const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
   const total = usageTotal(run.totals);
   return (
-    <dl className="metrics-row">
-      <div className="stat" title="Сколько работали агенты и проверки — без ожидания вашего решения и пауз">
-        <dt>Время агентов</dt><dd><Num animate={false} text={ms(agentTime(run, now))} /></dd>
-      </div>
-      <div className="stat"><dt>Запусков стадий</dt><dd><Num text={String(runs)} /></dd></div>
-      <div className="stat" title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
-      <div className="stat"><dt>Попытки реализации</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
+    <dl className="metrics-inline">
+      <div title="Сколько работали агенты и проверки — без ожидания вашего решения и пауз"><dt>Время агентов</dt><dd><Num animate={false} text={ms(agentTime(run, now))} /></dd></div>
+      <div><dt>Запусков стадий</dt><dd><Num text={String(runs)} /></dd></div>
+      <div title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
+      <div><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
     </dl>
   );
 }

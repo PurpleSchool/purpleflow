@@ -50,6 +50,9 @@ function api(c: Orchestrator): CoreApi {
     checkEnvironment: (dir) => c.checkEnvironment(dir),
     nextPartDraft: (id) => c.nextPartDraft(id),
     projectStats: async (dir) => c.projectStats(dir),
+    getManagerChat: async (id) => c.getManagerChat(id),
+    askManager: (id, text) => c.askManager(id, text),
+    resolveManagerAction: (id, mid, apply) => c.resolveManagerAction(id, mid, apply),
     detectProject: async (dir) => {
       const gitBin = settings.toolPaths.git || which('git', env) || 'git';
       const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);

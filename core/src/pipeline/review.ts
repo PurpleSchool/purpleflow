@@ -93,6 +93,9 @@ export function previousReviewBlock(h: Orchestrator, run: RunFile) : string {
   const reviewAt = Date.parse(prev.at);
   const impl = [...run.attempts].reverse().find((a) => a.stage === 'implement' && a.status === 'done');
   if (!impl || Date.parse(impl.startedAt) < reviewAt) return '';
+  // После возврата к плану прошлые замечания относятся к старому плану — ревью с чистого листа.
+  const replan = run.interventions?.filter((i) => i.kind === 'replan').at(-1);
+  if (replan && Date.parse(replan.at) > reviewAt) return '';
   const fmt = (i: ReviewItem) => `- ${formatItem(i, true)}`;
   const round = run.reviews.filter((r) => r.blocking.length).length + 1;
   return h.prompts.render('review-again.md', {

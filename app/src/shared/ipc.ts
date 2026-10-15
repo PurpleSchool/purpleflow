@@ -1,5 +1,5 @@
 import type {
-  AgentKind, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, ManagerMessage, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -82,6 +82,10 @@ export interface CoreApi {
   checkEnvironment(dir: string): Promise<EnvCheck>;
   nextPartDraft(runId: string): Promise<NextPartDraft | null>;
   projectStats(dir: string): Promise<ProjectStats>;
+  /** Чат менеджера прогона; thinking — ответ ещё готовится. */
+  getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }>;
+  askManager(id: string, text: string): Promise<ManagerMessage[]>;
+  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]>;
 }
 
 export type CoreMethod = keyof CoreApi;

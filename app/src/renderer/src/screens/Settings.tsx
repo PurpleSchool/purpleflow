@@ -33,7 +33,7 @@ export function SettingsScreen() {
   const { state, saveSettings, refreshTools, go } = useStore();
   const s = state.settings;
   const [key, setKey] = useState('');
-  const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '' });
+  const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '' });
   const [agents, setAgents] = useState<Record<Role, AgentKind>>({ planner: 'claude', executor: 'claude', reviewer: 'codex' });
   const [paths, setPaths] = useState<Partial<Record<ToolName, string>>>({});
   const [agentTimeout, setAgentTimeout] = useState(30);
@@ -289,6 +289,16 @@ export function SettingsScreen() {
                 </div>
                 <p>Запускает приложение и проверяет результат в браузере. Пусто — модель исполнителя, если он на claude.</p>
                 <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : 'по умолчанию claude'} value={models.visual ?? ''} onChange={(e) => setModels({ ...models, visual: e.target.value })} />
+              </div>
+              <div className="role bezel role-claude">
+                <div className="role-head">
+                  <strong>Менеджер прогона</strong>
+                  <div className="segmented small" title="Отвечает через claude">
+                    <button className="is-on" disabled>claude</button>
+                  </div>
+                </div>
+                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели. Пусто — как у служебных вызовов.</p>
+                <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : agents.planner === 'claude' && models.planner ? `как у планировщика: ${models.planner}` : 'по умолчанию claude'} value={models.manager ?? ''} onChange={(e) => setModels({ ...models, manager: e.target.value })} />
               </div>
               {(Object.keys(MODEL_HINTS) as AgentKind[]).map((a) => (
                 <datalist key={a} id={`models-${a}`}>{MODEL_HINTS[a].map((m) => <option key={m} value={m} />)}</datalist>

@@ -4,7 +4,7 @@
  * Чистые функции без Node: окно импортирует этот файл напрямую (`@psflow/route`).
  */
 import { modeOf, stagesOf } from './modes.js';
-import type { RunFile, StageId } from './types.js';
+import type { ControlAction, RunFile, StageId } from './types.js';
 
 export { stagesOf } from './modes.js';
 
@@ -98,3 +98,32 @@ export function plannedRoute(run: RouteRun): Partial<Record<StageId, 'planned' |
   for (const id of ids.slice(from + 1)) out[id] = skip.has(id) ? 'skip' : 'planned';
   return out;
 }
+
+/** Сколько раз за прогон можно вернуться к плану на ходу — дальше решает человек (отменить или новая задача). */
+export const REPLAN_LIMIT = 2;
+
+const AFTER_IMPLEMENT: StageId[] = ['implement', 'tests', 'review', 'visual', 'limit', 'gate2'];
+
+type ControlRun = Pick<RunFile, 'mode' | 'status' | 'next' | 'attempts' | 'quickFix' | 'mergeOnly' | 'roundFiles' | 'prRound' | 'interventions'>;
+
+/**
+ * Какие действия управления доступны сейчас — одна правда для ядра, кнопок и менеджера.
+ * note — пока прогон не закончен и впереди есть запуск планировщика или исполнителя;
+ * pause — только пока стадии крутятся; restart и replan — после начала реализации в обычном круге.
+ */
+export function availableActions(run: ControlRun): ControlAction['kind'][] {
+  if (run.status === 'finished' || run.status === 'cancelled' || run.next === 'finish') return [];
+  const out: ControlAction['kind'][] = ['note'];
+  if (run.status === 'running') out.push('pause');
+  const implStarted = run.attempts.some((a) => a.stage === 'implement');
+  const normal = roundOf(run) === 'normal' && !run.prRound;
+  if (implStarted && normal && AFTER_IMPLEMENT.includes(run.next)) {
+    out.push('restart');
+    const planned = modeOf(run) !== 'quick' && run.attempts.some((a) => a.stage === 'plan' && a.status === 'done');
+    if (planned && replansLeft(run) > 0) out.push('replan');
+  }
+  return out;
+}
+
+export const replansLeft = (run: Pick<RunFile, 'interventions'>) =>
+  REPLAN_LIMIT - (run.interventions ?? []).filter((i) => i.kind === 'replan').length;

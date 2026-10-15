@@ -26,7 +26,7 @@ interface StoredSettings {
 const DEFAULTS: StoredSettings = {
   toolPaths: {},
   proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '' },
-  models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '' },
+  models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '', manager: '' },
   agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
   agentTimeoutMin: 30,
   maxParallel: 2,

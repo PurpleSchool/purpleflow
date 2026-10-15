@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ProjectConfig, RunFile, RunSummary } from './types.js';
+import type { ManagerMessage, ProjectConfig, RunFile, RunSummary } from './types.js';
 
 interface IndexEntry {
   id: string;
@@ -116,7 +116,7 @@ export class RunStore {
   /** Всё, что прогон хранит в данных приложения: индекс, копия run.json, лог, PID-файлы. */
   forget(id: string): void {
     this.remove(id);
-    for (const f of [this.backupPath(id), this.logFile(id), this.pidFile(id), this.pidFile(`${id}:server`), this.pidFile(`${id}:preview`)]) fs.rmSync(f, { force: true });
+    for (const f of [this.backupPath(id), this.logFile(id), this.chatFile(id), this.pidFile(id), this.pidFile(`${id}:server`), this.pidFile(`${id}:preview`)]) fs.rmSync(f, { force: true });
   }
 
   private pidFile(group: string): string {
@@ -159,6 +159,23 @@ export class RunStore {
     const all = this.readProjects();
     delete all[repo];
     writeAtomic(this.projectsFile(), JSON.stringify(all, null, 2));
+  }
+
+  /** Чат менеджера прогона — отдельно от run.json: тот целиком уходит в окно при каждом изменении. */
+  chatFile(id: string): string {
+    return path.join(this.dataDir, 'manager', `${id}.json`);
+  }
+
+  readChat(id: string): ManagerMessage[] {
+    try {
+      return JSON.parse(fs.readFileSync(this.chatFile(id), 'utf8')) as ManagerMessage[];
+    } catch {
+      return [];
+    }
+  }
+
+  writeChat(id: string, messages: ManagerMessage[]): void {
+    writeAtomic(this.chatFile(id), JSON.stringify(messages, null, 2));
   }
 
   logFile(id: string): string {
