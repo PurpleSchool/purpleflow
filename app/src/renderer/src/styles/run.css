@@ -201,13 +201,12 @@ body.is-col-resizing iframe, body.is-col-resizing .monaco-editor { pointer-event
 .empty h3 { margin: 0; font-size: var(--fs-20); font-weight: 300; letter-spacing: -0.025em; color: var(--text-1); }
 .empty p { margin: 0 0 var(--s-3); max-width: 46ch; color: var(--text-3); font-size: var(--fs-13); line-height: 1.6; }
 
-/* Вкладка «Код»: дифф в любой момент прогона */
+/* Вкладка «Код»: дифф в любой момент прогона; переключатель и «Обновить» — в строке вкладок */
 .pane-code { flex-direction: column; padding: 0; }
-.pane-code > .diff { flex: 1; min-height: 0; }
-.pane-code > .center, .pane-code > .empty { flex: 1; }
-.code-bar { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-5) var(--s-3); font-size: var(--fs-12); color: var(--text-3); }
-.code-bar .btn { height: 30px; padding: 0 var(--s-3); font-size: var(--fs-12); }
-.code-count { display: inline-flex; align-items: center; gap: 6px; color: var(--text-1); }
+.pane-code > .diff-wrap, .pane-code > .center, .pane-code > .empty { flex: 1; min-height: 0; }
+.tab-tools { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); font-size: var(--fs-12); color: var(--text-3); }
+.tab-tools .tabs { margin: 0; }
+.tab-tools .btn { height: 30px; padding: 0 var(--s-3); font-size: var(--fs-12); }
 .code-live { color: var(--run); }
 .code-stale { color: var(--wait); }
-.code-at { font-variant-numeric: tabular-nums; }
+.code-at { font-variant-numeric: tabular-nums; white-space: nowrap; }

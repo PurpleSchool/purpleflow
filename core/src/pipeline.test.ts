@@ -213,6 +213,10 @@ test('менеджер: разбор ответа модели — JSON с де�
   // Действие без текста указания не принимаем.
   assert.deepEqual(parseReply('{"reply": "Ок", "action": {"kind": "note", "text": " "}}'), { reply: 'Ок', action: undefined });
   assert.deepEqual(parseReply('Просто ответ'), { reply: 'Просто ответ' });
+  // Блок кода внутри reply — не сам JSON (так ломалось: брали ```bash за ответ).
+  const withCode = JSON.stringify({ reply: 'Сделайте так:\n```bash\ngit tag v1\n```', action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' } });
+  assert.deepEqual(parseReply(withCode), { reply: 'Сделайте так:\n```bash\ngit tag v1\n```', action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' } });
+  assert.deepEqual(parseReply('```json\n{"reply": "Ок", "action": null}\n```'), { reply: 'Ок', action: undefined });
 });
 
 test('менеджер: видит факты прогона, предлагает действие, человек применяет кнопкой', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
@@ -237,4 +241,25 @@ test('менеджер: видит факты прогона, предлагае
   const r = await untilGate(core, runId, 'gate1'); // автопилот после возврата к плану ждёт человека
   assert.equal(r.interventions?.at(-1)?.kind, 'replan');
   assert.equal(core.getManagerChat(runId).messages.at(-1)!.actionState, 'applied');
+});
+
+test('менеджер: команда выполняется только по кнопке, вывод возвращается в чат', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  const repo = makeRepo();
+  execFileSync('git', ['tag', 'v1.0.0'], { cwd: repo });
+  let seen = '';
+  const fake = fakeClaude({
+    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+    review: () => ({ blocking: [], notes: [] }),
+    manager: (p) => { seen = p; return JSON.stringify({ reply: 'Поставлю тег.', action: { kind: 'command', command: 'git tag v1.0.1 && git tag --list', text: 'тег v1.0.1', cwd: 'project' } }); },
+  });
+  const core = makeCore(fake);
+  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', autopilot: true } as never });
+  await untilGate(core, runId, 'gate2');
+  const chat = await core.askManager(runId, 'Поставь тег на следующую fix-версию');
+  assert.match(seen, /v1\.0\.0/); // теги проекта в фактах
+  assert.equal(execFileSync('git', ['tag', '--list'], { cwd: repo }).toString().trim(), 'v1.0.0'); // без кнопки — ничего
+  const after = await core.resolveManagerAction(runId, chat.at(-1)!.id, true);
+  assert.equal(after.at(-1)!.result?.code, 0);
+  assert.match(after.at(-1)!.result!.output, /v1\.0\.1/);
+  assert.match(execFileSync('git', ['tag', '--list'], { cwd: repo }).toString(), /v1\.0\.1/);
 });

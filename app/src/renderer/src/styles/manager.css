@@ -1,5 +1,5 @@
 /* Экран прогона: слева — чат с менеджером, справа — таймлайн, лог и браузер; цифры прогона — строкой в шапке */
-.run-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--gap); }
+.run-body { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--manager-w, 300px) minmax(0, 1fr); gap: var(--gap); }
 .run-body > .run-main { min-height: 0; animation: cardIn 0.6s var(--ease) 0.1s both; }
 
 .metrics-inline { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-5); margin: var(--s-3) 0 0; font-size: var(--fs-12); }
@@ -8,9 +8,24 @@
 .metrics-inline dd { margin: 0; color: var(--text-1); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .metrics-inline dd small { color: var(--text-3); margin: 0 2px; font-size: inherit; }
 
-.manager { display: flex; flex-direction: column; min-height: 0; background: var(--bg-3); border-radius: 26px; box-shadow: var(--highlight); overflow: hidden; animation: cardIn 0.6s var(--ease) 0.05s both; }
+.manager { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--bg-3); border-radius: 26px; box-shadow: var(--highlight); overflow: hidden; animation: cardIn 0.6s var(--ease) 0.05s both; }
 .manager-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-5) var(--s-3); }
-.manager-head > div { display: flex; flex-direction: column; min-width: 0; }
+.manager-head > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.manager-collapse { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 50%; color: var(--text-3); transition: background 0.2s var(--ease), color 0.2s var(--ease); }
+.manager-collapse:hover { background: var(--bg-5); color: var(--text-1); }
+
+/* Ширина тянется за правый край чата */
+.manager-resize { position: absolute; top: 24px; bottom: 24px; right: 0; width: 8px; cursor: col-resize; z-index: 3; }
+.manager-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 2px; width: 2px; border-radius: 2px; background: transparent; transition: background 0.2s var(--ease); }
+.manager-resize:hover::after, body.is-manager-resizing .manager-resize::after { background: var(--accent-line); }
+
+/* Свёрнутый чат — узкая полоса с иконкой; точка — менеджер думает, ждёт решения или есть отложенные действия */
+.manager.is-collapsed { animation: none; }
+.manager-rail { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--s-4); padding: var(--s-4) 0; color: var(--text-3); transition: color 0.2s var(--ease); }
+.manager-rail:hover { color: var(--text-1); }
+.manager-rail-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: var(--fs-12); letter-spacing: 0.02em; }
+.manager-dot { position: absolute; top: 14px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--wait); }
+.manager-dot.is-thinking { background: var(--accent-hi); animation: breathe 1.2s ease-in-out infinite; }
 .manager-head strong { font-size: var(--fs-14); font-weight: 500; }
 .manager-head span { color: var(--text-3); font-size: var(--fs-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .manager-sign { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 50%; background: var(--accent-wash); color: var(--accent-hi); }
@@ -57,10 +72,15 @@
 .manager-send:disabled { opacity: 0.3; }
 .manager-send:active:not(:disabled) { transform: scale(0.94); }
 
-@media (max-width: 1100px) {
-  .run-body { grid-template-columns: 260px minmax(0, 1fr); }
-}
 @media (max-width: 900px) {
-  .run-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 280px; }
+  .run-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) var(--manager-h, 280px); }
+  .manager-resize { display: none; }
+  .manager-rail { flex-direction: row; justify-content: center; }
+  .manager-rail-label { writing-mode: initial; transform: none; }
   .run-body > .manager { order: 2; }
 }
+
+/* Команда, которую предлагает менеджер, и её вывод */
+.action-command, .msg-output { margin: var(--s-2) 0 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-m); background: var(--bg-0); font: 11.5px/1.55 var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.action-command { color: var(--text-1); }
+.msg-output { max-height: 240px; overflow: auto; color: var(--text-3); }

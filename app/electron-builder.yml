@@ -39,7 +39,7 @@ nsis:
 linux:
   executableName: purpleflow
   syncDesktopName: true
-  target: [AppImage, deb]
+  target: [AppImage, deb, rpm]
   category: Development
   maintainer: PurpleSchool
   artifactName: PurpleFlow-${version}-${arch}.${ext}

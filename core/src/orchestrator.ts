@@ -29,7 +29,7 @@ import { applyPending, control } from './pipeline/control.js';
 import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
 import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
 import { knowledgeOf, updateKnowledge, knowledgeBlock, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
-import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps } from './pipeline/workspace.js';
+import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps, prepareApp } from './pipeline/workspace.js';
 export class Orchestrator {
   listeners = new Set<Listener>();
   store: RunStore;
@@ -611,6 +611,15 @@ export class Orchestrator {
       output = (output + t).slice(-4000);
     };
     this.setPreview(id, { status: 'starting', url, command });
+    try {
+      await prepareApp(this, { repo: r.projectPath, cwd: r.worktreePath, group, onOutput: tail });
+    } catch (e) {
+      const state: PreviewState = { status: 'failed', url, command, output, error: (e as Error).message.split('\n')[0] };
+      this.setPreview(id, state);
+      return state;
+    }
+    // Остановили, пока шла подготовка.
+    if (this.previews.get(id)?.url !== url || this.previews.get(id)?.status !== 'starting') return this.getPreview(id);
     const server = runProc(command, [], {
       cwd: r.worktreePath,
       env: { ...this.opts.env, ...portEnv(runCommand, port), BROWSER: 'none' },

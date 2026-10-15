@@ -9,6 +9,7 @@ import { Screencast, findChrome, waitForCdp } from '../screencast.js';
 import type { VisualResult, RunFile } from '../types.js';
 import { expandPorts, freePort, parseReview, parseShots, parseUnverified, portEnv, waitForUrl } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
+import { prepareApp } from './workspace.js';
 export function visualDir(h: Orchestrator, run: RunFile, attempt: number) : string {
   return path.join(h.opts.dataDir, 'visual', run.id, String(attempt));
 }
@@ -29,6 +30,9 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
   /** Хвост вывода команды запуска — показать человеку, если проверить не удалось (упал API и т. п.). */
   let serverOut = '';
 
+  // Миграции и сиды ветки — до запуска: иначе приложение поднимется на старой схеме базы.
+  await prepareApp(h, { repo: run.projectPath, cwd: run.worktreePath, group: serverGroup, onOutput: (t) => h.log(run, c.dim(crlf(t)), false) });
+  h.checkStop(run);
   h.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
   let exited: number | null | undefined;
   const server = runProc(command, [], {

@@ -201,6 +201,20 @@ export interface Intervention {
   keepCode?: boolean;
 }
 
+/**
+ * Команда, которую менеджер предлагает выполнить (тег, push, git, скрипт проекта). Выполняется только по кнопке человека:
+ * в папке проекта или в рабочей копии прогона; вывод возвращается в чат.
+ */
+export interface CommandAction {
+  kind: 'command';
+  command: string;
+  /** Что сделает команда — одной фразой для карточки. */
+  text: string;
+  cwd: 'project' | 'worktree';
+}
+
+export type ManagerAction = ControlAction | CommandAction;
+
 /** Сообщение в чате менеджера прогона. */
 export interface ManagerMessage {
   id: string;
@@ -208,7 +222,9 @@ export interface ManagerMessage {
   role: 'user' | 'manager';
   text: string;
   /** Действие, которое менеджер предлагает; применяется только по кнопке человека. */
-  action?: ControlAction;
+  action?: ManagerAction;
+  /** Результат выполненной команды: код выхода и хвост вывода. */
+  result?: { code: number | null; output: string };
   actionState?: 'proposed' | 'applied' | 'dismissed';
   error?: boolean;
 }
@@ -441,6 +457,8 @@ export interface ProjectConfig {
   testCommand: string;
   /** Быстрые тесты для промежуточных кругов (например, unit без e2e); полный testCommand — один раз перед приёмкой. */
   quickTestCommand?: string;
+  /** Подготовка перед каждым запуском приложения (миграции, сиды) — визуальная проверка, «Браузер», проверка окружения. */
+  prepareCommand?: string;
   runCommand?: string;
   appUrl?: string;
   /** Инструкция агенту визуальной проверки: тестовый вход, сид данных, куда идти. */

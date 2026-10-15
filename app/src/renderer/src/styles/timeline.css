@@ -171,7 +171,6 @@
   box-shadow: 0 0 0 1px var(--line-2), -30px 0 80px -30px rgba(0, 0, 0, 0.8);
   animation: drawerIn 0.5s var(--ease) both;
 }
-.drawer.is-wide { width: min(1500px, 94%); }
 @keyframes drawerIn { from { opacity: 0; transform: translateX(48px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .drawer-head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-6) var(--s-6) var(--s-4) var(--s-8); flex: none; }
@@ -230,7 +229,6 @@
   grid-template-columns: minmax(0, 1fr) 0fr; transition: grid-template-columns 0.55s var(--ease);
 }
 .split.is-open { grid-template-columns: 340px minmax(0, 1fr); }
-.split.is-open.is-wide { grid-template-columns: 86px minmax(0, 1fr); }
 .split-left { min-width: 0; overflow-y: auto; overflow-x: hidden; }
 .split-right { min-width: 0; min-height: 0; overflow: hidden; display: flex; }
 .details { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; margin: 0 var(--s-4) var(--s-2) 0; border-radius: 22px; background: var(--bg-2); animation: detailsIn 0.5s var(--ease) both; }
@@ -251,9 +249,6 @@
 .gantt.is-compact .gantt-grid, .gantt.is-compact .gantt-gaps, .gantt.is-compact .gantt-axis, .gantt.is-compact .gantt-legend { display: none; }
 .split.is-open .timeline-panel { padding: var(--s-2) var(--s-3) var(--s-6) var(--s-6); }
 /* Совсем узко (дифф): только иконки */
-.split.is-wide .gantt.is-compact .gantt-row.is-click { grid-template-columns: 34px; padding: 6px; justify-content: center; }
-.split.is-wide .gantt.is-compact .gantt-name, .split.is-wide .gantt.is-compact .gantt-track, .split.is-wide .gantt.is-compact .gantt-go { display: none; }
-.split.is-wide .timeline-panel { padding: var(--s-2) var(--s-3); }
 
 /* Слияние в выбранную ветку */
 

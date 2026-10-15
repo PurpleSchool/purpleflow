@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCircleQuestion, ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleStop, FolderOpen, MousePointerClick, GitBranch, Play, SkipForward, Sparkles, TriangleAlert, X } from 'lucide-react';
-import type { DiffFile, StageId } from '@psflow/core';
+import type { StageId } from '@psflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline } from '../components/Timeline';
@@ -9,7 +9,6 @@ import { MODES, acceptTarget, limitRow, nodeState, runStages, type Mode } from '
 import { MODE_ICON } from '../components/ModeIcon';
 import { LiveLog, type LogSlice } from '../components/Terminal';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
-import { DiffReview } from '../components/DiffReview';
 import { PrPane } from '../components/PrPane';
 import { Button, Empty, StatusPill } from '../components/ui';
 import { onCoreEvent, useStore } from '../lib/store';
@@ -17,7 +16,7 @@ import { shortPath } from '../lib/format';
 import type { ChangeDocs } from '../../../shared/ipc';
 import { GateBar } from './run/GateBar';
 import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInline, Warnings } from './run/RunHeader';
-import { ManagerChat } from './run/ManagerChat';
+import { ManagerChat, useManagerLayout } from './run/ManagerChat';
 import { CodePane, useChangedFiles } from './run/CodePane';
 import { AgentOutput, ClarifyView, InProgress, PlanView, ReproView, ReviewView, TestsView, VisualView } from './run/StageViews';
 import { LOG_TITLE, cleanErr, currentStage, unstableText, withPicked } from './run/util';
@@ -34,8 +33,6 @@ export function RunScreen({ runId }: { runId: string }) {
   /** Выбранная попытка стадии; null — последняя. */
   const [attemptNo, setAttemptNo] = useState<number | null>(null);
   const [docs, setDocs] = useState<ChangeDocs | null>(null);
-  const [diff, setDiff] = useState<DiffFile[] | null>(null);
-  const [diffErr, setDiffErr] = useState<string | null>(null);
   const { comment, setComment, lineComments, setLineComments, picked, setPicked, accTab, setAccTab } = useRunGate(runId);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,18 +70,20 @@ export function RunScreen({ runId }: { runId: string }) {
     setDrawer(null);
     setAttemptNo(null);
     setDocs(null);
-    setDiff(null);
     setError(null);
     gateKey.current = '';
   }, [runId, loadRun]);
 
-  // Гейт ждёт решения — сами открываем детали этой стадии: план или дифф.
+  // Гейт ждёт решения — сами открываем детали этой стадии: план, а приёмку — на вкладке «Код».
   useEffect(() => {
     if (!run) return;
     const key = `${run.next}:${run.status}`;
     if (key === gateKey.current) return;
     gateKey.current = key;
-    if (run.status === 'waiting') {
+    if (run.status === 'waiting' && run.next === 'gate2') {
+      setDrawer(null);
+      setView('code');
+    } else if (run.status === 'waiting') {
       setView('timeline');
       setDrawer(run.next === 'limit' ? limitRow(run) : run.next === 'gate0' ? 'clarify' : run.next);
       setAttemptNo(null);
@@ -92,18 +91,12 @@ export function RunScreen({ runId }: { runId: string }) {
   }, [run]);
 
   const showPlan = drawer === 'plan' || drawer === 'gate1';
-  const showDiff = drawer === 'gate2';
 
   const refreshDocs = () => window.psflow.core.getChangeDocs(runId).then(setDocs).catch(() => setDocs(null));
-  const refreshDiff = () => {
-    setDiffErr(null);
-    return window.psflow.core.getDiff(runId).then(setDiff).catch((e) => setDiffErr(cleanErr(e)));
-  };
   useEffect(() => {
     if (showPlan) void refreshDocs();
-    if (showDiff) void refreshDiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPlan, showDiff, runId, run?.next, run?.status]);
+  }, [showPlan, runId, run?.next, run?.status]);
 
   useEffect(() => onCoreEvent((e) => {
     if (e.type === 'stage.started' && e.runId === runId && showPlan) void refreshDocs();
@@ -113,6 +106,12 @@ export function RunScreen({ runId }: { runId: string }) {
   const open = (s: StageId) => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setClosing(false);
+    // Приёмка — это дифф: открываем вкладку «Код», а не панель деталей.
+    if (s === 'gate2') {
+      setDrawer(null);
+      setView('code');
+      return;
+    }
     setView('timeline');
     setDrawer(s);
     setAttemptNo(null);
@@ -152,6 +151,9 @@ export function RunScreen({ runId }: { runId: string }) {
 
   // До проверки «прогон загружен»: порядок хуков не должен зависеть от загрузки.
   const changed = useChangedFiles(run);
+  const managerLayout = useManagerLayout();
+  /** Место в строке вкладок для инструментов вкладки «Код»: «Код / Заметки» и «Обновить». */
+  const [tabTools, setTabTools] = useState<HTMLDivElement | null>(null);
 
   if (!run) {
     return (
@@ -239,7 +241,7 @@ export function RunScreen({ runId }: { runId: string }) {
       pickedCount={gate === 'gate2' ? picked.length : 0}
       onOpenAccept={() => open(gate === 'gate1' ? 'gate1' : 'gate2')}
       onOpenApp={gate === 'gate2' && canRunApp && view !== 'browser' ? openApp : undefined}
-      diffShown={gate === 'gate1' ? showPlan : showDiff}
+      diffShown={gate === 'gate1' ? showPlan : view === 'code'}
     />
   );
 
@@ -308,8 +310,8 @@ export function RunScreen({ runId }: { runId: string }) {
         </div>
       </header>
 
-      <div className="run-body">
-      <ManagerChat run={run} runId={runId} />
+      <div className="run-body" style={managerLayout.style}>
+      <ManagerChat run={run} runId={runId} layout={managerLayout} />
 
       <section className="run-main">
         <div className="tab-groups">
@@ -329,7 +331,7 @@ export function RunScreen({ runId }: { runId: string }) {
               ...(run.pr ? [{ id: 'pr' as const, label: 'Pull Request', extra: run.prRound && run.status !== 'finished' ? <span className="tab-live" /> : undefined }] : []),
             ]}
           />
-          <span className="grow" />
+          {view === 'code' ? <div className="tab-tools" ref={setTabTools} /> : <span className="grow" />}
           {view === 'timeline' && !drawer && (
             <span className="tab-hint"><MousePointerClick size={14} /> Нажмите на стадию — откроются её детали</span>
           )}
@@ -347,10 +349,21 @@ export function RunScreen({ runId }: { runId: string }) {
           {(view === 'browser' || preview.state.status === 'ready') && (
             <div className={`pane pane-browser ${view === 'browser' && !agentLive ? '' : 'is-hidden'}`}><BrowserPane preview={preview} canRun={canRunApp} /></div>
           )}
-          {view === 'code' && <CodePane run={run} changed={changed} />}
+          {view === 'code' && (
+            <CodePane
+              run={run}
+              changed={changed}
+              tools={tabTools}
+              accept={gate === 'gate2' ? {
+                picked, onPicked: setPicked, tab: accTab, onTab: setAccTab, comments: lineComments, onComments: setLineComments, notes: accNotes,
+                summary: run.changeSummary?.attempt === run.attempts.filter((a) => a.stage === 'gate2').length ? run.changeSummary.text : run.status === 'waiting' ? null : undefined,
+                banner: unstableChecks.length > 0 ? <p className="check-old unstable-banner"><TriangleAlert size={14} /> {unstableText(unstableChecks[0].unstable!)}</p> : undefined,
+              } : undefined}
+            />
+          )}
           {view === 'pr' && run.pr && <div className="pane"><PrPane run={run} runId={runId} onStarted={() => setView('timeline')} /></div>}
           {view === 'timeline' && (
-            <div className={`split ${drawer && !closing ? 'is-open' : ''} ${showDiff && !closing ? 'is-wide' : ''}`}>
+            <div className={`split ${drawer && !closing ? 'is-open' : ''}`}>
               <div className="split-left scroll">
                 <div className="timeline-panel">
                   <Timeline run={run} selected={drawer} current={live ? currentStage(run) : null} onSelect={open} compact={Boolean(drawer) && !closing} />
@@ -365,17 +378,6 @@ export function RunScreen({ runId }: { runId: string }) {
                         <strong>{stageDef.title}</strong>
                         <span>{drawer === 'visual' ? 'claude' : stageDef.role ? run.agents?.[stageDef.role] ?? stageDef.actor : stageDef.actor}{drawer === 'visual' ? (attempt?.model && attempt.model !== 'claude' ? ` · ${attempt.model}` : '') : stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
                       </div>
-                      {showDiff && diff && (
-                        <PillTabs<'code' | 'notes'>
-                          className="tabs attempts"
-                          value={accTab}
-                          onChange={setAccTab}
-                          items={[
-                            { id: 'code', label: `Код · ${diff.length}` },
-                            { id: 'notes', label: `Заметки · ${accNotes}`, extra: picked.length ? <span className="tab-badge is-pick">{picked.length}</span> : undefined },
-                          ]}
-                        />
-                      )}
                       {tries.length > 1 && (
                         <PillTabs<string>
                           className="tabs attempts"
@@ -400,28 +402,7 @@ export function RunScreen({ runId }: { runId: string }) {
                       {drawer === 'visual' && <VisualView key={`visual-${attempt?.attempt ?? 0}`} run={run} runId={runId} attempt={attempt} idx={Math.min((run.visuals?.length ?? 1) - 1, attemptIdx < 0 ? (run.visuals?.length ?? 1) - 1 : attemptIdx)} />}
                       {drawer === 'baseline' && <ReproView run={run} kind="baseline" />}
                       {clarifyQuestions && <ClarifyView run={run} runId={runId} waiting={run.next === 'gate0' && (run.status === 'waiting' || run.status === 'stopped')} onDone={close} />}
-                      {showDiff && (
-                        diffErr ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{diffErr}</Empty>
-                        : !diff ? <div className="center"><span className="spinner big" /></div>
-                        : <>
-                          {unstableChecks.length > 0 && <p className="check-old unstable-banner"><TriangleAlert size={14} /> {unstableText(unstableChecks[0].unstable!)}</p>}
-                          <DiffReview
-                            picked={picked}
-                            onPicked={setPicked}
-                            tab={accTab}
-                            onTab={setAccTab}
-                            groups={run.taskMap?.groups}
-                            visualItems={run.visuals?.at(-1) ? [...run.visuals.at(-1)!.blocking, ...run.visuals.at(-1)!.notes] : []}
-                            files={diff}
-                            review={lastReview}
-                            comments={lineComments}
-                            onComments={setLineComments}
-                            readOnly={!(gate === 'gate2')}
-                            summary={gate === 'gate2' ? (run.changeSummary?.attempt === run.attempts.filter((a) => a.stage === 'gate2').length ? run.changeSummary.text : run.status === 'waiting' ? null : undefined) : undefined}
-                          />
-                        </>
-                      )}
-                      {!showPlan && !slice && !showDiff && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && !clarifyQuestions && (
+                      {!showPlan && !slice && drawer !== 'tests' && drawer !== 'review' && drawer !== 'visual' && drawer !== 'baseline' && !clarifyQuestions && (
                         <Empty icon={<Sparkles />} title={`${stageDef.title} ещё не начиналась`}>Стадия запустится, когда до неё дойдёт прогон.</Empty>
                       )}
                     </div>

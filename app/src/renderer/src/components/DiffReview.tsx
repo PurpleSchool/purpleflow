@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import { ChevronRight, ListChecks, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronRight, ListChecks, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PillTabs } from './PillTabs';
 import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
@@ -84,6 +84,39 @@ interface Props {
   /** Вкладка «Код»/«Заметки» управляется снаружи (переключатель в шапке приёмки). */
   tab?: 'code' | 'notes';
   onTab?: (t: 'code' | 'notes') => void;
+  /** Ключ для отметок «Просмотрено» (id прогона); без него отметок нет. */
+  viewedKey?: string;
+}
+
+/** Отпечаток содержимого: отметка «Просмотрено» снимается, если файл потом изменился. */
+function fingerprint(f: DiffFile): string {
+  let h = 5381;
+  const text = `${f.status}\0${f.original}\0${f.modified}`;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return `${text.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** Просмотренные файлы прогона: путь → отпечаток. Удобство одного человека — хватает localStorage. */
+function useViewed(key: string | undefined) {
+  const storageKey = key ? `psflow.viewed.${key}` : null;
+  const read = (): Record<string, string> => {
+    if (!storageKey) return {};
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  };
+  const [marks, setMarks] = useState(read);
+  useEffect(() => setMarks(read()), [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const save = (next: Record<string, string>) => {
+    setMarks(next);
+    if (!storageKey) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch { /* без памяти об отметках */ }
+  };
+  return { marks, save, enabled: Boolean(storageKey) };
 }
 
 export const reviewKey = (r: ReviewItem) => `${r.file ?? ''}:${r.line ?? ''}:${r.message}`;
@@ -158,7 +191,7 @@ const WIDTH_KEY = 'psflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
 
-export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab, groups }: Props) {
+export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab, groups, viewedKey }: Props) {
   const [ownTab, setOwnTab] = useState<'code' | 'notes'>('code');
   const tab = outerTab ?? ownTab;
   const setTab = onTab ?? setOwnTab;
@@ -237,6 +270,48 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
   }, [ordered, current]);
 
   const file = sorted.find((f) => f.path === current) ?? null;
+
+  const viewed = useViewed(viewedKey);
+  const prints = useMemo(() => new Map(files.map((f) => [f.path, fingerprint(f)])), [files]);
+  const isViewed = (p: string) => viewed.enabled && viewed.marks[p] === prints.get(p);
+  const viewedCount = viewed.enabled ? files.filter((f) => isViewed(f.path)).length : 0;
+  /** Отметить текущий файл и перейти к следующему непросмотренному (по порядку списка, по кругу). */
+  const toggleViewed = (p: string) => {
+    const next = { ...viewed.marks };
+    if (isViewed(p)) {
+      delete next[p];
+      viewed.save(next);
+      return;
+    }
+    next[p] = prints.get(p) ?? '';
+    viewed.save(next);
+    if (p !== current) return;
+    const i = ordered.findIndex((f) => f.path === p);
+    const rest = [...ordered.slice(i + 1), ...ordered.slice(0, i)];
+    const to = rest.find((f) => next[f.path] !== prints.get(f.path));
+    if (to) {
+      setCurrent(to.path);
+      setDraftLine(null);
+    }
+  };
+  // V — отметить просмотренным и дальше (не в полях ввода).
+  const toggleRef = useRef(toggleViewed);
+  toggleRef.current = toggleViewed;
+  useEffect(() => {
+    if (!viewed.enabled || tab !== 'code') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'v' && e.key.toLowerCase() !== 'м') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const el = e.target as HTMLElement;
+      // Редактор диффа только для чтения — в нём V работает; в настоящих полях ввода — нет.
+      if (!el.closest('.monaco-editor') && el.closest('input, textarea, [contenteditable]')) return;
+      if (!current) return;
+      e.preventDefault();
+      toggleRef.current(current);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewed.enabled, tab, current]);
 
   const markers: Marker[] = useMemo(() => {
     if (!file) return [];
@@ -319,7 +394,7 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     const dir = f.path.slice(0, f.path.length - (name?.length ?? 0));
     return (
       <li key={f.path}>
-        <button className={`file ${f.path === current ? 'is-on' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => { setCurrent(f.path); setDraftLine(null); }} title={f.path}>
+        <button className={`file ${f.path === current ? 'is-on' : ''} ${isViewed(f.path) ? 'is-viewed' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => { setCurrent(f.path); setDraftLine(null); }} title={f.path}>
           <span className={`file-st st-${f.status}`}>
             {f.status === 'A' ? <FilePlus2 size={14} /> : f.status === 'D' ? <FileMinus2 size={14} /> : <FileCode2 size={14} />}
           </span>
@@ -328,6 +403,7 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
             {withDir && dir && <small>{dir}</small>}
           </span>
           {n > 0 && <span className="file-n">{n}</span>}
+          {isViewed(f.path) && <Check size={13} className="file-viewed" aria-label="Просмотрено" />}
         </button>
       </li>
     );
@@ -388,7 +464,7 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
       <aside className="diff-files">
         <div className="diff-files-head">
           <span>Файлы</span>
-          <span className="muted">{files.length}</span>
+          <span className="muted">{viewed.enabled ? `${viewedCount} из ${files.length}` : files.length}</span>
           <span className="grow" />
           <span className="diff-files-modes" role="radiogroup" aria-label="Вид списка файлов">
             {planGroups.length > 0 && (
@@ -418,7 +494,16 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
         </ul>
       </aside>
 
-      <div className="diff-main">
+      <div className={`diff-main ${viewed.enabled && file ? 'has-head' : ''}`}>
+        {viewed.enabled && file && (
+          <div className="diff-file-head">
+            <span className="diff-file-path" title={file.path}>{file.path}</span>
+            <button className={`viewed-toggle ${isViewed(file.path) ? 'is-on' : ''}`} onClick={() => toggleViewed(file.path)} title={isViewed(file.path) ? 'Снять отметку' : 'Отметить просмотренным и перейти к следующему (V)'}>
+              <span className="viewed-box">{isViewed(file.path) && <Check size={12} />}</span>
+              Просмотрено
+            </button>
+          </div>
+        )}
         {file ? (
           file.binary ? (
             <div className="diff-binary">Бинарный файл — дифф не показывается.</div>

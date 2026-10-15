@@ -106,3 +106,24 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
     h.log(run, c.dim(`зависимости скопированы из проекта (${sec} с); lock-файлы отличаются — команда подготовки доустановит`) + '\n');
   }
 }
+
+/**
+ * «Подготовка к запуску» из команд проекта (миграции, сиды) — перед каждым запуском приложения:
+ * в визуальной проверке, во вкладке «Браузер» и в проверке окружения. Свежая команда из настроек проекта.
+ * Упала — ошибка с хвостом вывода: без миграций приложение всё равно не заработает.
+ */
+export async function prepareApp(h: Orchestrator, o: { repo: string; cwd: string; group: string; onOutput?: (t: string) => void }): Promise<void> {
+  const cmd = h.getProjectConfig(o.repo)?.prepareCommand?.trim();
+  if (!cmd) return;
+  let out = '';
+  const take = (t: string) => {
+    out = (out + t).slice(-4000);
+    o.onOutput?.(t);
+  };
+  o.onOutput?.(`$ ${cmd}\n`);
+  const r = await runProc(cmd, [], { cwd: o.cwd, env: { ...h.opts.env, CI: '1' }, shell: true, group: o.group, timeoutMs: 10 * 60_000, onStdout: take, onStderr: take });
+  if (r.code !== 0) {
+    const why = r.spawnError ?? (r.timedOut ? 'не уложилась в 10 минут' : `завершилась с кодом ${r.code}`);
+    throw new Error(`Подготовка к запуску (${cmd}) ${why}:\n${out.replace(/\x1b\[[0-9;]*m/g, '').trim().slice(-1500)}`);
+  }
+}

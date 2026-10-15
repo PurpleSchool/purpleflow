@@ -12,6 +12,7 @@ import { projectStats as computeProjectStats } from '../stats.js';
 import type { NextPartDraft, EnvCheck, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, ProjectKnowledge, AiCommands, ModeSuggestion, ProjectConfig, RunMode, RunFile, StageAttempt } from '../types.js';
 import { expandPorts, parseNextParts, portEnv, waitForUrl } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
+import { prepareApp } from './workspace.js';
 export function knowledgeOf(h: Orchestrator, repo: string) : ProjectKnowledge {
   return h.getProjectConfig(repo)?.knowledge ?? {};
 }
@@ -163,6 +164,12 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
   const group = `envcheck:${id}`;
   const { port, url, command } = await expandPorts(cfg.appUrl.trim(), cfg.runCommand.trim());
   let out = '';
+  try {
+    await prepareApp(h, { repo: key, cwd: key, group, onOutput: (t) => { out = (out + t).slice(-8000); } });
+  } catch (e) {
+    h.envChecks.delete(key);
+    return { ready: false, url, command, at, serverOutput: out.trim(), steps: [{ title: 'Подготовка к запуску', ok: false, detail: (e as Error).message }], fix: 'Поправьте команду «Подготовка к запуску» в командах проекта.' };
+  }
   let exited: number | null | undefined;
   const server = runProc(command, [], {
     cwd: key,
@@ -266,6 +273,7 @@ export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<Proje
     lintCommand: cfg.lintCommand.trim(),
     testCommand: cfg.testCommand.trim(),
     quickTestCommand: cfg.quickTestCommand?.trim() || undefined,
+    prepareCommand: cfg.prepareCommand?.trim() || undefined,
     runCommand: cfg.runCommand?.trim() || undefined,
     appUrl: cfg.appUrl?.trim() || undefined,
     visualNotes: cfg.visualNotes?.trim() || undefined,
