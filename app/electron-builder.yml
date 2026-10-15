@@ -37,6 +37,8 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  executableName: purpleflow
+  syncDesktopName: true
   target: [AppImage, deb]
   category: Development
   maintainer: PurpleSchool

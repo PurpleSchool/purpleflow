@@ -1,9 +1,11 @@
 {
   "name": "@psflow/app",
   "productName": "PurpleFlow",
+  "desktopName": "purpleflow.desktop",
   "version": "0.1.0",
   "description": "PurpleFlow — оркестратор стадий для claude и codex на OpenSpec",
   "author": "PurpleSchool",
+  "homepage": "https://purpleschool.ru",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
