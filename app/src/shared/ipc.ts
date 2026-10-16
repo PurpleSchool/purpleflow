@@ -100,7 +100,8 @@ export interface PsFlowBridge {
     set(patch: SettingsPatch): Promise<PublicSettings>;
     encryptionAvailable(): Promise<boolean>;
   };
-  pickFolder(): Promise<string | null>;
+  /** Выбор папки; title — заголовок диалога. */
+  pickFolder(title?: string): Promise<string | null>;
   pickFile(): Promise<string | null>;
   openPath(p: string): Promise<void>;
   /** Вкладка «Браузер»: эмуляция телефона для webview по его webContentsId. */

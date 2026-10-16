@@ -263,3 +263,31 @@ test('менеджер: команда выполняется только по 
   assert.match(after.at(-1)!.result!.output, /v1\.0\.1/);
   assert.match(execFileSync('git', ['tag', '--list'], { cwd: repo }).toString(), /v1\.0\.1/);
 });
+
+test('соседние репозитории: агенты видят их на чтение, запись исполнителя туда — предупреждение', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  // Прогон хранит настоящий путь проекта (/private/var… на macOS) — настройки сохраняем по нему же.
+  const repo = fs.realpathSync(makeRepo());
+  const api = fs.realpathSync(makeRepo());
+  const fake = fakeClaude({
+    implement: (_n, cwd) => {
+      fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n');
+      // Исполнитель нарушил запрет и поправил соседа.
+      fs.writeFileSync(path.join(api, 'src/math.js'), 'export const add = (a, b) => b + a;\n');
+    },
+    review: () => ({ blocking: [], notes: [] }),
+  });
+  const calls: { addDirs?: string[]; systemPrompt?: string; prompt: string }[] = [];
+  const fn = fake.fn;
+  fake.fn = (async (o: { prompt: string; cwd: string; systemPrompt?: string; addDirs?: string[] }) => { calls.push(o); return fn(o); }) as typeof fn;
+  const core = makeCore(fake);
+  core.saveProjectConfig(repo, { setupCommand: '', lintCommand: '', testCommand: 'node --test', relatedRepos: [{ path: api, note: 'бэкенд API' }, { path: path.join(api, 'нет-такой') }], notes: { setup: '', lint: '', test: '' } });
+  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
+  await untilGate(core, runId, 'gate1');
+  await core.dispatch({ type: 'gate.approve', runId });
+  const r = await untilGate(core, runId, 'gate2');
+
+  const exec = calls.find((c) => /исполнитель/.test(c.systemPrompt ?? ''))!;
+  assert.deepEqual(exec.addDirs, [api]);
+  assert.match(exec.systemPrompt!, /Соседние репозитории \(только чтение\)[\s\S]*бэкенд API/);
+  assert.ok(r.warnings?.some((w) => w.text.includes(api)), 'запись в соседа замечена');
+});

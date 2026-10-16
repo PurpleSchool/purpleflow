@@ -450,6 +450,12 @@ export interface ProjectCommands {
   detectedFrom: string | null;
 }
 
+export interface RelatedRepo {
+  path: string;
+  /** Что это за репозиторий — подсказка агентам: «бэкенд API», «общие типы». */
+  note?: string;
+}
+
 /** Команды проекта, сохранённые один раз и подставляемые в каждую задачу. */
 export interface ProjectConfig {
   setupCommand: string;
@@ -465,6 +471,8 @@ export interface ProjectConfig {
   visualNotes?: string;
   /** Файлы окружения (не в git), которые копируются в worktree прогона: apps/api/.env… */
   envFiles?: string[];
+  /** Соседние репозитории: агенты читают их для контекста (API бэкенда, общие типы), но не меняют. */
+  relatedRepos?: RelatedRepo[];
   workspace?: Workspace;
   /** Знания о проекте для всех агентов: профиль (стек, структура, соглашения) и уроки прошлых прогонов. */
   knowledge?: ProjectKnowledge;

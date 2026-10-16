@@ -26,6 +26,7 @@ export async function stageImplement(h: Orchestrator, run: RunFile) {
   let res: AgentResult;
   const systemPrompt = h.prompts.raw('executor.system.md') + h.modeRules('executor', run);
   const onClaude = (run.agents?.executor ?? DEFAULT_AGENTS.executor) === 'claude';
+  const related = await h.relatedState(run);
   try {
     // Следующая попытка на claude продолжает сессию прошлой: только замечания, без повторного изучения проекта.
     if (onClaude && run.executorSession) {
@@ -49,6 +50,7 @@ export async function stageImplement(h: Orchestrator, run: RunFile) {
       res = await h.runRole(run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: onClaude ? run.executorSession : undefined });
     }
     h.afterAgent(run, attempt, res);
+    await h.checkRelatedUntouched(run, related);
   } catch (e) {
     // Сбой агента (ключ, токены, таймаут) не тратит попытку реализации.
     run.implAttemptsUsed--;

@@ -48,6 +48,8 @@ button.imgdrop-thumb { cursor: zoom-in; }
 .cmd-label strong { font-weight: 500; }
 .cmd-label span { font-size: var(--fs-12); color: var(--text-3); }
 .cmd-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.related-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: var(--s-2); align-items: center; }
+.related-path { font-size: var(--fs-12); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .cmd-note { font-size: var(--fs-12); color: var(--text-3); line-height: 1.5; animation: tabIn 0.35s var(--ease) both; }
 .cmd-foot { margin: 0; font-size: var(--fs-12); color: var(--text-4); }
 .check-block { display: flex; flex-direction: column; gap: var(--s-2); }

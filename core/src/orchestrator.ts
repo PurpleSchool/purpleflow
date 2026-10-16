@@ -28,7 +28,7 @@ import { stageFinish } from './pipeline/finish.js';
 import { applyPending, control } from './pipeline/control.js';
 import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
 import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
-import { knowledgeOf, updateKnowledge, knowledgeBlock, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
+import { knowledgeOf, updateKnowledge, knowledgeBlock, relatedRepos, relatedState, checkRelatedUntouched, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
 import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps, prepareApp } from './pipeline/workspace.js';
 export class Orchestrator {
   listeners = new Set<Listener>();
@@ -920,6 +920,10 @@ export class Orchestrator {
 
   knowledgeBlock(run: RunFile) : string { return knowledgeBlock(this, run); }
 
+  relatedState(run: RunFile) { return relatedState(this, run.projectPath); }
+
+  checkRelatedUntouched(run: RunFile, before: Map<string, string>) { return checkRelatedUntouched(this, run, before); }
+
   profileFor(repo: string, cwd: string, onOutput: (t: string) => void, group: string) : Promise<AgentResult> { return profileFor(this, repo, cwd, onOutput, group); }
 
   ensureProfile(run: RunFile, attempt: StageAttempt) { return ensureProfile(this, run, attempt); }
@@ -1251,8 +1255,14 @@ export class Orchestrator {
       proxy: s.proxy.baseUrl ? s.proxy : undefined,
       claudeAuth: s.claudeAuth,
       userConfig: s.userConfig ?? true,
-      addDirs: run.attachments?.length ? [path.dirname(run.attachments[0])] : undefined,
+      addDirs: this.agentDirs(run),
     };
+  }
+
+  /** Каталоги, которые агент видит помимо рабочей копии: вложения задачи и соседние репозитории (только чтение). */
+  agentDirs(run: RunFile): string[] | undefined {
+    const dirs = [...(run.attachments?.length ? [path.dirname(run.attachments[0])] : []), ...relatedRepos(this, run.projectPath).map((r) => r.path)];
+    return dirs.length ? dirs : undefined;
   }
 
   attachmentsDir(id: string): string {

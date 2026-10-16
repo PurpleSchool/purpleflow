@@ -208,8 +208,8 @@ ipcMain.handle('settings:set', (_e, patch: SettingsPatch) => {
   return s;
 });
 ipcMain.handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
-ipcMain.handle('dialog:folder', async () => {
-  const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], title: 'Папка проекта (git-репозиторий)' });
+ipcMain.handle('dialog:folder', async (_e, title?: string) => {
+  const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)' });
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('dialog:file', async () => {

@@ -103,6 +103,13 @@ export class Git {
     return r.stdout.trim() || null;
   }
 
+  /** Отпечаток состояния репозитория: HEAD и незакоммиченные изменения — сравнить «до» и «после», не меняя index. */
+  async fingerprint(dir: string): Promise<string> {
+    const head = (await this.git(dir, ['rev-parse', 'HEAD']).catch(() => '')).trim();
+    const status = await this.git(dir, ['--no-optional-locks', 'status', '--porcelain']);
+    return `${head}\n${status}`;
+  }
+
   /** Незакоммиченные изменения рабочей копии, включая неотслеживаемые файлы. */
   async dirtyFiles(dir: string): Promise<string[]> {
     const out = await this.git(dir, ['status', '--porcelain']);

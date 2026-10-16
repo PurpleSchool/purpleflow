@@ -20,7 +20,7 @@ const bridge: PsFlowBridge = {
     set: (patch) => ipcRenderer.invoke('settings:set', patch),
     encryptionAvailable: () => ipcRenderer.invoke('settings:encryption'),
   },
-  pickFolder: () => ipcRenderer.invoke('dialog:folder'),
+  pickFolder: (title?: string) => ipcRenderer.invoke('dialog:folder', title),
   pickFile: () => ipcRenderer.invoke('dialog:file'),
   openPath: (p) => ipcRenderer.invoke('shell:open', p),
   previewEmulate: (id, mobile) => ipcRenderer.invoke('preview:emulate', id, mobile),

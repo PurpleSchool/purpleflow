@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  BookText, Check, ChevronDown, Settings2, FileLock2, FileText, FlaskConical, FolderGit2, FolderOpen, FolderTree, GitBranch, GitPullRequest, Globe, KeyRound, Layers,
+  BookText, Check, ChevronDown, Settings2, FileLock2, FileText, FlaskConical, FolderGit2, FolderOpen, FolderSearch, FolderTree, GitBranch, GitPullRequest, Globe, KeyRound, Layers,
   DatabaseZap, Lightbulb, Minus, MonitorPlay, PackageOpen, PencilLine, Play, Plus, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert, Stethoscope, Workflow, X, Zap,
 } from 'lucide-react';
-import type { CommandIssue, EnvCheck, ProjectCommands, ProjectConfig, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, Workspace } from '@psflow/core';
+import type { CommandIssue, EnvCheck, ProjectCommands, ProjectConfig, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, RelatedRepo, Workspace } from '@psflow/core';
 import { Button, Input, TextArea, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 import { Markdown } from '../components/Markdown';
@@ -28,6 +28,8 @@ export interface LoadedProject {
   quickTest?: string;
   /** Подготовка перед каждым запуском приложения: миграции, сиды. */
   prepare?: string;
+  /** Соседние репозитории — агенты читают, но не меняют. */
+  related?: RelatedRepo[];
 }
 
 export const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -47,6 +49,7 @@ export async function loadProject(dir: string): Promise<LoadedProject> {
       envFiles: cfg.envFiles ?? det.envFiles,
       quickTest: cfg.quickTestCommand ?? '',
       prepare: cfg.prepareCommand ?? '',
+      related: cfg.relatedRepos ?? [],
     };
   }
   const from = det.detectedFrom ? `по ${det.detectedFrom}` : '';
@@ -60,10 +63,10 @@ export async function loadProject(dir: string): Promise<LoadedProject> {
   };
 }
 
-export function saveLoaded(p: Pick<LoadedProject, 'cmds' | 'notes' | 'workspace' | 'visualNotes' | 'envFiles' | 'quickTest' | 'prepare'> & { path: string }) {
+export function saveLoaded(p: Pick<LoadedProject, 'cmds' | 'notes' | 'workspace' | 'visualNotes' | 'envFiles' | 'quickTest' | 'prepare' | 'related'> & { path: string }) {
   return window.psflow.core.saveProjectConfig(p.path, {
     setupCommand: p.cmds.setup, lintCommand: p.cmds.lint, testCommand: p.cmds.test, quickTestCommand: p.quickTest, prepareCommand: p.prepare, runCommand: p.cmds.run, appUrl: p.cmds.url,
-    visualNotes: p.visualNotes, envFiles: p.envFiles, workspace: p.workspace,
+    visualNotes: p.visualNotes, envFiles: p.envFiles, relatedRepos: p.related, workspace: p.workspace,
     notes: { setup: p.notes.setup, lint: p.notes.lint, test: p.notes.test, run: p.notes.run },
   });
 }
@@ -527,6 +530,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
   const [quickTest, setQuickTest] = useState(p.quickTest ?? '');
   const [prepare, setPrepare] = useState(p.prepare ?? '');
   const [envFiles, setEnvFiles] = useState(p.envFiles.join(', '));
+  const [related, setRelated] = useState<RelatedRepo[]>(p.related ?? []);
   const [saved, setSavedState] = useState<'saved' | 'draft' | 'dirty'>(p.cfg ? 'saved' : 'draft');
   const [issues, setIssues] = useState<Record<string, CommandIssue[]>>({});
   const [aiBusy, setAiBusy] = useState(false);
@@ -573,7 +577,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
     setSaving(true);
     setError(null);
     try {
-      await saveLoaded({ path: repo, cmds, notes, workspace, visualNotes, quickTest, prepare, envFiles: envFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean) });
+      await saveLoaded({ path: repo, cmds, notes, workspace, visualNotes, quickTest, prepare, related, envFiles: envFiles.split(/[,\n]/).map((f) => f.trim()).filter(Boolean) });
       setSaved('saved');
       onSaved();
     } catch (e) {
@@ -628,6 +632,31 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
           <div className="cmd-field">
             <Input mono placeholder="например: apps/api/.env, apps/web/.env.local" value={envFiles} onChange={(e) => { setEnvFiles(e.target.value); touch(); }} />
             <span className="cmd-note">{p.info.envFiles.length ? `Найдены в проекте: ${p.info.envFiles.join(', ')}` : 'В git их нет, поэтому в worktree без копирования их не будет. В режиме «Ветка» не нужны.'}</span>
+          </div>
+        </div>
+        <div className="cmd-row">
+          <span className="cmd-icon"><FolderSearch size={17} /></span>
+          <div className="cmd-label">
+            <strong>Соседние репозитории</strong>
+            <span>Необязательно. Агенты читают их для контекста — API, общие типы, — но не меняют</span>
+          </div>
+          <div className="cmd-field">
+            {related.map((r, i) => (
+              <div className="related-row" key={r.path}>
+                <span className="related-path mono" title={r.path}>{shortPath(r.path)}</span>
+                <Input placeholder="что это: бэкенд API, общие типы…" value={r.note ?? ''} onChange={(e) => { setRelated(related.map((x, j) => (j === i ? { ...x, note: e.target.value } : x))); touch(); }} />
+                <Button tone="quiet" icon={<X size={14} />} title="Убрать" aria-label="Убрать" onClick={() => { setRelated(related.filter((_, j) => j !== i)); touch(); }} />
+              </div>
+            ))}
+            <div>
+              <Button tone="quiet" icon={<Plus size={14} />} onClick={async () => {
+                const dir = await window.psflow.pickFolder('Соседний репозиторий — агенты будут его читать');
+                if (!dir || dir === repo || related.some((r) => r.path === dir)) return;
+                setRelated([...related, { path: dir }]);
+                touch();
+              }}>Добавить папку</Button>
+            </div>
+            <span className="cmd-note">Работа и PR — только в этом проекте. Если исполнитель всё же изменит соседа, прогон покажет предупреждение.</span>
           </div>
         </div>
         <div className={`cmd-row ${aiBusy ? 'is-loading' : ''}`}>

@@ -9,7 +9,7 @@ import { parseJsonReply } from '../json.js';
 import { ARTIFACT_RE } from '../reviewdiff.js';
 import { killGroup, run as runProc } from '../proc.js';
 import { projectStats as computeProjectStats } from '../stats.js';
-import type { NextPartDraft, EnvCheck, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, ProjectKnowledge, AiCommands, ModeSuggestion, ProjectConfig, RunMode, RunFile, StageAttempt } from '../types.js';
+import type { NextPartDraft, EnvCheck, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, ProjectKnowledge, AiCommands, ModeSuggestion, ProjectConfig, RelatedRepo, RunMode, RunFile, StageAttempt } from '../types.js';
 import { expandPorts, parseNextParts, portEnv, waitForUrl } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 import { prepareApp } from './workspace.js';
@@ -28,8 +28,44 @@ export function updateKnowledge(h: Orchestrator, repo: string, fn: (k: ProjectKn
 export function knowledgeBlock(h: Orchestrator, run: RunFile) : string {
   const k = h.knowledgeOf(run.projectPath);
   const lessons = k.lessons?.map((l) => `- ${l.text}`).join('\n');
-  if (!k.profile && !lessons) return '';
-  return `\n\n## Знания о проекте\n\nСобраны в прошлых прогонах — опирайся на них, но если код говорит иное, верь коду.${k.profile ? `\n\n### Профиль\n\n${k.profile.trim()}` : ''}${lessons ? `\n\n### Уроки прошлых прогонов\n\n${lessons}` : ''}`;
+  const related = relatedBlock(h, run.projectPath);
+  if (!k.profile && !lessons) return related;
+  return related + `\n\n## Знания о проекте\n\nСобраны в прошлых прогонах — опирайся на них, но если код говорит иное, верь коду.${k.profile ? `\n\n### Профиль\n\n${k.profile.trim()}` : ''}${lessons ? `\n\n### Уроки прошлых прогонов\n\n${lessons}` : ''}`;
+}
+
+/** Соседние репозитории проекта, которые есть на диске. */
+export function relatedRepos(h: Orchestrator, repo: string): RelatedRepo[] {
+  return (h.getProjectConfig(repo)?.relatedRepos ?? []).filter((r) => fs.existsSync(r.path));
+}
+
+/** Блок для агентов: где лежат соседние репозитории и что их можно только читать. */
+export function relatedBlock(h: Orchestrator, repo: string): string {
+  const list = relatedRepos(h, repo);
+  if (!list.length) return '';
+  return `\n\n## Соседние репозитории (только чтение)\n\nЗадача делается в текущем репозитории, но он работает вместе с соседними. Читай их, чтобы сверяться с контрактами (API, типы, события, конфиги), — инструментами Read, Grep, Glob по абсолютным путям. Ничего в них не меняй: ни файлов, ни git. Если для задачи нужна правка соседа — напиши об этом в отчёте.\n\n${list.map((r) => `- \`${r.path}\`${r.note ? ` — ${r.note}` : ''}`).join('\n')}`;
+}
+
+/** Отпечатки соседних репозиториев (только git) — до и после работы исполнителя. */
+export async function relatedState(h: Orchestrator, repo: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const list = relatedRepos(h, repo);
+  if (!list.length) return out;
+  const tools = await h.tools(['git']).catch(() => null);
+  if (!tools) return out;
+  const git = new Git(tools.git, h.opts.env);
+  for (const r of list) {
+    const f = await git.fingerprint(r.path).catch(() => null);
+    if (f !== null) out.set(r.path, f);
+  }
+  return out;
+}
+
+/** Исполнитель мог записать в соседний репозиторий (у claude запись туда не запретить) — предупреждаем человека. */
+export async function checkRelatedUntouched(h: Orchestrator, run: RunFile, before: Map<string, string>) {
+  if (!before.size) return;
+  const after = await relatedState(h, run.projectPath);
+  const changed = [...before].filter(([p, f]) => after.has(p) && after.get(p) !== f).map(([p]) => p);
+  if (changed.length) h.warn(run, `Пока работал исполнитель, изменились соседние репозитории: ${changed.join(', ')}. Агентам туда писать нельзя — проверьте git status в них, если меняли не вы.`);
 }
 
 export async function profileFor(h: Orchestrator, repo: string, cwd: string, onOutput: (t: string) => void, group: string) : Promise<AgentResult> {
@@ -278,6 +314,9 @@ export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<Proje
     appUrl: cfg.appUrl?.trim() || undefined,
     visualNotes: cfg.visualNotes?.trim() || undefined,
     envFiles: cfg.envFiles?.map((f) => f.trim()).filter(Boolean),
+    relatedRepos: cfg.relatedRepos
+      ?.map((r) => ({ path: path.resolve(r.path.trim()), note: r.note?.trim() || undefined }))
+      .filter((r) => r.path && r.path !== path.resolve(repo)),
     workspace: cfg.workspace,
     notes: cfg.notes,
     // Знания собираются отдельно — сохранение команд их не трогает.
