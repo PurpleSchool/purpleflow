@@ -144,10 +144,11 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
   const route = stagesFor(mode, true);
   const canStart = Boolean(project?.isRepo && task.trim().length > 5);
   const hasRunCmd = Boolean(cmds.run.trim() && cmds.url.trim());
-  // Браузером визуальная проверка управляет только через claude.
-  const claudeInfo = state.tools?.claude;
-  const noClaude = Boolean(claudeInfo && (!claudeInfo.path || claudeInfo.error));
-  const canVisual = hasRunCmd && !noClaude;
+  // Агент визуальной проверки из настроек должен быть на этой машине.
+  const visualAgent = state.settings?.agents.visual ?? 'claude';
+  const visualInfo = state.tools?.[visualAgent];
+  const noVisualAgent = Boolean(visualInfo && (!visualInfo.path || visualInfo.error));
+  const canVisual = hasRunCmd && !noVisualAgent;
 
   const askMode = async () => {
     if (task.trim().length < 6) return;
@@ -236,8 +237,8 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                     <span className="route-n">{s.gate ? '' : on ? n : <MonitorCheck size={12} />}</span>
                     <div>
                       <strong>{s.title}</strong>
-                      {optional && noClaude ? (
-                        <span>Нужен claude — на этой машине его нет</span>
+                      {optional && noVisualAgent ? (
+                        <span>Нужен {visualAgent} — на этой машине его нет; агента можно сменить в настройках моделей</span>
                       ) : optional && !canVisual ? (
                         <span>
                           Нужна команда запуска приложения —{' '}

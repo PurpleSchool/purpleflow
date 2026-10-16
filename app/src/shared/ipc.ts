@@ -7,7 +7,7 @@ export interface PublicSettings {
   toolPaths: Partial<Record<ToolName, string>>;
   proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean };
   models: Models;
-  agents: Record<Role, AgentKind>;
+  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
   agentTimeoutMin: number;
   testTimeoutMin: number;
   maxParallel: number;
@@ -23,7 +23,7 @@ export interface SettingsPatch {
   toolPaths?: Partial<Record<ToolName, string>>;
   proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string };
   models?: Partial<Models>;
-  agents?: Partial<Record<Role, AgentKind>>;
+  agents?: Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind };
   agentTimeoutMin?: number;
   testTimeoutMin?: number;
   maxParallel?: number;

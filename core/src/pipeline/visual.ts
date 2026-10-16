@@ -20,8 +20,11 @@ export function visualDir(h: Orchestrator, run: RunFile, attempt: number) : stri
  * собрать скриншоты и вердикт { blocking, notes, shots }.
  */
 export async function stageVisual(h: Orchestrator, run: RunFile) {
-  const tools = await h.tools(['claude']);
-  const attempt = h.begin(run, 'visual', run.models.visual || h.claudeModel(run.agents, run.models) || 'claude');
+  const agent = run.agents?.visual ?? 'claude';
+  const tools = await h.tools([agent]);
+  // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
+  const model = run.models.visual || (agent === 'claude' ? h.claudeModel(run.agents, run.models) : h.agentModel('codex', run.agents, run.models));
+  const attempt = h.begin(run, 'visual', model || agent);
   const dir = h.visualDir(run, attempt.attempt);
   fs.mkdirSync(dir, { recursive: true });
   const { port, url, command } = await expandPorts(run.appUrl!, run.runCommand!);
@@ -81,18 +84,24 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
       // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
       notes: h.getProjectConfig(run.projectPath)?.visualNotes || run.visualNotes || '(нет — если нужен вход или данные, которых нет, верни "unverified")',
     });
-    const res = await h.claude({
-      ...h.agentBase(run, tools.claude),
+    const base = {
+      ...h.agentBase(run, tools[agent]),
       env: prependPath(h.opts.env, dir),
       prompt,
       systemPrompt: h.prompts.raw('visual.system.md') + h.modeRules('visual', run)
         + (live ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.` : ''),
-      // Визуальная проверка всегда на claude (браузер через pw); модель исполнителя — только если он тоже claude.
-      model: run.models.visual || h.claudeModel(run.agents, run.models),
-      addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
-      // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
-      tools: ['Bash', 'Read', 'Glob', 'Grep'],
-    });
+      model: model || undefined,
+    };
+    const res = agent === 'codex'
+      // pw пишет скриншоты и сессию вне рабочей копии, npx — в свой кэш, браузеру нужна сеть: в песочнице codex это не работает.
+      // Код не меняет — это требование промпта, как и у claude.
+      ? await h.codex({ ...base, sandbox: 'danger-full-access' })
+      : await h.claude({
+        ...base,
+        addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
+        // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
+        tools: ['Bash', 'Read', 'Glob', 'Grep'],
+      });
     h.afterAgent(run, attempt, res);
 
     const parsed = parseReview(res.text);

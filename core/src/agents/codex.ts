@@ -5,7 +5,8 @@ import { run } from '../proc.js';
 import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type AgentResult, type AgentRunOptions } from './common.js';
 
 export interface CodexOptions extends AgentRunOptions {
-  sandbox: 'read-only' | 'workspace-write';
+  /** danger-full-access — визуальной проверке: браузер, кэш npm и скриншоты вне рабочей копии. */
+  sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
   /** JSON Schema финального ответа (--output-schema). */
   outputSchema?: object;
 }

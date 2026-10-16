@@ -22,6 +22,12 @@ export type Models = Record<Role, string> & { visual?: string; manager?: string 
 
 export const DEFAULT_AGENTS: Record<Role, AgentKind> = { planner: 'claude', executor: 'claude', reviewer: 'codex' };
 
+/**
+ * Агенты: роли конвейера плюс визуальная проверка (по умолчанию claude) и менеджер прогона
+ * (по умолчанию — claude, если он установлен, иначе codex).
+ */
+export type Agents = Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind };
+
 export interface CoreSettings {
   /** Ручные пути к CLI; пустая строка — искать в PATH. */
   toolPaths: Partial<Record<ToolName, string>>;
@@ -34,7 +40,7 @@ export interface CoreSettings {
   };
   models: Models;
   /** Агент на роль; по умолчанию планировщик и исполнитель — claude, ревьюер — codex. */
-  agents?: Partial<Record<Role, AgentKind>>;
+  agents?: Agents;
   /**
    * Как claude авторизуется без прокси: 'login' — собственный вход Claude Code
    * (ANTHROPIC_API_KEY/AUTH_TOKEN/BASE_URL из окружения игнорируются), 'env' — ключ из окружения.
@@ -287,7 +293,7 @@ export interface RunFile {
   prepared?: boolean;
   models: Models;
   /** Агенты по ролям на момент старта (у старых прогонов — по умолчанию). */
-  agents?: Record<Role, AgentKind>;
+  agents?: Record<Role, AgentKind> & { visual?: AgentKind };
   status: RunStatus;
   /** Стадия, которая выполняется сейчас или будет запущена при продолжении. */
   next: StageId;

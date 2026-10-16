@@ -376,7 +376,7 @@ export function RunScreen({ runId }: { runId: string }) {
                       <span className={`drawer-icon st-${nodeState(run, drawer)}`}>{STAGE_ICON[drawer]}</span>
                       <div className="drawer-title">
                         <strong>{stageDef.title}</strong>
-                        <span>{drawer === 'visual' ? 'claude' : stageDef.role ? run.agents?.[stageDef.role] ?? stageDef.actor : stageDef.actor}{drawer === 'visual' ? (attempt?.model && attempt.model !== 'claude' ? ` · ${attempt.model}` : '') : stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
+                        <span>{drawer === 'visual' ? run.agents?.visual ?? 'claude' : stageDef.role ? run.agents?.[stageDef.role] ?? stageDef.actor : stageDef.actor}{drawer === 'visual' ? (attempt?.model && attempt.model !== (run.agents?.visual ?? 'claude') ? ` · ${attempt.model}` : '') : stageDef.role && run.models[stageDef.role] ? ` · ${run.models[stageDef.role]}` : ''}{attempt?.summary ? ` — ${attempt.summary}` : ''}</span>
                       </div>
                       {tries.length > 1 && (
                         <PillTabs<string>

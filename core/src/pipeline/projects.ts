@@ -188,11 +188,12 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
   if (h.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
   h.envChecks.add(key);
   const s = h.opts.getSettings();
-  if (!(await h.hasTool('claude'))) {
+  const agent = s.agents?.visual ?? 'claude';
+  if (!(await h.hasTool(agent))) {
     h.envChecks.delete(key);
-    return { ready: false, steps: [], fix: 'Проверка окружения управляет браузером через claude, а он не найден. Установите claude или укажите путь к нему в настройках.', at };
+    return { ready: false, steps: [], fix: `Проверка окружения управляет браузером через ${agent} (агент визуальной проверки), а он не найден. Установите его или выберите другого агента в настройках моделей.`, at };
   }
-  const tools = await h.tools(['claude', 'git']);
+  const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
   const dirtyBefore = new Set(await git.dirtyFiles(key).catch(() => [] as string[]));
   const id = crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
@@ -232,7 +233,7 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
     const res = await h.service({
       prompt: h.prompts.render('env-check.md', { url, notes: cfg.visualNotes?.trim() || '(нет)', server: out.replace(/\x1b\[[0-9;]*m/g, '').slice(-4000) || '(пусто)' }),
       cwd: key, env: prependPath(h.opts.env, dir), group, addDirs: [dir], tools: ['Bash', 'Read', 'Glob', 'Grep'],
-      model: s.models.visual || undefined, userConfig: s.userConfig ?? true, timeoutMs: 20 * 60_000, idleTimeoutMs: 6 * 60_000,
+      model: s.models.visual || undefined, agent, fullAccess: true, userConfig: s.userConfig ?? true, timeoutMs: 20 * 60_000, idleTimeoutMs: 6 * 60_000,
     });
     const j = parseJsonReply<{ ready?: boolean; steps?: { title?: string; ok?: boolean; detail?: string }[]; fix?: string }>(res.text);
     if (!res.ok || !j) {

@@ -8,7 +8,8 @@ interface StoredSettings {
   toolPaths: CoreSettings['toolPaths'];
   proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string };
   models: CoreSettings['models'];
-  agents: Record<Role, AgentKind>;
+  /** Роли конвейера; visual — по умолчанию claude, manager — claude, если установлен, иначе codex. */
+  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
   agentTimeoutMin: number;
   testTimeoutMin: number;
   maxParallel: number;

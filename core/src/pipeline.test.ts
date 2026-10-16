@@ -315,3 +315,18 @@ test('только codex: прогон без claude, служебные выз�
   assert.equal(chat.at(-1)!.text, 'Всё идёт по плану.');
   assert.equal(sandboxes.at(-1), 'read-only');
 });
+
+test('менеджер на codex по выбору в настройках, даже если claude установлен', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  const repo = fs.realpathSync(makeRepo());
+  const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
+  const calls: string[] = [];
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-bin-'));
+  for (const n of ['codex', 'claude']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
+  const via = (name: string) => (async (o: { prompt: string; cwd: string }) => { if (/Ты — менеджер прогона/.test(o.prompt)) calls.push(name); return fake.fn(o); }) as never;
+  const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '', manager: 'gpt-mini' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'claude', manager: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
+  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: via('claude'), codex: via('codex') } });
+  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
+  await untilGate(core, runId, 'gate1');
+  await core.askManager(runId, 'Как дела?');
+  assert.deepEqual(calls, ['codex']);
+});

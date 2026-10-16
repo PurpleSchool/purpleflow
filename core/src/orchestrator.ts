@@ -411,8 +411,9 @@ export class Orchestrator {
   async start(input: StartRunInput): Promise<string> {
     const s = this.opts.getSettings();
     // Нужны только агенты, выбранные для ролей: на машине может стоять один claude или один codex.
-    const roleAgents = [...new Set(Object.values({ ...DEFAULT_AGENTS, ...s.agents }))];
-    const tools = await this.tools(['git', 'openspec', ...roleAgents]);
+    const roles: Record<Role, AgentKind> = { planner: s.agents?.planner ?? DEFAULT_AGENTS.planner, executor: s.agents?.executor ?? DEFAULT_AGENTS.executor, reviewer: s.agents?.reviewer ?? DEFAULT_AGENTS.reviewer };
+    const visualAgent = s.agents?.visual ?? 'claude';
+    const tools = await this.tools(['git', 'openspec', ...new Set(Object.values(roles))]);
     const git = new Git(tools.git, this.opts.env);
     if (!input.task.trim()) throw new Error('Опишите задачу');
     if (!(await git.isRepo(input.projectPath))) throw new Error('Выбранная папка не является git-репозиторием');
@@ -438,8 +439,8 @@ export class Orchestrator {
     }
     const worktreePath = workspace === 'branch' ? repo : path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
     const mode = input.mode ?? 'task';
-    // Визуальная проверка управляет браузером только через claude.
-    const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim() && (await this.hasTool('claude')));
+    // Агента визуальной проверки на машине может не быть — тогда проверка выключается, а не роняет прогон.
+    const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim() && (await this.hasTool(visualAgent)));
     const queued = this.activeCount() >= this.maxParallel();
 
     const now = new Date().toISOString();
@@ -473,7 +474,7 @@ export class Orchestrator {
       // В режиме «ветка» зависимости — уже установленные пользователем; подготовку не запускаем.
       prepared: workspace === 'branch' || !input.setupCommand?.trim(),
       models: { ...s.models },
-      agents: { ...DEFAULT_AGENTS, ...s.agents },
+      agents: { ...roles, ...(s.agents?.visual ? { visual: s.agents.visual } : {}) },
       status: queued ? 'queued' : 'running',
       next: MODE_FIRST[mode],
       attempts: [],
@@ -1190,9 +1191,13 @@ export class Orchestrator {
   async service(o: {
     prompt: string; group: string; timeoutMs: number; cwd?: string; env?: NodeJS.ProcessEnv; tools?: string[];
     model?: string; addDirs?: string[]; idleTimeoutMs?: number; userConfig?: boolean; onOutput?: (t: string) => void;
+    /** Агент, выбранный в настройках (менеджер, проверка окружения); если его нет на машине — как у служебных вызовов. */
+    agent?: AgentKind;
+    /** Нужен браузер и запись вне рабочей копии (проверка окружения) — у codex песочница без ограничений. */
+    fullAccess?: boolean;
   }): Promise<AgentResult> {
     const s = this.opts.getSettings();
-    const agent = await this.serviceAgent();
+    const agent = o.agent && (await this.hasTool(o.agent)) ? o.agent : await this.serviceAgent();
     const tools = await this.tools([agent]);
     const common = {
       bin: tools[agent], cwd: o.cwd ?? os.tmpdir(), env: o.env ?? this.opts.env, prompt: o.prompt,
@@ -1201,7 +1206,7 @@ export class Orchestrator {
     };
     if (agent === 'codex') {
       // Без claude служебное — на codex в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
-      return this.codex({ ...common, model: o.model || this.agentModel('codex', s.agents, s.models) || undefined, sandbox: 'read-only' });
+      return this.codex({ ...common, model: o.model || this.agentModel('codex', s.agents, s.models) || undefined, sandbox: o.fullAccess ? 'danger-full-access' : 'read-only' });
     }
     return this.claude({
       ...common, claudeAuth: s.claudeAuth,

@@ -57,7 +57,7 @@ export async function askManager(h: Orchestrator, id: string, text: string): Pro
     });
     // Только чтение: файлы проекта и прогона. Всё, что меняет состояние, — через предложенное действие и кнопку человека.
     const cwd = hasWorktree(run) ? run.worktreePath : run.projectPath;
-    const res = await h.service({ prompt, group: `${id}:manager`, timeoutMs: 5 * 60_000, model: s.models.manager || undefined, cwd, addDirs: [run.projectPath, ...relatedRepos(h, run.projectPath).map((r) => r.path)], tools: ['Read', 'Grep', 'Glob'] });
+    const res = await h.service({ prompt, group: `${id}:manager`, timeoutMs: 5 * 60_000, model: s.models.manager || undefined, agent: s.agents?.manager, cwd, addDirs: [run.projectPath, ...relatedRepos(h, run.projectPath).map((r) => r.path)], tools: ['Read', 'Grep', 'Glob'] });
     if (!res.ok) throw new Error(res.error ?? 'Менеджер не ответил');
     const parsed = parseReply(res.text);
     // Ход прогона мог уйти вперёд, пока менеджер думал: предлагаем только то, что доступно сейчас.

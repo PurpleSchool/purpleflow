@@ -35,7 +35,7 @@ export function SettingsScreen() {
   const s = state.settings;
   const [key, setKey] = useState('');
   const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '' });
-  const [agents, setAgents] = useState<Record<Role, AgentKind>>({ planner: 'claude', executor: 'claude', reviewer: 'codex' });
+  const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind }>({ planner: 'claude', executor: 'claude', reviewer: 'codex' });
   const [paths, setPaths] = useState<Partial<Record<ToolName, string>>>({});
   const [agentTimeout, setAgentTimeout] = useState(30);
   const [testTimeout, setTestTimeout] = useState(10);
@@ -104,6 +104,16 @@ export function SettingsScreen() {
   };
 
   const tools = state.tools;
+  const claudeFound = Boolean(tools?.claude.path && !tools.claude.error);
+  const visualAgent = agents.visual ?? 'claude';
+  const managerAgent = agents.manager ?? (tools && !claudeFound ? 'codex' : 'claude');
+  const pickAgent = (id: Role | 'visual' | 'manager', a: AgentKind) => {
+    if ((id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : agents[id]) === a && (id !== 'manager' || agents.manager)) return;
+    setAgents({ ...agents, [id]: a });
+    // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
+    setModels({ ...models, [id]: '' });
+  };
+
   const allFound = tools && (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents));
 
   return (
@@ -246,7 +256,7 @@ export function SettingsScreen() {
             <header className="panel-head">
               <div>
                 <h2>Агенты и модели по ролям</h2>
-                <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Визуальная проверка — только на claude; служебные вызовы и менеджер — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
+                <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Служебные вызовы (сводка, профиль, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
               </div>
             </header>
             <div className="roles">
@@ -257,24 +267,7 @@ export function SettingsScreen() {
                   <div key={r.id} className={`role bezel role-${agent}`}>
                     <div className="role-head">
                       <strong>{r.title}</strong>
-                      <div className="segmented small" role="radiogroup" aria-label={`Агент: ${r.title}`}>
-                        {(['claude', 'codex'] as AgentKind[]).map((a) => (
-                          <button
-                            key={a}
-                            role="radio"
-                            aria-checked={agent === a}
-                            className={agent === a ? 'is-on' : ''}
-                            onClick={() => {
-                              if (agent === a) return;
-                              setAgents({ ...agents, [r.id]: a });
-                              // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
-                              setModels({ ...models, [r.id]: '' });
-                            }}
-                          >
-                            {a}
-                          </button>
-                        ))}
-                      </div>
+                      <AgentSwitch label={r.title} value={agent} onChange={(a) => pickAgent(r.id, a)} />
                     </div>
                     <p>{r.text}</p>
                     {sameAsExecutor && <p className="role-warn">Совпадает с исполнителем — ревью той же моделью находит меньше.</p>}
@@ -282,25 +275,21 @@ export function SettingsScreen() {
                   </div>
                 );
               })}
-              <div className="role bezel role-claude">
+              <div className={`role bezel role-${visualAgent}`}>
                 <div className="role-head">
                   <strong>Визуальная проверка</strong>
-                  <div className="segmented small" title="Браузером управляет через pw — только claude">
-                    <button className="is-on" disabled>claude</button>
-                  </div>
+                  <AgentSwitch label="Визуальная проверка" value={visualAgent} onChange={(a) => pickAgent('visual', a)} />
                 </div>
-                <p>Запускает приложение и проверяет результат в браузере. Без claude недоступна. Пусто — модель исполнителя, если он на claude.</p>
-                <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : 'по умолчанию claude'} value={models.visual ?? ''} onChange={(e) => setModels({ ...models, visual: e.target.value })} />
+                <p>Запускает приложение и проверяет результат в браузере через pw.{visualAgent === 'codex' ? ' На codex — без песочницы: браузеру нужны сеть и запись вне проекта, код он не меняет по инструкции.' : ''} Пусто — модель исполнителя, если он на том же агенте.</p>
+                <Input mono list={`models-${visualAgent}`} placeholder={agents.executor === visualAgent && models.executor ? `как у исполнителя: ${models.executor}` : MODEL_PLACEHOLDER[visualAgent]} value={models.visual ?? ''} onChange={(e) => setModels({ ...models, visual: e.target.value })} />
               </div>
-              <div className="role bezel role-claude">
+              <div className={`role bezel role-${managerAgent}`}>
                 <div className="role-head">
                   <strong>Менеджер прогона</strong>
-                  <div className="segmented small" title="Отвечает через claude">
-                    <button className="is-on" disabled>claude</button>
-                  </div>
+                  <AgentSwitch label="Менеджер прогона" value={managerAgent} onChange={(a) => pickAgent('manager', a)} />
                 </div>
-                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Работает на claude, без него — на codex. Хватит быстрой модели. Пусто — как у служебных вызовов.</p>
-                <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : agents.planner === 'claude' && models.planner ? `как у планировщика: ${models.planner}` : 'по умолчанию claude'} value={models.manager ?? ''} onChange={(e) => setModels({ ...models, manager: e.target.value })} />
+                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели.{agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том же агенте.</p>
+                <Input mono list={`models-${managerAgent}`} placeholder={MODEL_PLACEHOLDER[managerAgent]} value={models.manager ?? ''} onChange={(e) => setModels({ ...models, manager: e.target.value })} />
               </div>
               {(Object.keys(MODEL_HINTS) as AgentKind[]).map((a) => (
                 <datalist key={a} id={`models-${a}`}>{MODEL_HINTS[a].map((m) => <option key={m} value={m} />)}</datalist>
@@ -497,5 +486,18 @@ function StoragePanel() {
         </div>
       )}
     </section>
+  );
+}
+
+/** Выбор CLI-агента для роли. */
+function AgentSwitch({ label, value, onChange }: { label: string; value: AgentKind; onChange: (a: AgentKind) => void }) {
+  return (
+    <div className="segmented small" role="radiogroup" aria-label={`Агент: ${label}`}>
+      {(['claude', 'codex'] as AgentKind[]).map((a) => (
+        <button key={a} role="radio" aria-checked={value === a} className={value === a ? 'is-on' : ''} onClick={() => onChange(a)}>
+          {a}
+        </button>
+      ))}
+    </div>
   );
 }
