@@ -291,3 +291,27 @@ test('соседние репозитории: агенты видят их на
   assert.match(exec.systemPrompt!, /Соседние репозитории \(только чтение\)[\s\S]*бэкенд API/);
   assert.ok(r.warnings?.some((w) => w.text.includes(api)), 'запись в соседа замечена');
 });
+
+test('только codex: прогон без claude, служебные вызовы и менеджер — на codex, визуальная проверка выключена', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  const repo = fs.realpathSync(makeRepo());
+  const fake = fakeClaude({
+    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+    review: () => ({ blocking: [], notes: [] }),
+  });
+  const sandboxes: string[] = [];
+  const codex = (async (o: { prompt: string; cwd: string; systemPrompt?: string; sandbox: string }) => { sandboxes.push(o.sandbox); return fake.fn(o); }) as never;
+  // codex «установлен» (скрипт отвечает версией), claude — нет.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-bin-'));
+  fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\necho "codex-cli 1.0.0"\n', { mode: 0o755 });
+  const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'нет-claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '' }, agents: { planner: 'codex', executor: 'codex', reviewer: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
+  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: (() => { throw new Error('claude не должен запускаться'); }) as never, codex } });
+
+  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', visual: true, runCommand: 'node -e 1', appUrl: 'http://localhost:{port}' } as never });
+  assert.equal(core.getRun(runId)!.visual, undefined, 'без claude визуальной проверки нет');
+  await untilGate(core, runId, 'gate1');
+  await core.dispatch({ type: 'gate.approve', runId });
+  await untilGate(core, runId, 'gate2');
+  const chat = await core.askManager(runId, 'Как дела?');
+  assert.equal(chat.at(-1)!.text, 'Всё идёт по плану.');
+  assert.equal(sandboxes.at(-1), 'read-only');
+});

@@ -121,9 +121,7 @@ export async function learn(h: Orchestrator, run: RunFile) {
   const digest = [...prItems, ...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
   if (!digest.trim()) return;
   const known = h.knowledgeOf(run.projectPath).lessons ?? [];
-  const tools = await h.tools(['claude']).catch(() => null);
-  if (!tools) return;
-  const res = await h.service({ prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }), group: `${run.id}:learn`, timeoutMs: 3 * 60_000 }).catch(() => null);
+    const res = await h.service({ prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }), group: `${run.id}:learn`, timeoutMs: 3 * 60_000 }).catch(() => null);
   if (!res?.ok) return;
   let lessons: string[] = [];
   {
@@ -190,6 +188,10 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
   if (h.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
   h.envChecks.add(key);
   const s = h.opts.getSettings();
+  if (!(await h.hasTool('claude'))) {
+    h.envChecks.delete(key);
+    return { ready: false, steps: [], fix: 'Проверка окружения управляет браузером через claude, а он не найден. Установите claude или укажите путь к нему в настройках.', at };
+  }
   const tools = await h.tools(['claude', 'git']);
   const git = new Git(tools.git, h.opts.env);
   const dirtyBefore = new Set(await git.dirtyFiles(key).catch(() => [] as string[]));

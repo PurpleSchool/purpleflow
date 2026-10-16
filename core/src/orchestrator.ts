@@ -382,7 +382,10 @@ export class Orchestrator {
   /** Тестовый запрос каждым агентом с текущими настройками прокси и моделей. */
   async testConnection(): Promise<ConnectionCheck[]> {
     const s = this.opts.getSettings();
-    const tools = await this.tools(['claude', 'codex']);
+    const found = await detectTools(this.opts.env, s.toolPaths);
+    const present = (['claude', 'codex'] as const).filter((a) => found[a].path && !found[a].error);
+    if (!present.length) throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
+    const tools = { claude: found.claude.path!, codex: found.codex.path! };
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-check-'));
     const proxy = s.proxy.baseUrl ? s.proxy : undefined;
     const prompt = 'Это проверка подключения. Ответь ровно одним словом: готово';
@@ -397,7 +400,7 @@ export class Orchestrator {
       return { agent, ok: r.ok, model: model || 'по умолчанию', durationMs: Date.now() - t0, reply: r.text.trim().slice(0, 200), error: r.error };
     };
     try {
-      return await Promise.all([one('claude'), one('codex')]);
+      return await Promise.all(present.map(one));
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -407,7 +410,9 @@ export class Orchestrator {
 
   async start(input: StartRunInput): Promise<string> {
     const s = this.opts.getSettings();
-    const tools = await this.tools(['git', 'claude', 'codex', 'openspec']);
+    // Нужны только агенты, выбранные для ролей: на машине может стоять один claude или один codex.
+    const roleAgents = [...new Set(Object.values({ ...DEFAULT_AGENTS, ...s.agents }))];
+    const tools = await this.tools(['git', 'openspec', ...roleAgents]);
     const git = new Git(tools.git, this.opts.env);
     if (!input.task.trim()) throw new Error('Опишите задачу');
     if (!(await git.isRepo(input.projectPath))) throw new Error('Выбранная папка не является git-репозиторием');
@@ -433,7 +438,8 @@ export class Orchestrator {
     }
     const worktreePath = workspace === 'branch' ? repo : path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
     const mode = input.mode ?? 'task';
-    const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim());
+    // Визуальная проверка управляет браузером только через claude.
+    const visual = Boolean(input.visual && input.runCommand?.trim() && input.appUrl?.trim() && (await this.hasTool('claude')));
     const queued = this.activeCount() >= this.maxParallel();
 
     const now = new Date().toISOString();
@@ -1186,14 +1192,41 @@ export class Orchestrator {
     model?: string; addDirs?: string[]; idleTimeoutMs?: number; userConfig?: boolean; onOutput?: (t: string) => void;
   }): Promise<AgentResult> {
     const s = this.opts.getSettings();
-    const tools = await this.tools(['claude']);
-    return this.claude({
-      bin: tools.claude, cwd: o.cwd ?? os.tmpdir(), env: o.env ?? this.opts.env, prompt: o.prompt,
-      model: o.model || this.claudeModel(s.agents, s.models) || undefined,
+    const agent = await this.serviceAgent();
+    const tools = await this.tools([agent]);
+    const common = {
+      bin: tools[agent], cwd: o.cwd ?? os.tmpdir(), env: o.env ?? this.opts.env, prompt: o.prompt,
       timeoutMs: o.timeoutMs, idleTimeoutMs: o.idleTimeoutMs, group: o.group, onOutput: o.onOutput ?? (() => {}),
-      proxy: s.proxy.baseUrl ? s.proxy : undefined, claudeAuth: s.claudeAuth, userConfig: o.userConfig,
+      proxy: s.proxy.baseUrl ? s.proxy : undefined, userConfig: o.userConfig,
+    };
+    if (agent === 'codex') {
+      // Без claude служебное — на codex в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
+      return this.codex({ ...common, model: o.model || this.agentModel('codex', s.agents, s.models) || undefined, sandbox: 'read-only' });
+    }
+    return this.claude({
+      ...common, claudeAuth: s.claudeAuth,
+      model: o.model || this.claudeModel(s.agents, s.models) || undefined,
       addDirs: o.addDirs, tools: o.tools ?? [],
     });
+  }
+
+  /** Кто выполняет служебные вызовы (сводка, профиль, уроки, менеджер): claude, а если его нет — codex. */
+  async serviceAgent(): Promise<AgentKind> {
+    if (await this.hasTool('claude')) return 'claude';
+    if (await this.hasTool('codex')) return 'codex';
+    throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
+  }
+
+  async hasTool(name: keyof Tools): Promise<boolean> {
+    const t = (await detectTools(this.opts.env, this.opts.getSettings().toolPaths))[name];
+    return Boolean(t.path && !t.error);
+  }
+
+  /** Модель первой роли, которую выполняет этот агент. */
+  agentModel(agent: AgentKind, agents: Partial<Record<Role, AgentKind>> | undefined, models: Record<Role, string>): string {
+    const a = { ...DEFAULT_AGENTS, ...agents };
+    const role = (['executor', 'planner', 'reviewer'] as Role[]).find((r) => a[r] === agent);
+    return role ? models[role] : '';
   }
 
   /** Модель для служебных запусков claude: модель исполнителя или планировщика, если эту роль выполняет claude. */

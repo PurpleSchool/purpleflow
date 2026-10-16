@@ -8,6 +8,7 @@ type SettingsTab = 'tools' | 'models' | 'window';
 import { useStore } from '../lib/store';
 import { Mark } from '../components/Sidebar';
 import { shortPath } from '../lib/format';
+import { toolNeeded } from '../lib/tools';
 
 /** Где взять токен PurpleSchool. */
 const TOKEN_URL = 'https://app.purpleschool.ru/ai-for-code';
@@ -103,7 +104,7 @@ export function SettingsScreen() {
   };
 
   const tools = state.tools;
-  const allFound = tools && (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => tools[t].path && !tools[t].error);
+  const allFound = tools && (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents));
 
   return (
     <div className="screen">
@@ -200,8 +201,9 @@ export function SettingsScreen() {
               {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
                 const info = tools?.[t];
                 const ok = info?.path && !info.error;
+                const needed = toolNeeded(t, agents);
                 return (
-                  <div key={t} className={`tool ${!info ? 'is-loading' : ok ? 'is-ok' : 'is-bad'}`}>
+                  <div key={t} className={`tool ${!info ? 'is-loading' : ok ? 'is-ok' : needed ? 'is-bad' : 'is-off'}`}>
                     <span className="tool-led" />
                     <div className="tool-id">
                       <strong>{TOOL_INFO[t].title}</strong>
@@ -212,7 +214,7 @@ export function SettingsScreen() {
                         <span className="mono" title={info.path!}>{shortPath(info.path!)}</span>
                       ) : info ? (
                         <span className="tool-miss">
-                          {info.error}. Установка: <code>{TOOL_INFO[t].install}</code>
+                          {info.error}.{needed ? '' : ' Не обязателен: ни одна роль на нём не работает.'} Установка: <code>{TOOL_INFO[t].install}</code>
                         </span>
                       ) : null}
                     </div>
@@ -244,7 +246,7 @@ export function SettingsScreen() {
             <header className="panel-head">
               <div>
                 <h2>Агенты и модели по ролям</h2>
-                <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Визуальная проверка всегда идёт на claude. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
+                <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Визуальная проверка — только на claude; служебные вызовы и менеджер — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
               </div>
             </header>
             <div className="roles">
@@ -287,7 +289,7 @@ export function SettingsScreen() {
                     <button className="is-on" disabled>claude</button>
                   </div>
                 </div>
-                <p>Запускает приложение и проверяет результат в браузере. Пусто — модель исполнителя, если он на claude.</p>
+                <p>Запускает приложение и проверяет результат в браузере. Без claude недоступна. Пусто — модель исполнителя, если он на claude.</p>
                 <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : 'по умолчанию claude'} value={models.visual ?? ''} onChange={(e) => setModels({ ...models, visual: e.target.value })} />
               </div>
               <div className="role bezel role-claude">
@@ -297,7 +299,7 @@ export function SettingsScreen() {
                     <button className="is-on" disabled>claude</button>
                   </div>
                 </div>
-                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели. Пусто — как у служебных вызовов.</p>
+                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Работает на claude, без него — на codex. Хватит быстрой модели. Пусто — как у служебных вызовов.</p>
                 <Input mono list="models-claude" placeholder={agents.executor === 'claude' && models.executor ? `как у исполнителя: ${models.executor}` : agents.planner === 'claude' && models.planner ? `как у планировщика: ${models.planner}` : 'по умолчанию claude'} value={models.manager ?? ''} onChange={(e) => setModels({ ...models, manager: e.target.value })} />
               </div>
               {(Object.keys(MODEL_HINTS) as AgentKind[]).map((a) => (

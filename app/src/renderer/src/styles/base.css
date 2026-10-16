@@ -55,6 +55,7 @@ body::after {
 .tool-chip.is-ok i { background: var(--ok); }
 .tool-chip.is-bad { color: var(--err); }
 .tool-chip.is-bad i { background: var(--err); }
+.tool-chip.is-off { opacity: 0.55; }
 .tool-chip.is-loading i { animation: breathe 1s infinite; }
 
 /* ——— Заголовок страницы ——— */

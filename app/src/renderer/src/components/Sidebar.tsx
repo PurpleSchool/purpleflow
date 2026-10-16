@@ -4,6 +4,7 @@ import type { RunSummary, ToolName } from '@psflow/core';
 import { useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { MODES } from '../lib/stages';
+import { toolNeeded } from '../lib/tools';
 
 const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
 
@@ -121,8 +122,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           {TOOLS.map((t) => {
             const info = state.tools?.[t];
             const ok = info?.path && !info.error;
+            const needed = toolNeeded(t, state.settings?.agents);
             return (
-              <span key={t} className={`tool-chip ${state.toolsLoading && !info ? 'is-loading' : ok ? 'is-ok' : 'is-bad'}`} title={info ? `${info.path ?? 'не найден'} ${info.version ?? ''}` : 'проверяем…'}>
+              <span key={t} className={`tool-chip ${state.toolsLoading && !info ? 'is-loading' : ok ? 'is-ok' : needed ? 'is-bad' : 'is-off'}`} title={info ? `${info.path ?? 'не найден'} ${info.version ?? ''}` : 'проверяем…'}>
                 <i />
                 {t}
               </span>

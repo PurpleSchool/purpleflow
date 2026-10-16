@@ -27,7 +27,7 @@ export async function summarizeChanges(h: Orchestrator, id: string) {
   if (!run || run.next !== 'gate2') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
   if (run.changeSummary?.attempt === attempt) return;
-  const tools = await h.tools(['git', 'claude']).catch(() => null);
+  const tools = await h.tools(['git']).catch(() => null);
   if (!tools) return;
   const files = run.roundFiles;
   let diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, h.diffBase(run), [RUN_JSON_GLOB, ...h.envFilesOf(run), ...GENERATED_GLOBS]);
@@ -54,7 +54,7 @@ export async function mapFilesToPlan(h: Orchestrator, id: string) {
   if (run.taskMap?.attempt === attempt) return;
   const docs = await h.getChangeDocs(id).catch(() => null);
   if (!docs?.tasks.trim()) return;
-  const tools = await h.tools(['git', 'claude']).catch(() => null);
+  const tools = await h.tools(['git']).catch(() => null);
   if (!tools) return;
   const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, h.diffBase(run), [RUN_JSON_GLOB, ...h.envFilesOf(run), ...GENERATED_GLOBS]);
   const files = splitDiff(diff).map((f) => ({ path: f.path, ...lineStats(f.text) })).filter((f) => !f.path.startsWith('openspec/'));

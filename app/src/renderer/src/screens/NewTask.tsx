@@ -143,7 +143,11 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
   // Визуальная проверка всегда видна в маршруте и включается переключателем прямо в нём.
   const route = stagesFor(mode, true);
   const canStart = Boolean(project?.isRepo && task.trim().length > 5);
-  const canVisual = Boolean(cmds.run.trim() && cmds.url.trim());
+  const hasRunCmd = Boolean(cmds.run.trim() && cmds.url.trim());
+  // Браузером визуальная проверка управляет только через claude.
+  const claudeInfo = state.tools?.claude;
+  const noClaude = Boolean(claudeInfo && (!claudeInfo.path || claudeInfo.error));
+  const canVisual = hasRunCmd && !noClaude;
 
   const askMode = async () => {
     if (task.trim().length < 6) return;
@@ -232,7 +236,9 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                     <span className="route-n">{s.gate ? '' : on ? n : <MonitorCheck size={12} />}</span>
                     <div>
                       <strong>{s.title}</strong>
-                      {optional && !canVisual ? (
+                      {optional && noClaude ? (
+                        <span>Нужен claude — на этой машине его нет</span>
+                      ) : optional && !canVisual ? (
                         <span>
                           Нужна команда запуска приложения —{' '}
                           {project?.isRepo ? <button className="link" onClick={toProject}>задайте в настройках проекта</button> : 'задайте в настройках проекта'}
