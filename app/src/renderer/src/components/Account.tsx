@@ -171,50 +171,68 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
 
   const active = keys?.filter((k) => k.active) ?? [];
   const current = keys?.find((k) => k.current);
+  const create = () => void act('create', window.psflow.account.createKey);
   return (
     <div className="acc-keys">
+      <div className="acc-keys-head">
+        <strong>Ключ AI-прокси</strong>
+        {keys && active.length > 0 && <span className="muted">{active.length} из {limit}</span>}
+        <span className="grow" />
+        {keys && active.length > 0 && active.length < limit && (
+          <Button tone="quiet" icon={<Plus size={14} />} busy={busy === 'create'} disabled={busy !== null && busy !== 'create'} onClick={create}>Новый ключ</Button>
+        )}
+      </div>
       {!keys && !error && <div className="acc-keys-loading"><span className="spinner" /> Загружаем ключи аккаунта…</div>}
       {keys && active.length === 0 && (
         <div className="acc-key-offer">
-          <KeyRound size={18} />
+          <span className="acc-key-icon"><KeyRound size={16} /></span>
           <div>
-            <strong>В аккаунте ещё нет ключа AI-прокси</strong>
+            <strong>В аккаунте ещё нет ключа</strong>
             <p>Создадим ключ «PurpleFlow» и подставим его — агенты пойдут через PurpleSchool.</p>
           </div>
-          <Button tone="primary" icon={<Plus size={15} />} busy={busy === 'create'} onClick={() => void act('create', window.psflow.account.createKey)}>
-            Создать ключ
-          </Button>
+          <Button tone="primary" icon={<Plus size={15} />} busy={busy === 'create'} onClick={create}>Создать ключ</Button>
         </div>
       )}
-      {keys && active.length > 0 && (
+      {active.length > 0 && (
         <div className="acc-key-list">
           {active.map((k) => (
             <div key={k.id} className={`acc-key ${k.current ? 'is-current' : ''}`}>
-              <KeyRound size={14} />
-              <strong>{k.name}</strong>
-              <span className="mono muted">…{k.tail}</span>
-              <span className="grow" />
+              <span className="acc-key-icon"><KeyRound size={16} /></span>
+              <div className="acc-key-text">
+                <strong>{k.name}</strong>
+                <span>Создан {shortDate(k.createdAt)} · {k.lastUsedAt ? `использовался ${ago(k.lastUsedAt)}` : 'ещё не использовался'}</span>
+              </div>
+              <code className="acc-key-mask">•••• {k.tail}</code>
               {k.current ? (
-                <span className="acc-key-used"><CheckCircle2 size={13} /> используется</span>
+                <span className="acc-key-used"><CheckCircle2 size={14} /> Подставлен</span>
               ) : (
-                <Button tone="quiet" busy={busy === `use-${k.id}`} onClick={() => void act(`use-${k.id}`, () => window.psflow.account.useKey(k.id))}>
+                <Button tone="ghost" busy={busy === `use-${k.id}`} disabled={busy !== null && busy !== `use-${k.id}`} onClick={() => void act(`use-${k.id}`, () => window.psflow.account.useKey(k.id))}>
                   Использовать
                 </Button>
               )}
             </div>
           ))}
-          <div className="acc-key-foot">
-            {!current && hasKey && <span className="muted">Сейчас подставлен ключ не из этого аккаунта — выберите ключ выше.</span>}
-            <span className="grow" />
-            {active.length < limit && (
-              <button className="link" disabled={busy !== null} onClick={() => void act('create', window.psflow.account.createKey)}>
-                {busy === 'create' ? 'Создаём…' : 'Создать новый ключ'}
-              </button>
-            )}
-          </div>
+          {!current && hasKey && <p className="acc-key-note">Сейчас подставлен ключ не из этого аккаунта — выберите ключ из списка.</p>}
         </div>
       )}
       {error && <p className="auth-error" role="alert">{error}</p>}
     </div>
   );
+}
+
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear() === new Date().getFullYear() ? '' : ` ${d.getFullYear()}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${y}`;
+}
+
+function ago(iso: string): string {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 2) return 'только что';
+  if (min < 60) return `${min} мин назад`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} ч назад`;
+  const days = Math.round(h / 24);
+  return days < 30 ? `${days} дн назад` : shortDate(iso);
 }

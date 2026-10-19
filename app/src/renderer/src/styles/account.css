@@ -54,35 +54,57 @@
 .acc-benefits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-4); }
 .acc-benefits li > svg { flex: none; margin-top: 3px; color: var(--accent-hi); }
 .acc-form, .acc-form.bezel { padding: var(--s-6); background: var(--bg-2); border-radius: var(--r-l); }
-.acc-who { display: flex; gap: var(--s-2); align-items: center; padding: var(--s-3) var(--s-5); border-radius: var(--r-l); background: var(--bg-2); color: var(--text-2); font-size: var(--fs-13); }
-.acc-who strong { color: var(--text-1); font-weight: 500; }
 .onboard-card .acc-key-offer { grid-template-columns: auto minmax(0, 1fr); }
 .onboard-card .acc-key-offer .btn { grid-column: 2; justify-self: start; }
+.onboard-card .acc-key-mask { display: none; }
 .acc-use { margin-top: 0; }
 .acc-legacy { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 0; color: var(--text-3); font-size: var(--fs-13); }
 .acc-legacy svg { flex: none; align-self: center; }
 
+.acc-card { display: flex; flex-direction: column; border-radius: var(--r-l); background: var(--bg-2); }
+.acc-card > * { padding: var(--s-5) var(--s-6); }
+.acc-card > * + * { border-top: 1px solid var(--line); }
+.acc-profile { display: flex; gap: var(--s-4); align-items: center; }
+.acc-avatar { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; background: linear-gradient(135deg, #b46ee8, var(--accent) 55%, #5b46c9); color: #fff; font-size: 18px; font-weight: 500; box-shadow: 0 0 0 4px var(--accent-wash); }
+.acc-profile-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.acc-profile-text strong { font-weight: 500; font-size: var(--fs-14); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-profile-text span { color: var(--text-3); font-size: var(--fs-12); }
+.acc-proxy { display: flex; gap: var(--s-6); align-items: center; justify-content: space-between; }
+.acc-proxy-text { display: flex; flex-direction: column; gap: 4px; }
+.acc-proxy-text strong { display: flex; gap: var(--s-2); align-items: center; font-weight: 500; font-size: var(--fs-13); }
+.acc-proxy-text > span { color: var(--text-3); font-size: var(--fs-12); line-height: 1.55; max-width: 64ch; }
+.acc-state { padding: 3px 8px; border-radius: var(--r-pill); background: var(--bg-5); color: var(--text-3); font-size: 11px; font-weight: 500; }
+.acc-proxy.is-on .acc-state { background: var(--ok-wash); color: var(--ok); }
+.acc-switch, .acc-switch.switch { padding: 0; height: auto; background: none; }
+
 .acc-keys { display: flex; flex-direction: column; gap: var(--s-3); }
+.acc-keys-head { display: flex; gap: var(--s-2); align-items: center; min-height: 32px; font-size: var(--fs-13); }
+.acc-keys-head strong { font-weight: 500; }
+.acc-keys-head .muted { font-size: var(--fs-12); }
 .acc-keys-loading { display: flex; gap: var(--s-2); align-items: center; color: var(--text-3); font-size: var(--fs-13); }
-.acc-key-offer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-4); align-items: center; padding: var(--s-4) var(--s-5); border-radius: var(--r-l); background: var(--accent-wash); }
-.acc-key-offer > svg { color: var(--accent-hi); }
+.acc-key-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 11px; background: var(--bg-5); color: var(--text-3); }
+.acc-key-offer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-4); align-items: center; padding: var(--s-4); border-radius: var(--r-m); background: var(--accent-wash); }
+.acc-key-offer .acc-key-icon { background: var(--accent); color: #fff; }
 .acc-key-offer strong { font-weight: 500; font-size: var(--fs-13); }
 .acc-key-offer p { margin: 3px 0 0; color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
-.acc-key-list { display: flex; flex-direction: column; gap: 6px; }
-.acc-key { display: flex; gap: var(--s-3); align-items: center; min-height: 48px; padding: 0 var(--s-3) 0 var(--s-5); border-radius: var(--r-l); background: var(--bg-2); font-size: var(--fs-13); }
-.acc-key > svg { color: var(--text-3); }
-.acc-key strong { font-weight: 500; }
-.acc-key.is-current { box-shadow: inset 0 0 0 1px var(--accent-line); }
-.acc-key.is-current > svg { color: var(--accent-hi); }
-.acc-key-used { display: inline-flex; gap: 5px; align-items: center; padding-right: var(--s-2); color: var(--ok); font-size: var(--fs-12); }
-.acc-key-foot { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-1) var(--s-1) 0; font-size: var(--fs-12); }
-.acc-key-foot .link { font-size: var(--fs-13); }
+.acc-key-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.acc-key { display: flex; gap: var(--s-4); align-items: center; padding: var(--s-3) 0; border-bottom: 1px solid var(--line); }
+.acc-key:last-child { border-bottom: 0; padding-bottom: 0; }
+.acc-key.is-current .acc-key-icon { background: var(--accent); color: #fff; }
+.acc-key-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.acc-key-text strong { font-weight: 500; font-size: var(--fs-13); }
+.acc-key-text span { color: var(--text-3); font-size: var(--fs-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acc-key-mask { padding: 6px 10px; border-radius: var(--r-pill); background: var(--bg-1); color: var(--text-2); font: 450 12px/1 var(--font-code); letter-spacing: 0.04em; white-space: nowrap; }
+.acc-key-used { display: inline-flex; gap: 6px; align-items: center; min-width: 120px; justify-content: center; height: 34px; padding: 0 var(--s-4); border-radius: var(--r-pill); background: var(--ok-wash); color: var(--ok); font-size: var(--fs-12); font-weight: 500; }
+.acc-key .btn { min-width: 120px; justify-content: center; }
+.acc-key-note { margin: var(--s-1) 0 0; color: var(--wait); font-size: var(--fs-12); }
 
 @media (max-width: 980px) {
   .onboard-benefits { grid-template-columns: 1fr 1fr; }
   .acc-signin { grid-template-columns: minmax(0, 1fr); }
   .acc-key-offer { grid-template-columns: auto 1fr; }
   .acc-key-offer .btn { grid-column: 1 / -1; justify-self: start; }
+  .acc-key-mask { display: none; }
 }
 .panel-actions { display: flex; gap: var(--s-2); align-items: center; flex: none; }
 

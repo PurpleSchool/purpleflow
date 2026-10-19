@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, UserRound, Wand2, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, LogOut, Wand2, XCircle } from 'lucide-react';
 import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@psflow/core';
 import { Button, Field, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
@@ -185,13 +185,39 @@ export function SettingsScreen() {
                   </div>
                   {proxyOn && checkButton}
                 </header>
-                <div className="acc-who">
-                  <UserRound size={15} />
-                  <span>Вы вошли как <strong>{s.account.email || s.account.name}</strong></span>
-                  <span className="grow" />
-                  <button className="link" onClick={() => void logout()}>Выйти</button>
+                <div className="acc-card">
+                  <div className="acc-profile">
+                    <span className="acc-avatar" aria-hidden>{(s.account.name || s.account.email || '?').trim().charAt(0).toUpperCase()}</span>
+                    <div className="acc-profile-text">
+                      <strong>{s.account.name || s.account.email}</strong>
+                      <span>{s.account.name ? s.account.email : 'Аккаунт PurpleSchool'}</span>
+                    </div>
+                    <span className="grow" />
+                    <Button tone="quiet" icon={<LogOut size={14} />} onClick={() => void logout()}>Выйти</Button>
+                  </div>
+                  {s.proxy.hasKey && (
+                    <div className={`acc-proxy ${s.proxy.enabled ? 'is-on' : ''}`}>
+                      <div className="acc-proxy-text">
+                        <strong>Работать через PurpleSchool <span className="acc-state">{s.proxy.enabled ? 'включено' : 'выключено'}</span></strong>
+                        <span>
+                          {s.proxy.enabled
+                            ? 'claude и codex ходят в модели по ключу ниже — без VPN, расход идёт с баланса аккаунта.'
+                            : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам.'}
+                        </span>
+                      </div>
+                      <button
+                        role="switch"
+                        aria-checked={s.proxy.enabled}
+                        aria-label="Работать через PurpleSchool"
+                        className={`switch acc-switch ${s.proxy.enabled ? 'is-on' : ''}`}
+                        onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
+                      >
+                        <i />
+                      </button>
+                    </div>
+                  )}
+                  <AccountKeys />
                 </div>
-                <AccountKeys />
               </>
             ) : (
               // Без входа: описание и преимущества слева, форма справа — от верха плашки.
@@ -214,7 +240,7 @@ export function SettingsScreen() {
                 </div>
               </div>
             )}
-            {s.proxy.hasKey && (
+            {s.proxy.hasKey && !s.account && (
               <div className="user-config acc-use">
                 <button
                   role="switch"
