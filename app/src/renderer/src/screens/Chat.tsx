@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, FileCode2, FilePen, FileText, FolderOpen, FolderPlus, Globe, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
+import { ArrowUp, FilePen, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
 import type { AgentKind, ChatFile, ChatMessage, ChatPart, ProjectListItem } from '@psflow/core';
 import { Markdown } from '../components/Markdown';
 import { Button } from '../components/ui';
@@ -8,7 +8,7 @@ import { MODEL_OPTIONS } from '../lib/models';
 import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { cleanErr } from './run/util';
-import { ChatSide, useChatChanged, type ChatPane } from './ChatSide';
+import { ChatSide, ChatSideRail, useChatChanged, useSideWidth, type ChatPane } from './ChatSide';
 
 
 const SUGGEST_PROJECT = ['Как устроен этот проект?', 'Где обрабатываются ошибки API?', 'Найди и поправь опечатки в README'];
@@ -196,6 +196,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   };
 
   const changed = useChatChanged(chat, busy);
+  const side = useSideWidth();
   const messages = chat?.messages ?? [];
   const empty = !loading && messages.length === 0;
   const projectPath = chat ? chat.projectPath : draft.projectPath;
@@ -273,16 +274,6 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
           </button>
  {chat && (
             <>
-              <div className="segmented small chat-panes" role="group" aria-label="Панель">
-                {chat.projectPath && (
-                  <button className={pane === 'code' ? 'is-on' : ''} title="Изменения в коде проекта" onClick={() => setPane(pane === 'code' ? null : 'code')}>
-                    <FileCode2 size={14} /> Код{changed?.length ? <span className="chat-pane-count">{changed.length}</span> : null}
-                  </button>
-                )}
-                <button className={pane === 'browser' ? 'is-on' : ''} title="Браузер" onClick={() => setPane(pane === 'browser' ? null : 'browser')}>
-                  <Globe size={14} /> Браузер
-                </button>
-              </div>
               <span className="chat-head-end">
               <Button tone="ghost" icon={<ListTodo size={15} />} busy={toTask} disabled={busy || !messages.length} onClick={() => void makeTask()} title="Сформулировать задачу по переписке и открыть её в «Новой задаче»">
                 Сделать задачей
@@ -302,7 +293,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
         </div>
       </header>
 
-      <div className={`chat-body ${chat && sidePane ? 'has-side' : ''}`}>
+      <div className={`chat-body ${chat ? 'has-side' : ''}`}>
       <div className="chat-main">
       <div className="chat-list" ref={list} onScroll={onScroll}>
         <div className="chat-feed">
@@ -360,13 +351,10 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
             )}
           </div>
         </form>
-        <p className="chat-hint">
-          {conf.agent} · {conf.model || 'модель по умолчанию'} · {conf.edits ? (projectPath ? 'может менять файлы проекта' : 'может менять файлы в папке чата') : 'только чтение'}
-          {settings?.proxy.hasKey && settings.proxy.enabled ? ' · через PurpleSchool' : ''}
-        </p>
       </div>
       </div>
-      {chat && sidePane && <ChatSide chat={chat} busy={busy} pane={sidePane} />}
+      {chat && !sidePane && <ChatSideRail chat={chat} changed={changed} onOpen={setPane} />}
+      {chat && sidePane && <ChatSide chat={chat} busy={busy} pane={sidePane} onPane={setPane} changed={changed} width={side.width} onResize={side.startResize} onResetWidth={side.reset} />}
       </div>
     </div>
   );
