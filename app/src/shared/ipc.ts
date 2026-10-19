@@ -56,6 +56,20 @@ export interface AccountKey {
   lastUsedAt: string | null;
 }
 
+/** Баланс и план AI-прокси (GET /public/ai-proxy/overview). Юниты — строками: в БД это BigInt. */
+export interface AccountOverview {
+  balance: { totalInitialUnits: string; usedUnits: string; usedPercentage: number; remainingUnits: string; nonRolloverRemainingUnits: string; averageDailyUnitsSpend: string; estimatedRemainingDays: number | null };
+  currentPlan: { title: string; priceMinor: number; unitsPerMonth: string; nextPaymentAt: string; isAutoPaymentEnabled: boolean } | null;
+}
+
+export type UsageBucket = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+export interface UsageModelSpend { modelName: string; unitsSpend: string; requestsCount: number }
+/** Расход AI-прокси (GET /public/ai-proxy/usage). */
+export interface AccountUsage {
+  timeSeries: { bucketType: UsageBucket; period: { from: string; to: string }; buckets: { date: string; totalUnitsSpend: string; modelUnitsSpend: UsageModelSpend[] }[] };
+  modelSummary: { models: UsageModelSpend[]; totalUnitsSpend: string; totalRequests: number; averageUnitsSpendPerBucket: string };
+}
+
 export interface AccountApi {
   login(email: string, password: string): Promise<AccountResult>;
   register(p: { name: string; email: string; password: string; mailing: boolean }): Promise<AccountResult>;
@@ -66,6 +80,9 @@ export interface AccountApi {
   useKey(id: number): Promise<AccountResult>;
   /** Ключа ещё нет — подставить существующий активный; нет и такого — вернуть none. */
   autoKey(): Promise<AccountResult<'kept' | 'picked' | 'none'>>;
+  overview(): Promise<AccountResult<AccountOverview>>;
+  /** from/to — даты YYYY-MM-DD (UTC); keyIds пусто — все ключи. */
+  usage(q: { from: string; to: string; bucket: UsageBucket; keyIds: number[] }): Promise<AccountResult<AccountUsage>>;
 }
 
 export interface ChangeDocs {

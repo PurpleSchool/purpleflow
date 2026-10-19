@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, UserRound, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, UserRound, Wand2, XCircle } from 'lucide-react';
 import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@psflow/core';
 import { Button, Field, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 
-type SettingsTab = 'account' | 'tools' | 'models' | 'window';
+type SettingsTab = 'account' | 'stats' | 'tools' | 'models' | 'window';
 import { useStore } from '../lib/store';
 import { Mark } from '../components/Sidebar';
 import { shortPath } from '../lib/format';
 import { toolNeeded } from '../lib/tools';
 import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../components/Account';
+import { QuickSetup } from '../components/QuickSetup';
+import { AccountStats } from '../components/AccountStats';
 
 const TOOL_INFO: Record<ToolName, { title: string; install: string }> = {
   git: { title: 'Git', install: 'git-scm.com' },
@@ -42,6 +44,7 @@ export function SettingsScreen() {
   const [checking, setChecking] = useState(false);
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [quick, setQuick] = useState(false);
   // Первый запуск идёт после экрана входа — начинаем с инструментов; дальше первой открывается вкладка аккаунта.
   const [tab, setTab] = useState<SettingsTab>(() => (s && !s.onboarded ? 'tools' : 'account'));
 
@@ -151,7 +154,7 @@ export function SettingsScreen() {
           </div>
         </div>
       ) : (
-        <Topbar title="Настройки" sub="Аккаунт, инструменты, модели и вид приложения" />
+        <Topbar title="Настройки" sub="Аккаунт, статистика, инструменты, модели и вид приложения" />
       )}
 
       <div className="settings-tabs">
@@ -161,6 +164,7 @@ export function SettingsScreen() {
           onChange={setTab}
           items={[
             { id: 'account', label: 'Аккаунт' },
+            { id: 'stats', label: 'Статистика' },
             { id: 'tools', label: 'Инструменты', extra: tools && !allFound ? <span className="tab-badge b-coral">!</span> : undefined },
             { id: 'models', label: 'Модели' },
             { id: 'window', label: 'Приложение' },
@@ -237,6 +241,7 @@ export function SettingsScreen() {
             {checks && checksView}
           </section>
           )}
+          {tab === 'stats' && <AccountStats onSignIn={() => setTab('account')} />}
           {tab === 'tools' && (
           <section className="panel">
             <header className="panel-head">
@@ -303,7 +308,22 @@ export function SettingsScreen() {
                 <h2>Агенты и модели по ролям</h2>
                 <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Служебные вызовы (сводка, профиль, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
               </div>
+              <Button tone="primary" icon={<Wand2 size={15} />} onClick={() => setQuick(true)}>Быстрая настройка</Button>
             </header>
+            {quick && (
+              <QuickSetup
+                installed={{ claude: claudeFound, codex: Boolean(tools?.codex.path && !tools.codex.error) }}
+                initialMain={agents.executor}
+                onClose={() => setQuick(false)}
+                onApply={async (v) => {
+                  setAgents(v.agents);
+                  setModels(v.models);
+                  await saveSettings({ agents: v.agents, models: v.models });
+                  setSaved(true);
+                  setTimeout(() => setSaved(false), 1800);
+                }}
+              />
+            )}
             <div className="roles">
               {ROLES.map((r) => {
                 const agent = agents[r.id];
@@ -420,18 +440,21 @@ export function SettingsScreen() {
         </div>
       </div>
 
-      <footer className="actionbar">
-        {error && <span className="actionbar-error">{error}</span>}
-        {saved && <span className="actionbar-ok">Сохранено</span>}
-        <span className="grow" />
-        {first ? (
-          <Button tone="primary" busy={saving} onClick={() => void finish()}>
-            {allFound ? 'Готово, к задаче' : 'Сохранить и продолжить'}
-          </Button>
-        ) : (
-          <Button tone="primary" busy={saving} onClick={() => void save()}>Сохранить</Button>
-        )}
-      </footer>
+      {/* На «Аккаунте» и «Статистике» всё применяется сразу — сохранять нечего. */}
+      {(first || (tab !== 'account' && tab !== 'stats')) && (
+        <footer className="actionbar">
+          {error && <span className="actionbar-error">{error}</span>}
+          {saved && <span className="actionbar-ok">Сохранено</span>}
+          <span className="grow" />
+          {first ? (
+            <Button tone="primary" busy={saving} onClick={() => void finish()}>
+              {allFound ? 'Готово, к задаче' : 'Сохранить и продолжить'}
+            </Button>
+          ) : (
+            <Button tone="primary" busy={saving} onClick={() => void save()}>Сохранить</Button>
+          )}
+        </footer>
+      )}
     </div>
   );
 }

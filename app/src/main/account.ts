@@ -1,4 +1,4 @@
-import type { AccountKey, AccountResult } from '../shared/ipc';
+import type { AccountKey, AccountOverview, AccountResult, AccountUsage, UsageBucket } from '../shared/ipc';
 import { accountToken, proxyKey, setAccount, setProxyKey } from './settings';
 
 /**
@@ -165,4 +165,18 @@ export async function autoKey(): Promise<AccountResult<'kept' | 'picked' | 'none
   if (!k) return { ok: true, data: 'none' };
   setProxyKey(k.proxyKey);
   return { ok: true, data: 'picked' };
+}
+
+export function overview(): Promise<AccountResult<AccountOverview>> {
+  return authed<AccountOverview>('GET', '/public/ai-proxy/overview');
+}
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const BUCKETS: UsageBucket[] = ['DAY', 'WEEK', 'MONTH', 'YEAR'];
+
+export function usage(q: { from: string; to: string; bucket: UsageBucket; keyIds: number[] }): Promise<AccountResult<AccountUsage>> {
+  if (!DATE.test(q.from) || !DATE.test(q.to) || !BUCKETS.includes(q.bucket)) return Promise.resolve({ ok: false, error: 'Неверный период' });
+  const p = new URLSearchParams({ from: q.from, to: q.to, bucketType: q.bucket });
+  for (const id of q.keyIds) if (Number.isInteger(id) && id > 0) p.append('aiProxyApiKeyIds', String(id));
+  return authed<AccountUsage>('GET', `/public/ai-proxy/usage?${p}`);
 }

@@ -24,6 +24,8 @@ const bridge: PsFlowBridge = {
     createKey: () => ipcRenderer.invoke('account:createKey'),
     useKey: (id) => ipcRenderer.invoke('account:useKey', id),
     autoKey: () => ipcRenderer.invoke('account:autoKey'),
+    overview: () => ipcRenderer.invoke('account:overview'),
+    usage: (q) => ipcRenderer.invoke('account:usage', q),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

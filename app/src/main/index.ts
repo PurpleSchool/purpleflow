@@ -232,6 +232,9 @@ ipcMain.handle('account:autoKey', async () => {
   if (r.ok && r.data === 'picked') pushSettings();
   return r;
 });
+ipcMain.handle('account:overview', () => account.overview());
+ipcMain.handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown; keyIds?: unknown }) =>
+  account.usage({ from: str(q?.from), to: str(q?.to), bucket: str(q?.bucket) as never, keyIds: Array.isArray(q?.keyIds) ? q.keyIds.map(Number) : [] }));
 ipcMain.handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
 ipcMain.handle('dialog:folder', async (_e, title?: string) => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)' });
