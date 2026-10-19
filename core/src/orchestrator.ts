@@ -16,7 +16,7 @@ import { Screencast } from './screencast.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js';
 import { MODE_FIRST, MODE_LIMIT, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
-import type { ControlAction, ManagerMessage, NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
+import type { ChatSummary, ControlAction, ManagerMessage, NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
 import { CoreOptions, IMPL_LIMIT, Listener, STAGE_TITLES, StopSignal, Tools, expandPorts, isGate, isImageFile, portEnv, readSmallText, waitForUrl } from './shared.js';
 export * from './shared.js';
 import { runChecks, runCheck, probeTests, checksFeedback, captureBaseChecks, compareWithBase, stageTests, stageBaseline, needsReview } from './pipeline/checks.js';
@@ -27,6 +27,7 @@ import { stageImplement, dropArtifacts } from './pipeline/implement.js';
 import { stageFinish } from './pipeline/finish.js';
 import { applyPending, control } from './pipeline/control.js';
 import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
+import { chatChangedFiles, chatDiff, chatToTask, createChat, deleteChat, getChat, listChats, sendChat, startChatPreview, stopChat, updateChat } from './pipeline/chat.js';
 import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
 import { knowledgeOf, updateKnowledge, knowledgeBlock, relatedRepos, relatedState, checkRelatedUntouched, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
 import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps, prepareApp } from './pipeline/workspace.js';
@@ -599,6 +600,8 @@ export class Orchestrator {
 
   /** Поднять приложение в рабочей копии прогона на свободном порту (команды «Запуск приложения» и «Адрес»). */
   async startPreview(id: string): Promise<PreviewState> {
+    // Чат — приложение из папки проекта чата.
+    if (id.startsWith('chat-')) return startChatPreview(this, id);
     const r = this.mustLoad(id);
     const cur = this.previews.get(id);
     if (cur && (cur.status === 'starting' || cur.status === 'ready')) return cur;
@@ -609,7 +612,12 @@ export class Orchestrator {
     if (!fs.existsSync(r.worktreePath)) throw new Error(`Рабочая копия прогона не найдена: ${r.worktreePath}`);
     if (r.workspace === 'branch') await this.ensureOnBranch(r);
     this.copyEnvFiles(r);
+    return this.launchPreview(id, { repo: r.projectPath, cwd: r.worktreePath, runCommand, appUrl });
+  }
 
+  /** Запуск приложения для ручной проверки: подготовка, сервер на свободном порту, ожидание адреса. */
+  async launchPreview(id: string, o: { repo: string; cwd: string; runCommand: string; appUrl: string }): Promise<PreviewState> {
+    const { repo, cwd, runCommand, appUrl } = o;
     const { port, url, command } = await expandPorts(appUrl, runCommand);
     const group = `${id}:preview`;
     let output = '';
@@ -619,7 +627,7 @@ export class Orchestrator {
     };
     this.setPreview(id, { status: 'starting', url, command });
     try {
-      await prepareApp(this, { repo: r.projectPath, cwd: r.worktreePath, group, onOutput: tail });
+      await prepareApp(this, { repo, cwd, group, onOutput: tail });
     } catch (e) {
       const state: PreviewState = { status: 'failed', url, command, output, error: (e as Error).message.split('\n')[0] };
       this.setPreview(id, state);
@@ -628,7 +636,7 @@ export class Orchestrator {
     // Остановили, пока шла подготовка.
     if (this.previews.get(id)?.url !== url || this.previews.get(id)?.status !== 'starting') return this.getPreview(id);
     const server = runProc(command, [], {
-      cwd: r.worktreePath,
+      cwd,
       env: { ...this.opts.env, ...portEnv(runCommand, port), BROWSER: 'none' },
       shell: true,
       group,
@@ -749,6 +757,24 @@ export class Orchestrator {
 
   /** Прогоны, по которым менеджер сейчас готовит ответ. */
   managerBusy = new Set<string>();
+  /** Чаты, в которых агент сейчас отвечает. */
+  chatBusy = new Set<string>();
+  listChats(): ChatSummary[] { return listChats(this); }
+  getChat(id: string) { return getChat(this, id); }
+  createChat(o: Parameters<typeof createChat>[1]) { return createChat(this, o); }
+  updateChat(id: string, patch: Parameters<typeof updateChat>[2]) { return updateChat(this, id, patch); }
+  deleteChat(id: string) { return deleteChat(this, id); }
+  /** Ход идёт в фоне: ответ приходит событиями chat.updated. */
+  async sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void> {
+    const p = sendChat(this, id, text, files);
+    // Ошибки до начала хода (занят, пустое сообщение) — сразу вызывающему; дальше всё в сообщении ответа.
+    await Promise.race([p, new Promise((r) => setTimeout(r, 50))]);
+    p.catch(() => {});
+  }
+  stopChat(id: string) { return stopChat(this, id); }
+  chatToTask(id: string) { return chatToTask(this, id); }
+  getChatDiff(id: string) { return chatDiff(this, id); }
+  getChatChangedFiles(id: string) { return chatChangedFiles(this, id); }
 
   control(id: string, action: ControlAction) { return control(this, id, action); }
 

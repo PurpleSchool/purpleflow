@@ -48,10 +48,12 @@ const DEFAULTS: StoredSettings = {
 };
 
 /**
- * Адрес прокси PurpleSchool. В интерфейсе вводится только токен; адрес можно переопределить
- * переменной PSFLOW_PROXY_URL или старым полем baseUrl в settings.json.
+ * Адреса AI-прокси PurpleSchool — как в официальной инструкции подключения (GET /public/ai-proxy/setup-instructions):
+ * claude — Anthropic API, codex — OpenAI Responses API. Переопределяются переменными PSFLOW_PROXY_URL и
+ * PSFLOW_CODEX_PROXY_URL или полями baseUrl и codexBaseUrl в settings.json.
  */
-const PURPLESCHOOL_PROXY = process.env.PSFLOW_PROXY_URL || 'https://proxy.purpleschool.ru';
+const PURPLESCHOOL_PROXY = process.env.PSFLOW_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic';
+const PURPLESCHOOL_CODEX_PROXY = process.env.PSFLOW_CODEX_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1';
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
 
@@ -149,7 +151,7 @@ export function coreSettings(): CoreSettings {
   return {
     toolPaths: s.toolPaths,
     // Есть включённый ключ — агенты идут через прокси PurpleSchool; нет или выключен — через собственный вход claude и codex.
-    proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey },
+    proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim() || PURPLESCHOOL_CODEX_PROXY, apiKey },
     models: s.models,
     agents: s.agents,
     claudeAuth: s.claudeAuth,

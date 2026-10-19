@@ -8,7 +8,7 @@ interface IndexEntry {
   createdAt: string;
 }
 
-function writeAtomic(file: string, data: string) {
+export function writeAtomic(file: string, data: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, data);

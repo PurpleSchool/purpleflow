@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import type { CoreEvent, RunFile, RunSummary, ToolInfo, ToolName, NextPartDraft } from '@psflow/core';
+import type { ChatFile, ChatSummary, CoreEvent, RunFile, RunSummary, ToolInfo, ToolName, NextPartDraft } from '@psflow/core';
 import type { PublicSettings } from '../../../shared/ipc';
 
 export type ProjectTab = 'overview' | 'commands' | 'knowledge';
@@ -8,6 +8,8 @@ export type View =
   | { name: 'run'; runId: string }
   | { name: 'settings' }
   | { name: 'welcome' }
+  /** Чат; без chatId — новый, создаётся с первым сообщением. */
+  | { name: 'chat'; chatId?: string; project?: string }
   | { name: 'projects' }
   | { name: 'project'; path: string; tab?: ProjectTab };
 
@@ -23,6 +25,8 @@ interface State {
   details: Record<string, RunFile>;
   /** Последний открытый прогон — для пункта «Прогон» в навигации. */
   lastRunId: string | null;
+  /** Чаты, свежие сверху. */
+  chats: ChatSummary[];
 }
 
 type Action =
@@ -31,13 +35,23 @@ type Action =
   | { t: 'tools'; tools: Record<ToolName, ToolInfo> | null; loading: boolean }
   | { t: 'runs'; runs: RunSummary[] }
   | { t: 'run'; run: RunFile }
-  | { t: 'deleted'; runId: string };
+  | { t: 'deleted'; runId: string }
+  | { t: 'chats'; chats: ChatSummary[] }
+  | { t: 'chat'; chat: ChatSummary }
+  | { t: 'chatDeleted'; chatId: string };
 
 function summarize(r: RunFile, runJsonPath = ''): RunSummary {
   return {
     id: r.id, title: r.title, changeId: r.changeId, projectPath: r.projectPath, branch: r.branch, status: r.status,
     next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt, runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals, mode: r.mode,
   };
+}
+
+/** Строка чата в истории — как chatSummary в ядре: last — итог последнего ответа агента. */
+function chatSummary(c: ChatFile, busy: boolean): ChatSummary {
+  const answer = [...c.messages].reverse().find((m) => m.role === 'assistant' && !m.pending);
+  const last = answer ? (answer.error || answer.stopped ? 'error' : 'ok') : null;
+  return { id: c.id, title: c.title, projectPath: c.projectPath, agent: c.agent, updatedAt: c.updatedAt, busy, last };
 }
 
 function reducer(s: State, a: Action): State {
@@ -53,6 +67,14 @@ function reducer(s: State, a: Action): State {
       delete details[a.runId];
       const view: View = s.view.name === 'run' && s.view.runId === a.runId ? { name: 'new' } : s.view;
       return { ...s, view, details, runs: s.runs.filter((r) => r.id !== a.runId), lastRunId: s.lastRunId === a.runId ? null : s.lastRunId };
+    }
+    case 'chats':
+      return { ...s, chats: a.chats };
+    case 'chat':
+      return { ...s, chats: [a.chat, ...s.chats.filter((c) => c.id !== a.chat.id)].sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)) };
+    case 'chatDeleted': {
+      const view: View = s.view.name === 'chat' && s.view.chatId === a.chatId ? { name: 'chat' } : s.view;
+      return { ...s, view, chats: s.chats.filter((c) => c.id !== a.chatId) };
     }
     case 'runs':
       return { ...s, runs: a.runs, runsLoaded: true, lastRunId: s.lastRunId ?? a.runs[0]?.id ?? null };
@@ -96,6 +118,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     runsLoaded: false,
     details: {},
     lastRunId: null,
+    chats: [],
   });
 
   const refreshTools = useCallback(async () => {
@@ -138,6 +161,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const off = window.psflow.onEvent((e) => {
       if (e.type === 'run.updated') dispatch({ t: 'run', run: e.run });
       if (e.type === 'run.deleted') dispatch({ t: 'deleted', runId: e.runId });
+      if (e.type === 'chat.updated') {
+        dispatch({ t: 'chat', chat: chatSummary(e.chat, e.busy) });
+      }
+      if (e.type === 'chat.deleted') dispatch({ t: 'chatDeleted', chatId: e.chatId });
       for (const fn of listeners) fn(e);
     });
     void (async () => {
@@ -146,6 +173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Первый запуск: сначала вход в PurpleSchool (можно пропустить), затем настройка инструментов.
       if (!s.onboarded) dispatch({ t: 'view', view: { name: !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
       await refreshRuns();
+      window.psflow.core.listChats().then((chats) => dispatch({ t: 'chats', chats })).catch(() => {});
       await refreshTools();
     })();
     return off;

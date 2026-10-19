@@ -6,13 +6,14 @@ import { ProjectScreen, ProjectsScreen } from './screens/Projects';
 import { RunScreen } from './screens/Run';
 import { SettingsScreen } from './screens/Settings';
 import { WelcomeScreen } from './screens/Welcome';
+import { ChatScreen } from './screens/Chat';
 
 const SIDEBAR_KEY = 'psflow.sidebarCollapsed';
 
 export function App() {
   const { state } = useStore();
   const v = state.view;
-  const viewKey = v.name === 'run' ? `run:${v.runId}` : v.name === 'project' ? `project:${v.path}` : v.name === 'new' ? `new:${v.project ?? ''}` : v.name;
+  const viewKey = v.name === 'chat' ? `chat:${v.chatId ?? 'new'}` : v.name === 'run' ? `run:${v.runId}` : v.name === 'project' ? `project:${v.path}` : v.name === 'new' ? `new:${v.project ?? ''}` : v.name;
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === '1';
@@ -69,6 +70,7 @@ export function App() {
           {v.name === 'project' && <ProjectScreen path={v.path} initialTab={v.tab} />}
           {v.name === 'run' && <RunScreen runId={v.runId} />}
           {v.name === 'settings' && <SettingsScreen />}
+          {v.name === 'chat' && <ChatScreen chatId={v.chatId} initialProject={v.project} />}
         </div>
       </main>
     </div>

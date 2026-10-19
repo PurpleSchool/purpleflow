@@ -1,5 +1,5 @@
 import type {
-  AgentKind, ManagerMessage, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind, ChatFile, ChatSummary, ManagerMessage, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
 } from '@psflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -138,6 +138,18 @@ export interface CoreApi {
   getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }>;
   askManager(id: string, text: string): Promise<ManagerMessage[]>;
   resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]>;
+  /** Чаты: разговор с агентом вне конвейера. Ответ приходит событиями chat.updated. */
+  listChats(): Promise<ChatSummary[]>;
+  getChat(id: string): Promise<{ chat: ChatFile; busy: boolean } | null>;
+  createChat(o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean }): Promise<ChatFile>;
+  updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): Promise<ChatFile>;
+  deleteChat(id: string): Promise<void>;
+  sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void>;
+  stopChat(id: string): Promise<void>;
+  chatToTask(id: string): Promise<NextPartDraft>;
+  /** Незакоммиченные изменения проекта чата относительно HEAD. */
+  getChatDiff(id: string): Promise<DiffFile[]>;
+  getChatChangedFiles(id: string): Promise<string[]>;
 }
 
 export type CoreMethod = keyof CoreApi;

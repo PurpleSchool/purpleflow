@@ -11,6 +11,8 @@ import { shortPath } from '../lib/format';
 import { toolNeeded } from '../lib/tools';
 import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../components/Account';
 import { QuickSetup } from '../components/QuickSetup';
+import { ComboInput } from '../components/Dropdown';
+import { MODEL_OPTIONS } from '../lib/models';
 import { AccountStats } from '../components/AccountStats';
 
 const TOOL_INFO: Record<ToolName, { title: string; install: string }> = {
@@ -26,8 +28,6 @@ const ROLES: { id: Role; title: string; text: string }[] = [
   { id: 'reviewer', title: 'Ревьюер', text: 'Сверяет дифф с планом — лучше другая модель, чем у исполнителя' },
 ];
 
-/** Подсказки моделей: алиасы claude стабильны; для codex — пусто значит модель по умолчанию CLI. */
-const MODEL_HINTS: Record<AgentKind, string[]> = { claude: ['opus', 'sonnet', 'haiku'], codex: [] };
 const MODEL_PLACEHOLDER: Record<AgentKind, string> = { claude: 'opus, sonnet, haiku или полное имя', codex: 'по умолчанию codex' };
 
 export function SettingsScreen() {
@@ -362,7 +362,7 @@ export function SettingsScreen() {
                     </div>
                     <p>{r.text}</p>
                     {sameAsExecutor && <p className="role-warn">Совпадает с исполнителем — ревью той же моделью находит меньше.</p>}
-                    <Input mono list={`models-${agent}`} placeholder={MODEL_PLACEHOLDER[agent]} value={models[r.id]} onChange={(e) => setModels({ ...models, [r.id]: e.target.value })} />
+                    <ComboInput className="role-model" ariaLabel={`Модель: ${r.title}`} options={MODEL_OPTIONS[agent]} placeholder={MODEL_PLACEHOLDER[agent]} value={models[r.id]} onChange={(v) => setModels({ ...models, [r.id]: v })} />
                   </div>
                 );
               })}
@@ -372,7 +372,7 @@ export function SettingsScreen() {
                   <AgentSwitch label="Визуальная проверка" value={visualAgent} onChange={(a) => pickAgent('visual', a)} />
                 </div>
                 <p>Запускает приложение и проверяет результат в браузере через pw.{visualAgent === 'codex' ? ' На codex — без песочницы: браузеру нужны сеть и запись вне проекта, код он не меняет по инструкции.' : ''} Пусто — модель исполнителя, если он на том же агенте.</p>
-                <Input mono list={`models-${visualAgent}`} placeholder={agents.executor === visualAgent && models.executor ? `как у исполнителя: ${models.executor}` : MODEL_PLACEHOLDER[visualAgent]} value={models.visual ?? ''} onChange={(e) => setModels({ ...models, visual: e.target.value })} />
+                <ComboInput className="role-model" ariaLabel="Модель: визуальная проверка" options={MODEL_OPTIONS[visualAgent]} placeholder={agents.executor === visualAgent && models.executor ? `как у исполнителя: ${models.executor}` : MODEL_PLACEHOLDER[visualAgent]} value={models.visual ?? ''} onChange={(v) => setModels({ ...models, visual: v })} />
               </div>
               <div className={`role bezel role-${managerAgent}`}>
                 <div className="role-head">
@@ -380,11 +380,8 @@ export function SettingsScreen() {
                   <AgentSwitch label="Менеджер прогона" value={managerAgent} onChange={(a) => pickAgent('manager', a)} />
                 </div>
                 <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели.{agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том же агенте.</p>
-                <Input mono list={`models-${managerAgent}`} placeholder={MODEL_PLACEHOLDER[managerAgent]} value={models.manager ?? ''} onChange={(e) => setModels({ ...models, manager: e.target.value })} />
+                <ComboInput className="role-model" ariaLabel="Модель: менеджер прогона" options={MODEL_OPTIONS[managerAgent]} placeholder={MODEL_PLACEHOLDER[managerAgent]} value={models.manager ?? ''} onChange={(v) => setModels({ ...models, manager: v })} />
               </div>
-              {(Object.keys(MODEL_HINTS) as AgentKind[]).map((a) => (
-                <datalist key={a} id={`models-${a}`}>{MODEL_HINTS[a].map((m) => <option key={m} value={m} />)}</datalist>
-              ))}
             </div>
             <div className="user-config">
               <button

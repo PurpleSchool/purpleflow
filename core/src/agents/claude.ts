@@ -5,7 +5,7 @@ import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type Agent
  * claude -p (stdin) --output-format stream-json --verbose.
  * Флаги сверены с claude 2.1.x, см. README.
  */
-export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig'>): string[] {
+export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig' | 'partial'>): string[] {
   const args = [
     '-p',
     '--output-format', 'stream-json',
@@ -28,15 +28,17 @@ export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | '
   if (o.systemPrompt) args.push('--append-system-prompt', o.systemPrompt);
   for (const d of o.addDirs ?? []) args.push('--add-dir', d);
   if (o.tools) args.push('--tools', o.tools.join(','));
+  if (o.partial) args.push('--include-partial-messages');
   return args;
 }
 
 export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth'>): NodeJS.ProcessEnv {
   const env = cleanEnv(o.env);
   if (o.proxy?.baseUrl) {
+    // Прокси PurpleSchool проверяет ключ в заголовке x-api-key — его claude отправляет из ANTHROPIC_API_KEY.
     env.ANTHROPIC_BASE_URL = o.proxy.baseUrl;
-    env.ANTHROPIC_AUTH_TOKEN = o.proxy.apiKey;
-    delete env.ANTHROPIC_API_KEY;
+    env.ANTHROPIC_API_KEY = o.proxy.apiKey;
+    delete env.ANTHROPIC_AUTH_TOKEN;
     env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
   } else if ((o.claudeAuth ?? 'login') === 'login') {
     // Без прокси — собственный вход Claude Code; ключ из окружения перекрыл бы его.
@@ -59,6 +61,12 @@ interface ContentBlock {
 function describeTool(name: string, input: Record<string, unknown> = {}): string {
   const v = input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.description ?? input.url;
   return v ? `${name} ${c.dim(String(v).split('\n')[0].slice(0, 160))}` : name;
+}
+
+/** То же описание инструмента, но без ANSI — для чата. */
+function plainTool(name: string, input: Record<string, unknown> = {}): string {
+  const v = input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.description ?? input.url;
+  return v ? `${name} ${String(v).split('\n')[0].slice(0, 160)}` : name;
 }
 
 function toolResultText(content: unknown): string {
@@ -109,11 +117,20 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
       }
       if (ev.type === 'system' && ev.subtype === 'init') {
         out(c.dim(`● claude · ${String(ev.model ?? o.model ?? '')} · ${String(ev.cwd ?? '')}`) + '\n');
+      } else if (ev.type === 'stream_event') {
+        const se = ev.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+        if (se?.type === 'content_block_delta' && se.delta?.type === 'text_delta' && se.delta.text) o.onStep?.({ kind: 'text', text: se.delta.text, delta: true });
       } else if (ev.type === 'assistant') {
         const msg = ev.message as { content?: ContentBlock[] };
         for (const b of msg?.content ?? []) {
-          if (b.type === 'text' && b.text?.trim()) out(b.text.trim() + '\n');
-          else if (b.type === 'tool_use') out(c.violet('▸ ') + describeTool(b.name ?? 'tool', b.input) + '\n');
+          if (b.type === 'text' && b.text?.trim()) {
+            out(b.text.trim() + '\n');
+            // С частичными сообщениями текст уже пришёл кусками.
+            if (!o.partial) o.onStep?.({ kind: 'text', text: b.text.trim() });
+          } else if (b.type === 'tool_use') {
+            out(c.violet('▸ ') + describeTool(b.name ?? 'tool', b.input) + '\n');
+            o.onStep?.({ kind: 'tool', text: plainTool(b.name ?? 'tool', b.input) });
+          }
         }
       } else if (ev.type === 'user') {
         const msg = ev.message as { content?: ContentBlock[] };

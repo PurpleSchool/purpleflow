@@ -96,8 +96,26 @@ export function AgentScreen({ screen }: { screen: ReturnType<typeof useAgentScre
  * Вкладка «Браузер»: приложение из ветки прогона во встроенном webview.
  * Отдельная сессия, без preload и Node, только локальные адреса (см. will-attach-webview в main).
  */
-export function BrowserPane({ preview, canRun }: { preview: ReturnType<typeof usePreview>; canRun: boolean }) {
-  const { state, error, start, stop } = preview;
+export function BrowserPane({ preview, canRun, manual = false, intro }: {
+  preview: ReturnType<typeof usePreview>; canRun: boolean;
+  /** Можно открыть свой адрес (уже запущенный локальный сервер) без команды запуска. */
+  manual?: boolean;
+  intro?: string;
+}) {
+  const { error, start, stop: stopApp } = preview;
+  const [manualUrl, setManualUrl] = useState<string | null>(null);
+  const [typed, setTyped] = useState('localhost:3000');
+  // Свой адрес — как запущенное приложение, только останавливать нечего.
+  const state: PreviewState = manualUrl ? { status: 'ready', url: manualUrl } : preview.state;
+  const stop = async () => {
+    if (manualUrl) setManualUrl(null);
+    else await stopApp();
+  };
+  const openManual = () => {
+    const t = typed.trim();
+    if (!t) return;
+    setManualUrl(/^https?:\/\//.test(t) ? t : `http://${t}`);
+  };
   const view = useRef<WebviewTag | null>(null);
   const [address, setAddress] = useState('');
   const [nav, setNav] = useState({ back: false, forward: false, loading: false });
@@ -166,12 +184,18 @@ export function BrowserPane({ preview, canRun }: { preview: ReturnType<typeof us
           ) : (
             <>
               <strong>Проверьте результат сами</strong>
-              <p>Приложение поднимется из ветки прогона на свободном порту и откроется прямо здесь — можно протыкать изменения перед приёмкой.</p>
+              <p>{intro ?? 'Приложение поднимется из ветки прогона на свободном порту и откроется прямо здесь — можно протыкать изменения перед приёмкой.'}</p>
               {error && <p className="browser-error">{error}</p>}
               {canRun ? (
                 <Button tone="primary" icon={<Globe size={15} />} onClick={() => void start()}>Открыть приложение</Button>
               ) : (
-                <p className="muted">Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»).</p>
+                <p className="muted">Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»){manual ? ' или откройте адрес вручную' : ''}.</p>
+              )}
+              {manual && (
+                <form className="browser-manual" onSubmit={(e) => { e.preventDefault(); openManual(); }}>
+                  <input className="input mono" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="localhost:3000" aria-label="Адрес" spellCheck={false} />
+                  <Button tone={canRun ? 'ghost' : 'primary'} type="submit">Открыть адрес</Button>
+                </form>
               )}
             </>
           )}
@@ -194,7 +218,7 @@ export function BrowserPane({ preview, canRun }: { preview: ReturnType<typeof us
           <button role="radio" aria-checked={mobile} className={mobile ? 'is-on' : ''} title="Телефон" onClick={() => toggleMobile(true)}><Smartphone size={14} /></button>
         </div>
         <Button tone="quiet" icon={<ExternalLink size={15} />} title="Открыть в системном браузере" onClick={() => void window.open(address || state.url, '_blank')} />
-        <Button tone="quiet" icon={<Square size={13} />} title="Остановить приложение" onClick={() => void stop()} />
+        <Button tone="quiet" icon={<Square size={13} />} title={manualUrl ? 'Закрыть страницу' : 'Остановить приложение'} onClick={() => void stop()} />
       </div>
       <div className={`browser-stage ${mobile ? 'is-mobile' : ''}`}>
         <webview ref={(el) => { view.current = el as unknown as WebviewTag | null; }} src={state.url} partition="psflow-preview" className="browser-view" />

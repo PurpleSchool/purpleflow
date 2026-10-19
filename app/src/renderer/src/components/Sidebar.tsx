@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { FolderGit2, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react';
-import type { RunSummary, ToolName } from '@psflow/core';
+import { useMemo, useState } from 'react';
+import { ChevronDown, FolderGit2, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, Workflow } from 'lucide-react';
+import type { ChatSummary, RunSummary, ToolName } from '@psflow/core';
 import { useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { MODES } from '../lib/stages';
@@ -12,10 +12,15 @@ const STATUS_WORD: Record<RunSummary['status'], string> = {
   queued: 'в очереди', running: 'идёт', waiting: 'ждёт вас', stopped: 'остановлен', cancelled: 'отменён', finished: 'готово',
 };
 
-/** Прогоны по группам: сначала ждущие решения человека, остальные — по дням. */
-function groupRuns(runs: RunSummary[]) {
+type Item = { kind: 'run'; at: string; run: RunSummary } | { kind: 'chat'; at: string; chat: ChatSummary };
+
+/** История: прогоны и чаты вместе. Сначала прогоны, ждущие решения человека, остальное — по дням. */
+function groupItems(runs: RunSummary[], chats: ChatSummary[]) {
   const waiting = runs.filter((r) => r.status === 'waiting');
-  const rest = runs.filter((r) => r.status !== 'waiting');
+  const rest: Item[] = [
+    ...runs.filter((r) => r.status !== 'waiting').map((r) => ({ kind: 'run' as const, at: r.createdAt, run: r })),
+    ...chats.map((c) => ({ kind: 'chat' as const, at: c.updatedAt, chat: c })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
   const day = (iso: string) => new Date(iso).toDateString();
   const today = new Date();
   const yesterday = new Date(today);
@@ -29,26 +34,31 @@ function groupRuns(runs: RunSummary[]) {
     if (d > weekAgo) return 'На этой неделе';
     return 'Ранее';
   };
-  const groups: { title: string; runs: RunSummary[] }[] = [];
-  if (waiting.length) groups.push({ title: 'Ждут вас', runs: waiting });
-  for (const r of rest) {
-    const t = label(r.createdAt);
+  const groups: { title: string; items: Item[] }[] = [];
+  if (waiting.length) groups.push({ title: 'Ждут вас', items: waiting.map((r) => ({ kind: 'run', at: r.createdAt, run: r })) });
+  for (const it of rest) {
+    const t = label(it.at);
     const g = groups.find((x) => x.title === t);
-    if (g) g.runs.push(r);
-    else groups.push({ title: t, runs: [r] });
+    if (g) g.items.push(it);
+    else groups.push({ title: t, items: [it] });
   }
   return groups;
 }
 
 const projectName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
-/** Левая панель: новая задача, прогоны по дням, настройки и инструменты. Сворачивается (⌘B). */
+/** Левая панель: «Создать» (задача или чат), история прогонов и чатов, настройки и инструменты. Сворачивается (⌘B). */
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { state, go } = useStore();
   const v = state.view;
-  const groups = useMemo(() => groupRuns(state.runs), [state.runs]);
+  const groups = useMemo(() => groupItems(state.runs, state.chats), [state.runs, state.chats]);
   const waiting = state.runs.filter((r) => r.status === 'waiting').length;
   const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
+  const [menu, setMenu] = useState(false);
+  const create = (kind: 'task' | 'chat') => {
+    setMenu(false);
+    go(kind === 'task' ? { name: 'new' } : { name: 'chat' });
+  };
 
   if (collapsed) {
     return (
@@ -57,7 +67,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <PanelLeftOpen size={17} />
           {waiting > 0 && <span className="side-badge">{waiting}</span>}
         </button>
-        <button className="side-icon" title="Новая задача" onClick={() => go({ name: 'new' })}><Plus size={17} /></button>
+        <button className="side-icon" title="Новая задача" onClick={() => go({ name: 'new' })}><Workflow size={17} /></button>
+        <button className="side-icon" title="Новый чат" onClick={() => go({ name: 'chat' })}><MessageSquare size={17} /></button>
         <button className="side-icon" title="Проекты" onClick={() => go({ name: 'projects' })}><FolderGit2 size={17} /></button>
       </div>
     );
@@ -73,43 +84,43 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         <button className="side-icon" title={toggleTitle} onClick={onToggle}><PanelLeftClose size={17} /></button>
       </div>
 
-      <button className={`side-new ${v.name === 'new' ? 'is-on' : ''}`} onClick={() => go({ name: 'new' })}>
-        <Plus size={16} /> Новая задача
-      </button>
+      <div className="side-create">
+        <button className={`side-new ${v.name === 'new' || (v.name === 'chat' && !v.chatId) ? 'is-on' : ''}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          <Plus size={16} /> Создать <ChevronDown size={14} className={`side-new-chev ${menu ? 'is-open' : ''}`} />
+        </button>
+        {menu && (
+          <>
+            <div className="side-create-scrim" onClick={() => setMenu(false)} />
+            <div className="side-create-menu" role="menu">
+              <button role="menuitem" onClick={() => create('task')}>
+                <span className="side-kind is-run"><Workflow size={15} /></span>
+                <span><strong>Задача</strong><small>План, реализация, тесты, ревью и приёмка</small></span>
+              </button>
+              <button role="menuitem" onClick={() => create('chat')}>
+                <span className="side-kind is-chat"><MessageSquare size={15} /></span>
+                <span><strong>Чат</strong><small>Вопросы и небольшие правки без конвейера</small></span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
       <button className={`side-link side-projects ${v.name === 'projects' || v.name === 'project' ? 'is-on' : ''}`} onClick={() => go({ name: 'projects' })}>
         <FolderGit2 size={16} /> Проекты
       </button>
 
-      <nav className="side-list" aria-label="Прогоны">
+      <nav className="side-list" aria-label="История">
         {!state.runsLoaded && (
           <div className="side-loading" aria-busy="true">
             <span className="spinner" />
-            <span>Загружаю прогоны…</span>
+            <span>Загружаю историю…</span>
           </div>
         )}
         {!state.runsLoaded && [0, 1, 2].map((i) => <div key={i} className="side-skel" style={{ animationDelay: `${i * 0.15}s` }} />)}
-        {state.runsLoaded && groups.length === 0 && <p className="side-empty">Прогонов пока нет. Опишите задачу — здесь появится её прогон.</p>}
+        {state.runsLoaded && groups.length === 0 && <p className="side-empty">Пока пусто. Создайте задачу или чат — они появятся здесь.</p>}
         {groups.map((g) => (
           <section key={g.title} className={`side-group ${g.title === 'Ждут вас' ? 'is-attention' : ''}`}>
             <h4>{g.title}</h4>
-            {g.runs.map((r) => (
-              <button
-                key={r.id}
-                className={`side-run st-${r.status} ${v.name === 'run' && v.runId === r.id ? 'is-on' : ''}`}
-                disabled={r.missing}
-                title={r.missing ? `run.json не найден: ${r.runJsonPath}` : `${r.title}\n${shortPath(r.projectPath)} · ${STATUS_WORD[r.status]}`}
-                onClick={() => go({ name: 'run', runId: r.id })}
-              >
-                <span className="side-dot" aria-label={STATUS_WORD[r.status]} />
-                <span className="side-run-text">
-                  <span className="side-run-title">{r.title}</span>
-                  <span className="side-run-sub">
-                    <span className="side-run-project">{r.missing ? 'run.json не найден' : projectName(r.projectPath)}</span>
-                    {!r.missing && <span className="side-run-mode">{MODES.find((m) => m.id === (r.mode ?? 'task'))?.title}</span>}
-                  </span>
-                </span>
-              </button>
-            ))}
+            {g.items.map((it) => it.kind === 'run' ? <RunRow key={it.run.id} r={it.run} on={v.name === 'run' && v.runId === it.run.id} /> : <ChatRow key={it.chat.id} c={it.chat} on={v.name === 'chat' && v.chatId === it.chat.id} />)}
           </section>
         ))}
       </nav>
@@ -133,6 +144,48 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </div>
       </div>
     </aside>
+  );
+}
+
+/** Прогон задачи: иконка flow, цвет — статус. */
+function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
+  const { go } = useStore();
+  return (
+    <button
+      className={`side-run st-${r.status} ${on ? 'is-on' : ''}`}
+      disabled={r.missing}
+      title={r.missing ? `run.json не найден: ${r.runJsonPath}` : `Задача · ${r.title}\n${shortPath(r.projectPath)} · ${STATUS_WORD[r.status]}`}
+      onClick={() => go({ name: 'run', runId: r.id })}
+    >
+      <span className="side-kind is-run" aria-label={`Задача · ${STATUS_WORD[r.status]}`}><Workflow size={13} /><span className="side-dot" /></span>
+      <span className="side-run-text">
+        <span className="side-run-title">{r.title}</span>
+        <span className="side-run-sub">
+          <span className="side-run-project">{r.missing ? 'run.json не найден' : projectName(r.projectPath)}</span>
+          {!r.missing && <span className="side-run-mode">{MODES.find((m) => m.id === (r.mode ?? 'task'))?.title}</span>}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ChatRow({ c, on }: { c: ChatSummary; on: boolean }) {
+  const { go } = useStore();
+  return (
+    <button
+      className={`side-run side-chat-row ${c.busy ? 'st-running' : c.last === 'error' ? 'st-stopped' : c.last === 'ok' ? 'st-finished' : 'st-new'} ${on ? 'is-on' : ''}`}
+      title={`Чат · ${c.title}\n${c.projectPath ? shortPath(c.projectPath) : 'без проекта'} · ${c.agent}`}
+      onClick={() => go({ name: 'chat', chatId: c.id })}
+    >
+      <span className="side-kind is-chat" aria-label={`Чат · ${c.busy ? 'агент отвечает' : c.last === 'error' ? 'ошибка' : c.last === 'ok' ? 'ответ готов' : 'новый'}`}><MessageSquare size={13} />{c.last || c.busy ? <span className="side-dot" /> : null}</span>
+      <span className="side-run-text">
+        <span className="side-run-title">{c.title}</span>
+        <span className="side-run-sub">
+          <span className="side-run-project">{c.projectPath ? projectName(c.projectPath) : 'без проекта'}</span>
+          <span className="side-run-mode">Чат · {c.agent}</span>
+        </span>
+      </span>
+    </button>
   );
 }
 

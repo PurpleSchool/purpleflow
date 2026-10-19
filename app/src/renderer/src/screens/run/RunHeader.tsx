@@ -5,6 +5,7 @@ import { useNow } from '../../components/Timeline';
 import { isGate } from '../../lib/bars';
 import { agentTime, ms } from '../../lib/clock';
 import { onPrRefreshed } from '../../components/PrPane';
+import { Select } from '../../components/Dropdown';
 import { Button } from '../../components/ui';
 import { tokens, usageTotal, when } from '../../lib/format';
 import { Lightbox } from './StageViews';
@@ -211,14 +212,19 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   return (
     <span className="merge-inline">
       <ArrowRight size={14} className="muted" />
-      <label className="select" title="Ветка, в которую влить результат или открыть PR">
-        <span>в</span>
-        <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={busy !== null || !branches.length}>
-          {!branches.length && <option value="">ветки не найдены</option>}
-          {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
-        <ChevronDown size={13} />
-      </label>
+      <span className="muted merge-into">в</span>
+      <Select<string>
+        className="merge-target"
+        mono
+        title="Ветка, в которую влить результат или открыть PR"
+        ariaLabel="Ветка, в которую влить"
+        value={target}
+        minWidth={220}
+        disabled={busy !== null || !branches.length}
+        placeholder="ветки не найдены"
+        onChange={setTarget}
+        options={branches.map((b) => ({ value: b, label: b }))}
+      />
       <Button
         tone="ghost"
         className="merge-btn"

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, ExternalLink, RefreshCw } from 'lucide-react';
+import { BarChart3, ExternalLink, KeyRound, RefreshCw } from 'lucide-react';
 import type { AccountKey, AccountOverview, AccountUsage, UsageBucket } from '../../../shared/ipc';
 import { Button } from './ui';
+import { Select } from './Dropdown';
 import { useStore } from '../lib/store';
 
 const PLANS_URL = 'https://purpleschool.ru/ai-for-code';
@@ -52,6 +53,19 @@ function bucketLabel(date: string, period: PeriodId): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
+/** Заголовок подсказки: полная дата дня, неделя «с … по …» или месяц. */
+function bucketTitle(date: string, period: PeriodId): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => x.toLocaleDateString('ru-RU', { ...o, timeZone: 'UTC' });
+  if (period === 'year') return fmt(d, { month: 'long', year: 'numeric' });
+  if (period === 'quarter') {
+    const end = new Date(d);
+    end.setUTCDate(d.getUTCDate() + 6);
+    return `${fmt(d, { day: 'numeric', month: 'short' })} — ${fmt(end, { day: 'numeric', month: 'short' })}`;
+  }
+  return fmt(d, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
 const dateRu = (s: string) => new Date(s).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 /** Баланс, план и расход AI-прокси — как в личном кабинете PurpleSchool. */
@@ -65,6 +79,7 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
   const [period, setPeriod] = useState<PeriodId>('week');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
 
   const fail = async (r: { error: string; code?: string }) => {
     setError(r.error);
@@ -166,10 +181,15 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
             <p>Расход токенов по дням, ключам и моделям. Даты — по UTC.</p>
           </div>
           <div className="panel-actions">
-            <select className="input stats-select" value={keyId} onChange={(e) => setKeyId(Number(e.target.value))} aria-label="Ключ">
-              <option value={0}>Все ключи</option>
-              {keys.map((k) => <option key={k.id} value={k.id}>{k.name} …{k.tail}</option>)}
-            </select>
+            <Select<number>
+              className="stats-select"
+              ariaLabel="Ключ"
+              icon={<KeyRound size={14} />}
+              value={keyId}
+              minWidth={220}
+              onChange={setKeyId}
+              options={[{ value: 0, label: 'Все ключи' }, ...keys.map((k) => ({ value: k.id, label: k.name, hint: `…${k.tail}` }))]}
+            />
             <div className="segmented small" role="radiogroup" aria-label="Период">
               {PERIODS.map((p) => (
                 <button key={p.id} role="radio" aria-checked={period === p.id} className={period === p.id ? 'is-on' : ''} onClick={() => setPeriod(p.id)}>{p.label}</button>
@@ -182,14 +202,35 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
           <div className="stats-chart bezel">
             <h3>Расход по {period === 'year' ? 'месяцам' : period === 'quarter' ? 'неделям' : 'дням'}</h3>
             <div className={`stats-bars ${buckets.length > 14 ? 'is-dense' : ''}`}>
-              {buckets.map((x) => {
+              {buckets.map((x, i) => {
                 const v = Number(x.totalUnitsSpend);
                 return (
-                  <div key={x.date} className="stats-col" title={`${bucketLabel(x.date, period)}: ${num(v)} токенов`}>
+                  <div
+                    key={x.date}
+                    className={`stats-col ${hover === i ? 'is-hover' : ''}`}
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+                  >
+                    <div className="stats-bar-wrap">
+                    {hover === i && (
+                      <div className={`stats-tip ${i > buckets.length / 2 ? 'is-left' : ''}`} style={{ bottom: `calc(${(v / max) * 100}% + 8px)` }} role="tooltip">
+                        <span className="stats-tip-date">{bucketTitle(x.date, period)}</span>
+                        <strong>{num(v)} токенов</strong>
+                        {x.modelUnitsSpend.map((m) => (
+                          <span key={m.modelName} className="stats-tip-row">
+                            <i style={{ background: color(m.modelName) }} />
+                            <code>{m.modelName}</code>
+                            <b>{num(m.unitsSpend)}</b>
+                          </span>
+                        ))}
+                        {x.modelUnitsSpend.length > 0 && <span className="stats-tip-req">{num(x.modelUnitsSpend.reduce((n, m) => n + m.requestsCount, 0))} запросов</span>}
+                      </div>
+                    )}
                     <div className="stats-stack" style={{ height: `${(v / max) * 100}%` }}>
                       {x.modelUnitsSpend.map((m) => (
                         <i key={m.modelName} style={{ flexGrow: Number(m.unitsSpend), background: color(m.modelName) }} />
                       ))}
+                    </div>
                     </div>
                     <span>{bucketLabel(x.date, period)}</span>
                   </div>

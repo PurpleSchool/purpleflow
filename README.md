@@ -262,7 +262,7 @@ claude -p --output-format stream-json --verbose
 - «Мои настройки агентов» (Настройки → Агенты и модели, по умолчанию включено): агенты основных стадий получают настройки пользователя из `~/.claude` и `~/.codex` — MCP-серверы (например, трекер задач), скиллы, плагины, CLAUDE.md, а также подключённые коннекторы claude.ai. Хуки claude выключены через `--settings '{"disableAllHooks":true}'`, чтобы уведомления и логгеры пользователя не срабатывали на каждом шаге. Файлы настроек только читаются. Служебные вызовы (определение команд, профиль проекта, «Что изменилось», уроки) всегда изолированы.
 - Если выключить — `--setting-sources project,local` и `--strict-mcp-config`: пользовательские хуки, плагины, MCP и `env` из `~/.claude` не вмешиваются в прогон, у codex — `--ignore-user-config` при работе через прокси.
 - `--permission-mode bypassPermissions` — агент работает автономно, но только внутри отдельной worktree.
-- Прокси: в настройках вводится только токен PurpleSchool; адрес — `https://proxy.purpleschool.ru` (переопределяется переменной `PSFLOW_PROXY_URL`). Агенту передаются `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_AUTH_TOKEN=<ключ>` (`ANTHROPIC_API_KEY` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
+- Прокси: ключ AI-прокси берётся из аккаунта PurpleSchool (вход в настройках); адрес — `https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic` (переопределяется переменной `PSFLOW_PROXY_URL`). Агенту передаются `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_API_KEY=<ключ>` — прокси проверяет его в заголовке `x-api-key` (`ANTHROPIC_AUTH_TOKEN` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
 - Из stream-json берём `assistant` (текст и вызовы инструментов — в лог), `user.tool_result`, финальный `result` (`usage`, `total_cost_usd`, `is_error`).
 
 **codex** (`core/src/agents/codex.ts`), промпт через stdin (`-`):
@@ -275,7 +275,7 @@ codex exec --json --ephemeral --skip-git-repo-check --color never
 ```
 
 - Прокси подключается отдельным провайдером через `-c`, без правки `~/.codex/config.toml`:
-  `[--ignore-user-config, если «Мои настройки агентов» выключены] -c model_provider=psflow -c model_providers.psflow.base_url=<URL> -c model_providers.psflow.env_key=PSFLOW_OPENAI_API_KEY -c model_providers.psflow.wire_api=responses`, ключ — в `PSFLOW_OPENAI_API_KEY`. URL для codex — `<base URL>/v1`.
+  `[--ignore-user-config, если «Мои настройки агентов» выключены] -c model_provider=psflow -c model_providers.psflow.base_url=<URL> -c model_providers.psflow.env_key=PSFLOW_OPENAI_API_KEY -c model_providers.psflow.wire_api=responses -c model_providers.psflow.supports_websockets=false`, ключ — в `PSFLOW_OPENAI_API_KEY`. URL для codex — `https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1` (переопределяется переменной `PSFLOW_CODEX_PROXY_URL`).
 - Из JSONL берём `item.completed` (`agent_message`, `command_execution`, `reasoning`), `turn.completed.usage`, `error`/`turn.failed`.
 
 **openspec**: `init --tools none --no-animation .`, `validate <id> --type change --strict --json --no-interactive`, `archive <id> -y --json`.

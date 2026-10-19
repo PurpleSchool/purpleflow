@@ -9,6 +9,10 @@ export interface CodexOptions extends AgentRunOptions {
   sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
   /** JSON Schema финального ответа (--output-schema). */
   outputSchema?: object;
+  /** Сохранить сессию (без --ephemeral), чтобы продолжить её в следующем ходе чата. */
+  persist?: boolean;
+  /** Продолжить сохранённую сессию: codex exec resume <id>. */
+  resumeThread?: string;
 }
 
 const KEY_ENV = 'PSFLOW_OPENAI_API_KEY';
@@ -23,8 +27,11 @@ export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string
  * codex exec --json; промпт читается из stdin ("-").
  * Прокси подключаем отдельным провайдером через -c, не трогая ~/.codex/config.toml.
  */
-export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images' | 'userConfig'>, extra: { schemaFile?: string; lastFile: string }): string[] {
-  const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', o.cwd, '-s', o.sandbox];
+export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images' | 'userConfig' | 'persist' | 'resumeThread'>, extra: { schemaFile?: string; lastFile: string }): string[] {
+  // У resume нет -C и -s: папка — рабочая папка процесса, песочница — через -c.
+  const args = o.resumeThread
+    ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${o.sandbox}"`]
+    : ['exec', '--json', ...(o.persist ? [] : ['--ephemeral']), '--skip-git-repo-check', '--color', 'never', '-C', o.cwd, '-s', o.sandbox];
   if (o.proxy?.baseUrl) {
     // С настройками пользователя его config.toml (MCP и прочее) остаётся, провайдер переопределяется поверх через -c.
     if (!o.userConfig) args.push('--ignore-user-config');
@@ -34,6 +41,8 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
       '-c', `model_providers.psflow.base_url=${codexProxyBase(o.proxy)}`,
       '-c', `model_providers.psflow.env_key=${KEY_ENV}`,
       '-c', 'model_providers.psflow.wire_api=responses',
+      // Прокси PurpleSchool не поддерживает WebSocket-транспорт Responses API.
+      '-c', 'model_providers.psflow.supports_websockets=false',
     );
   }
   // Исполнителю и планировщику на codex нужна сеть (зависимости, openspec) — в песочнице workspace-write она выключена по умолчанию.
@@ -42,7 +51,9 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
   if (extra.schemaFile) args.push('--output-schema', extra.schemaFile);
   // --image=… по одному: иначе многозначный -i проглотит завершающий «-» (промпт из stdin).
   for (const img of o.images ?? []) args.push(`--image=${img}`);
-  args.push('-o', extra.lastFile, '-');
+  args.push('-o', extra.lastFile);
+  if (o.resumeThread) args.push(o.resumeThread);
+  args.push('-');
   return args;
 }
 
@@ -82,15 +93,20 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
       switch (ev.type) {
         case 'thread.started':
           out(c.dim(`● codex · ${o.model || 'модель по умолчанию'} · ${o.sandbox}`) + '\n');
+          if (typeof ev.thread_id === 'string') o.onSession?.(ev.thread_id);
           break;
         case 'item.started':
-          if (item?.type === 'command_execution') out(c.violet('▸ ') + `shell ${c.dim(String(item.command ?? '').slice(0, 200))}` + '\n');
+          if (item?.type === 'command_execution') {
+            out(c.violet('▸ ') + `shell ${c.dim(String(item.command ?? '').slice(0, 200))}` + '\n');
+            o.onStep?.({ kind: 'tool', text: `shell ${String(item.command ?? '').split('\n')[0].slice(0, 160)}` });
+          }
           break;
         case 'item.completed':
           if (!item) break;
           if (item.type === 'agent_message') {
             lastMessage = String(item.text ?? '');
             out(lastMessage.trim() + '\n');
+            if (lastMessage.trim()) o.onStep?.({ kind: 'text', text: lastMessage.trim() });
           } else if (item.type === 'reasoning' && item.text) {
             out(c.dim(clip(String(item.text), 500)) + '\n');
           } else if (item.type === 'command_execution') {
@@ -99,6 +115,7 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
           } else if (item.type === 'file_change') {
             const ch = (item.changes as { path: string; kind: string }[] | undefined) ?? [];
             out(c.violet('▸ ') + `правка ${c.dim(ch.map((x) => x.path).join(', '))}` + '\n');
+            o.onStep?.({ kind: 'tool', text: `правка ${ch.map((x) => x.path).join(', ')}` });
           } else if (item.type === 'error') {
             errors.push(String(item.message ?? ''));
           }

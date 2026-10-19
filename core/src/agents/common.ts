@@ -26,7 +26,16 @@ export interface AgentRunOptions {
   sessionId?: string;
   /** claude: продолжить сохранённую сессию. */
   resume?: string;
+  /** Шаги ответа для чата: текст по мере генерации и вызовы инструментов, без ANSI. */
+  onStep?: (step: AgentStep) => void;
+  /** claude: присылать текст кусками по мере генерации (--include-partial-messages). */
+  partial?: boolean;
+  /** codex: ID сессии (thread), чтобы продолжить её в следующем ходе чата. */
+  onSession?: (id: string) => void;
 }
+
+/** Шаг ответа агента: delta — кусок текста, который дописывается к предыдущему. */
+export type AgentStep = { kind: 'text'; text: string; delta?: boolean } | { kind: 'tool'; text: string };
 
 export interface AgentResult {
   ok: boolean;
@@ -82,8 +91,8 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
   const t = raw.toLowerCase();
   if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
     if (auth === 'env') return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
-    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо введите токен PurpleSchool в настройках.`;
-    return `${agent}: прокси PurpleSchool отклонил токен. Проверьте токен в настройках.`;
+    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо войдите в аккаунт PurpleSchool в настройках.`;
+    return `${agent}: прокси PurpleSchool отклонил ключ. Выберите действующий ключ в настройках, во вкладке «Аккаунт».`;
   }
   if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
     return `${agent}: закончились токены или кредиты на балансе PurpleSchool.`;

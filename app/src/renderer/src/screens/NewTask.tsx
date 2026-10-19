@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Archive, ChevronDown, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
 import type { ProjectBranches, Workspace, NextPartDraft } from '@psflow/core';
 import { Button, Topbar } from '../components/ui';
+import { Select } from '../components/Dropdown';
 import { useStore } from '../lib/store';
 import { FileDrop, type PickedFile } from '../components/FileDrop';
 import { MODES, stagesFor, type Mode } from '../lib/stages';
@@ -291,15 +292,18 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
               {project?.isRepo && (
                 <div className="base-branch">
                   <span className="base-branch-label">От ветки</span>
-                  <label className="select base-branch-select" title="Ветка, от которой начать задачу — переходить в неё в проекте не нужно">
-                    <select value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} disabled={!branches?.branches.length}>
-                      {!branches && <option value="">загружаю…</option>}
-                      {branches?.branches.map((b) => (
-                        <option key={b.name} value={b.name}>{b.name}{b.name === branches.current ? ' — текущая' : ''}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={13} />
-                  </label>
+                  <Select<string>
+                    className="base-branch-select"
+                    mono
+                    title="Ветка, от которой начать задачу — переходить в неё в проекте не нужно"
+                    ariaLabel="Ветка, от которой начать"
+                    value={baseBranch}
+                    minWidth={240}
+                    disabled={!branches?.branches.length}
+                    placeholder={branches ? 'веток нет' : 'загружаю…'}
+                    onChange={setBaseBranch}
+                    options={branches?.branches.map((b) => ({ value: b.name, label: b.name, hint: b.name === branches.current ? 'текущая' : undefined })) ?? []}
+                  />
                   <button className="side-icon base-branch-fetch" title="Подтянуть ветки с origin (git fetch)" disabled={fetching} onClick={() => project && void loadBranches(project.path, true)}>
                     <RotateCw size={14} className={fetching ? 'spin' : ''} />
                   </button>
