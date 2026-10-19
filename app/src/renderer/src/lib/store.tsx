@@ -7,6 +7,7 @@ export type View =
   | { name: 'new'; project?: string; draft?: NextPartDraft }
   | { name: 'run'; runId: string }
   | { name: 'settings' }
+  | { name: 'welcome' }
   | { name: 'projects' }
   | { name: 'project'; path: string; tab?: ProjectTab };
 
@@ -72,6 +73,8 @@ interface Ctx {
   refreshRuns(): Promise<void>;
   loadRun(id: string): Promise<RunFile | null>;
   saveSettings(patch: Parameters<typeof window.psflow.settings.set>[0]): Promise<PublicSettings>;
+  /** Перечитать настройки после входа, выхода или смены ключа в аккаунте. */
+  reloadSettings(): Promise<PublicSettings>;
 }
 
 const StoreCtx = createContext<Ctx | null>(null);
@@ -125,6 +128,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return s;
   }, []);
 
+  const reloadSettings = useCallback(async () => {
+    const s = await window.psflow.settings.get();
+    dispatch({ t: 'settings', settings: s });
+    return s;
+  }, []);
+
   useEffect(() => {
     const off = window.psflow.onEvent((e) => {
       if (e.type === 'run.updated') dispatch({ t: 'run', run: e.run });
@@ -134,7 +143,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const s = await window.psflow.settings.get();
       dispatch({ t: 'settings', settings: s });
-      if (!s.onboarded) dispatch({ t: 'view', view: { name: 'settings' } });
+      // Первый запуск: сначала вход в PurpleSchool (можно пропустить), затем настройка инструментов.
+      if (!s.onboarded) dispatch({ t: 'view', view: { name: !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
       await refreshRuns();
       await refreshTools();
     })();
@@ -147,8 +157,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Ctx>(
-    () => ({ state, go: (view) => dispatch({ t: 'view', view }), refreshTools, refreshRuns, loadRun, saveSettings }),
-    [state, refreshTools, refreshRuns, loadRun, saveSettings],
+    () => ({ state, go: (view) => dispatch({ t: 'view', view }), refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings }),
+    [state, refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings],
   );
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

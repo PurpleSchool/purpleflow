@@ -6,7 +6,8 @@ import type { PublicSettings, SettingsPatch } from '../shared/ipc';
 
 interface StoredSettings {
   toolPaths: CoreSettings['toolPaths'];
-  proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string };
+  /** enabled: false — ключ сохранён, но агенты работают по своим подпискам. */
+  proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string; enabled: boolean };
   models: CoreSettings['models'];
   /** Роли конвейера; visual — по умолчанию claude, manager — claude, если установлен, иначе codex. */
   agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
@@ -22,11 +23,15 @@ interface StoredSettings {
   claudeAuth: 'login' | 'env';
   /** Подключать агентам настройки пользователя: MCP, скиллы, плагины. */
   userConfig: boolean;
+  /** Вход в аккаунт PurpleSchool: токен — только зашифрованным, email и имя — для подписи в интерфейсе. */
+  account: { tokenEnc: string; email: string; name: string };
+  /** Экран входа при первом запуске уже показан: вошли или нажали «Пропустить». */
+  authPrompted: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
   toolPaths: {},
-  proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '' },
+  proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '', enabled: true },
   models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '', manager: '' },
   agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
   agentTimeoutMin: 30,
@@ -38,6 +43,8 @@ const DEFAULTS: StoredSettings = {
   sound: true,
   claudeAuth: 'login',
   userConfig: true,
+  account: { tokenEnc: '', email: '', name: '' },
+  authPrompted: false,
 };
 
 /**
@@ -58,6 +65,7 @@ function load(): StoredSettings {
       ...DEFAULTS,
       ...raw,
       proxy: { ...DEFAULTS.proxy, ...raw.proxy },
+      account: { ...DEFAULTS.account, ...raw.account },
       models: { ...DEFAULTS.models, ...raw.models },
       agents: { ...DEFAULTS.agents, ...raw.agents },
       toolPaths: { ...raw.toolPaths },
@@ -74,7 +82,7 @@ function persist(s: StoredSettings) {
   fs.writeFileSync(file(), JSON.stringify(s, null, 2));
 }
 
-/** Ключ прокси хранится только зашифрованным через safeStorage (Keychain / DPAPI / libsecret). */
+/** Ключ прокси и токен аккаунта хранятся только зашифрованными через safeStorage (Keychain / DPAPI / libsecret). */
 function decryptKey(enc: string): string {
   if (!enc) return '';
   try {
@@ -84,11 +92,41 @@ function decryptKey(enc: string): string {
   }
 }
 
+function encryptKey(value: string): string {
+  if (!value) return '';
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Шифрование хранилища недоступно в этой системе — ключ не сохранён');
+  return safeStorage.encryptString(value).toString('base64');
+}
+
+/** Токен аккаунта PurpleSchool — только для main: в окно он не уходит. */
+export function accountToken(): string {
+  return decryptKey(load().account.tokenEnc);
+}
+
+export function setAccount(a: { token: string; email: string; name?: string } | null) {
+  const s = structuredClone(load());
+  s.account = a ? { tokenEnc: encryptKey(a.token), email: a.email, name: a.name ?? '' } : { ...DEFAULTS.account };
+  if (a) s.authPrompted = true;
+  persist(s);
+}
+
+/** Текущий ключ прокси — чтобы отметить его в списке ключей аккаунта. */
+export function proxyKey(): string {
+  return decryptKey(load().proxy.apiKeyEnc);
+}
+
+export function setProxyKey(key: string) {
+  const s = structuredClone(load());
+  s.proxy.apiKeyEnc = encryptKey(key);
+  s.proxy.enabled = true;
+  persist(s);
+}
+
 export function publicSettings(): PublicSettings {
   const s = load();
   return {
     toolPaths: s.toolPaths,
-    proxy: { baseUrl: s.proxy.baseUrl, codexBaseUrl: s.proxy.codexBaseUrl, hasKey: Boolean(s.proxy.apiKeyEnc) },
+    proxy: { baseUrl: s.proxy.baseUrl, codexBaseUrl: s.proxy.codexBaseUrl, hasKey: Boolean(s.proxy.apiKeyEnc), enabled: s.proxy.enabled },
     models: s.models,
     agents: s.agents,
     agentTimeoutMin: s.agentTimeoutMin,
@@ -100,15 +138,17 @@ export function publicSettings(): PublicSettings {
     sound: s.sound,
     claudeAuth: s.claudeAuth,
     userConfig: s.userConfig,
+    account: s.account.tokenEnc ? { email: s.account.email, name: s.account.name } : null,
+    authPrompted: s.authPrompted,
   };
 }
 
 export function coreSettings(): CoreSettings {
   const s = load();
-  const apiKey = decryptKey(s.proxy.apiKeyEnc);
+  const apiKey = s.proxy.enabled ? decryptKey(s.proxy.apiKeyEnc) : '';
   return {
     toolPaths: s.toolPaths,
-    // Есть токен — агенты идут через прокси PurpleSchool; нет — через собственный вход claude и codex.
+    // Есть включённый ключ — агенты идут через прокси PurpleSchool; нет или выключен — через собственный вход claude и codex.
     proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim(), apiKey },
     models: s.models,
     agents: s.agents,
@@ -128,13 +168,8 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.proxy) {
     if (patch.proxy.baseUrl !== undefined) s.proxy.baseUrl = patch.proxy.baseUrl;
     if (patch.proxy.codexBaseUrl !== undefined) s.proxy.codexBaseUrl = patch.proxy.codexBaseUrl;
-    if (patch.proxy.apiKey !== undefined) {
-      if (!patch.proxy.apiKey) s.proxy.apiKeyEnc = '';
-      else {
-        if (!safeStorage.isEncryptionAvailable()) throw new Error('Шифрование хранилища недоступно в этой системе — ключ не сохранён');
-        s.proxy.apiKeyEnc = safeStorage.encryptString(patch.proxy.apiKey).toString('base64');
-      }
-    }
+    if (patch.proxy.apiKey !== undefined) s.proxy.apiKeyEnc = encryptKey(patch.proxy.apiKey);
+    if (patch.proxy.enabled !== undefined) s.proxy.enabled = patch.proxy.enabled;
   }
   if (patch.agentTimeoutMin !== undefined) s.agentTimeoutMin = patch.agentTimeoutMin;
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
@@ -145,6 +180,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.sound !== undefined) s.sound = patch.sound;
   if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
   if (patch.userConfig !== undefined) s.userConfig = patch.userConfig;
+  if (patch.authPrompted !== undefined) s.authPrompted = patch.authPrompted;
   persist(s);
   return publicSettings();
 }

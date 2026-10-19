@@ -5,6 +5,7 @@ import { NewTaskScreen } from './screens/NewTask';
 import { ProjectScreen, ProjectsScreen } from './screens/Projects';
 import { RunScreen } from './screens/Run';
 import { SettingsScreen } from './screens/Settings';
+import { WelcomeScreen } from './screens/Welcome';
 
 const SIDEBAR_KEY = 'psflow.sidebarCollapsed';
 
@@ -46,6 +47,15 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Экран входа при первом запуске — на всё окно, без боковой панели.
+  if (v.name === 'welcome') {
+    return (
+      <div className={`app app-onboard os-${window.psflow.platform}`}>
+        <WelcomeScreen />
+      </div>
+    );
+  }
 
   return (
     <div className={`app os-${window.psflow.platform} ${collapsed ? 'is-collapsed' : ''}`}>

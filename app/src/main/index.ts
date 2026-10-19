@@ -5,6 +5,7 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, safeSto
 import type { CoreEvent } from '@psflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
+import * as account from './account';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PSFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PSFLOW_USER_DATA));
@@ -206,6 +207,30 @@ ipcMain.handle('settings:set', (_e, patch: SettingsPatch) => {
   if (patch.windowGlass !== undefined && win) applyMaterial(win, materialFor(s.windowGlass));
   host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
   return s;
+});
+// Аккаунт PurpleSchool. После смены ключа прокси ядро получает новые настройки.
+const pushSettings = () => host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
+const str = (v: unknown) => (typeof v === 'string' ? v : '');
+ipcMain.handle('account:login', (_e, email: unknown, password: unknown) => account.login(str(email), str(password)));
+ipcMain.handle('account:register', (_e, p: { name?: unknown; email?: unknown; password?: unknown; mailing?: unknown }) =>
+  account.register({ name: str(p?.name), email: str(p?.email), password: str(p?.password), mailing: p?.mailing === true }));
+ipcMain.handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
+ipcMain.handle('account:logout', () => account.logout());
+ipcMain.handle('account:keys', () => account.keys());
+ipcMain.handle('account:createKey', async () => {
+  const r = await account.createKey();
+  if (r.ok) pushSettings();
+  return r;
+});
+ipcMain.handle('account:useKey', async (_e, id: unknown) => {
+  const r = await account.useKey(Number(id));
+  if (r.ok) pushSettings();
+  return r;
+});
+ipcMain.handle('account:autoKey', async () => {
+  const r = await account.autoKey();
+  if (r.ok && r.data === 'picked') pushSettings();
+  return r;
 });
 ipcMain.handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
 ipcMain.handle('dialog:folder', async (_e, title?: string) => {

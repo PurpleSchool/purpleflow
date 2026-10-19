@@ -5,7 +5,8 @@ import type {
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
 export interface PublicSettings {
   toolPaths: Partial<Record<ToolName, string>>;
-  proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean };
+  /** enabled — ключ подставляется агентам; выключенный ключ хранится, но не используется. */
+  proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean; enabled: boolean };
   models: Models;
   agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
   agentTimeoutMin: number;
@@ -17,11 +18,14 @@ export interface PublicSettings {
   sound: boolean;
   claudeAuth: 'login' | 'env';
   userConfig: boolean;
+  /** Вход в PurpleSchool: null — не вошли. Токен в окно не передаётся. */
+  account: { email: string; name: string } | null;
+  authPrompted: boolean;
 }
 
 export interface SettingsPatch {
   toolPaths?: Partial<Record<ToolName, string>>;
-  proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string };
+  proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string; enabled?: boolean };
   models?: Partial<Models>;
   agents?: Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind };
   agentTimeoutMin?: number;
@@ -33,6 +37,35 @@ export interface SettingsPatch {
   sound?: boolean;
   claudeAuth?: 'login' | 'env';
   userConfig?: boolean;
+  authPrompted?: boolean;
+}
+
+/** Ответ запросов к PurpleSchool: ошибки — понятным текстом, а не исключением IPC. */
+export type AccountResult<T = null> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; /** unauthorized — токен больше не действует, нужен вход заново. */ code?: 'unauthorized' | 'exists' | 'rate' | 'network' };
+
+/** Ключ AI-прокси из аккаунта: сам ключ в окно не уходит, только хвост для узнавания. */
+export interface AccountKey {
+  id: number;
+  name: string;
+  tail: string;
+  active: boolean;
+  current: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface AccountApi {
+  login(email: string, password: string): Promise<AccountResult>;
+  register(p: { name: string; email: string; password: string; mailing: boolean }): Promise<AccountResult>;
+  restore(email: string): Promise<AccountResult<string>>;
+  logout(): Promise<void>;
+  keys(): Promise<AccountResult<{ items: AccountKey[]; limit: number }>>;
+  createKey(): Promise<AccountResult>;
+  useKey(id: number): Promise<AccountResult>;
+  /** Ключа ещё нет — подставить существующий активный; нет и такого — вернуть none. */
+  autoKey(): Promise<AccountResult<'kept' | 'picked' | 'none'>>;
 }
 
 export interface ChangeDocs {
@@ -95,6 +128,7 @@ export type CoreMethod = keyof CoreApi;
 export interface PsFlowBridge {
   core: CoreApi;
   onEvent(fn: (e: CoreEvent) => void): () => void;
+  account: AccountApi;
   settings: {
     get(): Promise<PublicSettings>;
     set(patch: SettingsPatch): Promise<PublicSettings>;

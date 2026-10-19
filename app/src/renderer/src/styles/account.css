@@ -1,0 +1,87 @@
+/* ——— Аккаунт PurpleSchool: первый запуск и панель в настройках ——— */
+.app.app-onboard { grid-template-columns: minmax(0, 1fr); }
+.onboard { position: relative; height: 100%; overflow: auto; display: flex; flex-direction: column; }
+.onboard-drag { position: absolute; top: 0; left: 0; right: 0; height: 44px; z-index: 5; }
+
+/* Заставка: логотип, три большие кнопки, преимущества */
+.onboard-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; max-width: 760px; width: 100%; margin: 0 auto; padding: var(--s-12) var(--page-x); animation: rise 0.5s var(--ease); isolation: isolate; }
+.onboard-logo { position: relative; display: grid; place-items: center; width: 132px; height: 132px; border-radius: 36px; background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-2), 0 30px 70px -24px rgba(138, 116, 238, 0.55); }
+.onboard-logo::before { content: ''; position: absolute; inset: -36px; border-radius: 50%; background: rgba(138, 116, 238, 0.11); filter: blur(48px); z-index: -1; pointer-events: none; }
+.onboard-logo > * { position: relative; z-index: 1; }
+.onboard-hero h1 { margin: var(--s-8) 0 0; font-size: 56px; font-weight: 300; letter-spacing: -0.05em; line-height: 1; }
+.onboard-hero > p { margin: var(--s-4) 0 0; color: var(--text-2); max-width: 54ch; font-size: 15px; line-height: 1.65; }
+.onboard-actions { display: flex; flex-direction: column; gap: var(--s-3); width: 100%; max-width: 380px; margin-top: var(--s-8); }
+.onboard-actions .btn { height: 52px; justify-content: center; font-size: 15px; border-radius: var(--r-pill); }
+.onboard-actions .btn-ghost { background: var(--bg-4); }
+.onboard-hero > .onboard-skip-hint { margin: var(--s-2) 0 0; color: var(--text-4); font-size: var(--fs-12); }
+.onboard-benefits { list-style: none; margin: var(--s-10) 0 0; padding: var(--s-8) 0 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-6); text-align: left; width: 100%; }
+.onboard-benefits li, .acc-benefits li { display: flex; gap: var(--s-3); align-items: flex-start; }
+.onboard-benefits div, .acc-benefits div { display: flex; flex-direction: column; gap: 3px; }
+.onboard-benefits strong, .acc-benefits strong { font-weight: 500; font-size: var(--fs-13); }
+.onboard-benefits span:not(.onboard-tick), .acc-benefits span { color: var(--text-3); font-size: var(--fs-12); line-height: 1.55; }
+.onboard-tick { flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; background: var(--accent-wash); color: var(--accent-hi); }
+
+/* Внутренняя страница: форма входа, регистрации или ключа */
+.onboard-page { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-5); padding: var(--s-12) var(--page-x); animation: rise 0.45s var(--ease); }
+.onboard-back { display: inline-flex; gap: 6px; align-items: center; align-self: center; width: 100%; max-width: 440px; color: var(--text-3); font-size: var(--fs-13); }
+.onboard-back:hover { color: var(--text-1); }
+.onboard-card { width: 100%; max-width: 440px; padding: var(--s-8); background: var(--bg-3); border-radius: var(--r-card); box-shadow: var(--highlight); }
+.onboard-card-mark { margin-bottom: var(--s-5); }
+.onboard-key { display: flex; flex-direction: column; gap: var(--s-5); }
+.onboard-key h2 { margin: 0; font-size: var(--fs-20); font-weight: 400; letter-spacing: -0.025em; }
+.onboard-key > .btn { align-self: stretch; justify-content: center; height: 42px; }
+.onboard-skip { color: var(--text-3); font-size: var(--fs-13); }
+
+.auth { display: flex; flex-direction: column; gap: var(--s-4); }
+.auth h2 { margin: 0 0 var(--s-1); font-size: var(--fs-20); font-weight: 400; letter-spacing: -0.025em; }
+.auth-sub { margin: 0; color: var(--text-3); font-size: var(--fs-13); line-height: 1.6; }
+.auth-sub strong { color: var(--text-1); font-weight: 500; }
+.auth-aside { font-size: var(--fs-12); }
+.auth-check { display: flex; gap: var(--s-2); align-items: center; color: var(--text-2); font-size: var(--fs-13); cursor: pointer; }
+.auth-check input { appearance: none; width: 16px; height: 16px; margin: 0; flex: none; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--line-3); display: grid; place-items: center; cursor: pointer; }
+.auth-check input:checked { background: var(--accent); box-shadow: none; }
+.auth-check input:checked::after { content: ''; width: 8px; height: 4px; margin-top: -2px; border: solid #fff; border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg); }
+.auth-check input:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.auth-error { margin: 0; color: var(--err); font-size: var(--fs-13); line-height: 1.55; }
+.auth-notice { display: flex; gap: var(--s-2); margin: 0; padding: var(--s-3) var(--s-4); border-radius: var(--r-m); background: var(--ok-wash); color: var(--ok); font-size: var(--fs-13); line-height: 1.55; }
+.auth-notice svg { flex: none; margin-top: 2px; }
+.auth-submit { justify-content: center; height: 42px; margin-top: var(--s-1); }
+.auth-legal { margin: 0; color: var(--text-4); font-size: var(--fs-12); line-height: 1.55; }
+.auth-switch { margin: 0; color: var(--text-3); font-size: var(--fs-13); text-align: center; }
+
+.acc-signin { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--s-8); align-items: start; }
+.acc-intro { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
+.acc-benefits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-4); }
+.acc-benefits li > svg { flex: none; margin-top: 3px; color: var(--accent-hi); }
+.acc-form, .acc-form.bezel { padding: var(--s-6); background: var(--bg-2); border-radius: var(--r-l); }
+.acc-who { display: flex; gap: var(--s-2); align-items: center; padding: var(--s-3) var(--s-5); border-radius: var(--r-l); background: var(--bg-2); color: var(--text-2); font-size: var(--fs-13); }
+.acc-who strong { color: var(--text-1); font-weight: 500; }
+.onboard-card .acc-key-offer { grid-template-columns: auto minmax(0, 1fr); }
+.onboard-card .acc-key-offer .btn { grid-column: 2; justify-self: start; }
+.acc-use { margin-top: 0; }
+.acc-legacy { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 0; color: var(--text-3); font-size: var(--fs-13); }
+.acc-legacy svg { flex: none; align-self: center; }
+
+.acc-keys { display: flex; flex-direction: column; gap: var(--s-3); }
+.acc-keys-loading { display: flex; gap: var(--s-2); align-items: center; color: var(--text-3); font-size: var(--fs-13); }
+.acc-key-offer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-4); align-items: center; padding: var(--s-4) var(--s-5); border-radius: var(--r-l); background: var(--accent-wash); }
+.acc-key-offer > svg { color: var(--accent-hi); }
+.acc-key-offer strong { font-weight: 500; font-size: var(--fs-13); }
+.acc-key-offer p { margin: 3px 0 0; color: var(--text-3); font-size: var(--fs-12); line-height: 1.5; }
+.acc-key-list { display: flex; flex-direction: column; gap: 6px; }
+.acc-key { display: flex; gap: var(--s-3); align-items: center; min-height: 48px; padding: 0 var(--s-3) 0 var(--s-5); border-radius: var(--r-l); background: var(--bg-2); font-size: var(--fs-13); }
+.acc-key > svg { color: var(--text-3); }
+.acc-key strong { font-weight: 500; }
+.acc-key.is-current { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.acc-key.is-current > svg { color: var(--accent-hi); }
+.acc-key-used { display: inline-flex; gap: 5px; align-items: center; padding-right: var(--s-2); color: var(--ok); font-size: var(--fs-12); }
+.acc-key-foot { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-1) var(--s-1) 0; font-size: var(--fs-12); }
+.acc-key-foot .link { font-size: var(--fs-13); }
+
+@media (max-width: 980px) {
+  .onboard-benefits { grid-template-columns: 1fr 1fr; }
+  .acc-signin { grid-template-columns: minmax(0, 1fr); }
+  .acc-key-offer { grid-template-columns: auto 1fr; }
+  .acc-key-offer .btn { grid-column: 1 / -1; justify-self: start; }
+}
+.panel-actions { display: flex; gap: var(--s-2); align-items: center; flex: none; }

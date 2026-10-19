@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, ExternalLink, FolderSearch, KeyRound, PlugZap, RefreshCw, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, UserRound, XCircle } from 'lucide-react';
 import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@psflow/core';
 import { Button, Field, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 
-type SettingsTab = 'tools' | 'models' | 'window';
+type SettingsTab = 'account' | 'tools' | 'models' | 'window';
 import { useStore } from '../lib/store';
 import { Mark } from '../components/Sidebar';
 import { shortPath } from '../lib/format';
 import { toolNeeded } from '../lib/tools';
-
-/** Где взять токен PurpleSchool. */
-const TOKEN_URL = 'https://app.purpleschool.ru/ai-for-code';
+import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../components/Account';
 
 const TOOL_INFO: Record<ToolName, { title: string; install: string }> = {
   git: { title: 'Git', install: 'git-scm.com' },
@@ -31,9 +29,8 @@ const MODEL_HINTS: Record<AgentKind, string[]> = { claude: ['opus', 'sonnet', 'h
 const MODEL_PLACEHOLDER: Record<AgentKind, string> = { claude: 'opus, sonnet, haiku или полное имя', codex: 'по умолчанию codex' };
 
 export function SettingsScreen() {
-  const { state, saveSettings, refreshTools, go } = useStore();
+  const { state, saveSettings, reloadSettings, refreshTools, go } = useStore();
   const s = state.settings;
-  const [key, setKey] = useState('');
   const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '' });
   const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind }>({ planner: 'claude', executor: 'claude', reviewer: 'codex' });
   const [paths, setPaths] = useState<Partial<Record<ToolName, string>>>({});
@@ -45,7 +42,8 @@ export function SettingsScreen() {
   const [checking, setChecking] = useState(false);
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<SettingsTab>('tools');
+  // Первый запуск идёт после экрана входа — начинаем с инструментов; дальше первой открывается вкладка аккаунта.
+  const [tab, setTab] = useState<SettingsTab>(() => (s && !s.onboarded ? 'tools' : 'account'));
 
   useEffect(() => {
     if (!s) return;
@@ -65,7 +63,6 @@ export function SettingsScreen() {
     setError(null);
     try {
       await saveSettings({
-        ...(key ? { proxy: { apiKey: key.trim() } } : {}),
         models,
         agents,
         toolPaths: paths,
@@ -73,7 +70,6 @@ export function SettingsScreen() {
         testTimeoutMin: testTimeout,
         maxParallel: parallel,
       });
-      setKey('');
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
       await refreshTools();
@@ -82,6 +78,13 @@ export function SettingsScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Выход удаляет токен аккаунта; ключ прокси остаётся — его можно удалить отдельно. */
+  const logout = async () => {
+    await window.psflow.account.logout();
+    await reloadSettings();
+    setChecks(null);
   };
 
   const check = async () => {
@@ -103,6 +106,27 @@ export function SettingsScreen() {
     go({ name: 'new' });
   };
 
+  const checkButton = (
+    <Button tone="ghost" icon={<PlugZap size={15} />} busy={checking} onClick={() => void check()}>
+      Проверить подключение
+    </Button>
+  );
+  const checksView = (
+    <div className="checks">
+      {checks?.map((c) => (
+        <div key={c.agent} className={`check ${c.ok ? 'is-ok' : 'is-bad'}`}>
+          {c.ok ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+          <div>
+            <strong>{c.agent}</strong> <span className="muted mono">{c.model} · {(c.durationMs / 1000).toFixed(1)} с</span>
+            <p>{c.ok ? `Ответил: «${c.reply}»` : c.error}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  /** Через прокси проверять имеет смысл только с включённым ключом; без него — агентов на вкладке «Инструменты». */
+  const proxyOn = s.proxy.hasKey && s.proxy.enabled;
+
   const tools = state.tools;
   const claudeFound = Boolean(tools?.claude.path && !tools.claude.error);
   const visualAgent = agents.visual ?? 'claude';
@@ -123,11 +147,11 @@ export function SettingsScreen() {
           <Mark size={46} />
           <div>
             <h1>Настроим PurpleFlow</h1>
-            <p>Задача пройдёт по стадиям: план, реализация, тесты, ревью другой моделью и ваша приёмка. Работают уже установленные claude и codex — нужно найти их и ввести токен PurpleSchool.</p>
+            <p>Задача пройдёт по стадиям: план, реализация, тесты, ревью другой моделью и ваша приёмка. Работают уже установленные claude и codex — проверим, что они найдены, и выберем модели.</p>
           </div>
         </div>
       ) : (
-        <Topbar title="Настройки" sub="Токен, инструменты, модели и вид приложения" />
+        <Topbar title="Настройки" sub="Аккаунт, инструменты, модели и вид приложения" />
       )}
 
       <div className="settings-tabs">
@@ -136,6 +160,7 @@ export function SettingsScreen() {
           value={tab}
           onChange={setTab}
           items={[
+            { id: 'account', label: 'Аккаунт' },
             { id: 'tools', label: 'Инструменты', extra: tools && !allFound ? <span className="tab-badge b-coral">!</span> : undefined },
             { id: 'models', label: 'Модели' },
             { id: 'window', label: 'Приложение' },
@@ -145,55 +170,71 @@ export function SettingsScreen() {
 
       <div className="scroll">
         <div className="settings tab-enter" key={tab}>
-          {tab === 'tools' && (
+          {tab === 'account' && (
           <section className="panel">
-            <header className="panel-head">
-              <div>
-                <h2>Токен PurpleSchool</h2>
-                <p>С токеном приложение работает через ваш аккаунт PurpleSchool — без VPN. Без токена claude и codex работают по вашим обычным подпискам.</p>
-              </div>
-              <Button tone="ghost" icon={<PlugZap size={15} />} busy={checking} onClick={() => void check()}>
-                Проверить подключение
-              </Button>
-            </header>
-            <Field
-              label="Токен"
-              aside={
-                s.proxy.hasKey && (
-                  <span className="saved-key">
-                    <KeyRound size={12} /> сохранён ·{' '}
-                    <button className="link" onClick={() => void saveSettings({ proxy: { apiKey: '' } })}>удалить</button>
-                  </span>
-                )
-              }
-            >
-              <div className="token-row">
-                <Input
-                  mono
-                  type="password"
-                  placeholder={s.proxy.hasKey ? '•••••••• оставьте пустым, чтобы не менять' : 'вставьте токен из аккаунта PurpleSchool'}
-                  value={key}
-                  onChange={(e) => setKey(e.target.value)}
-                />
-                <a className="btn btn-primary" href={TOKEN_URL} target="_blank" rel="noreferrer">
-                  <ExternalLink size={15} />
-                  <span>Получить токен</span>
-                </a>
-              </div>
-            </Field>
-            {checks && (
-              <div className="checks">
-                {checks.map((c) => (
-                  <div key={c.agent} className={`check ${c.ok ? 'is-ok' : 'is-bad'}`}>
-                    {c.ok ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-                    <div>
-                      <strong>{c.agent}</strong> <span className="muted mono">{c.model} · {(c.durationMs / 1000).toFixed(1)} с</span>
-                      <p>{c.ok ? `Ответил: «${c.reply}»` : c.error}</p>
-                    </div>
+            {s.account ? (
+              <>
+                <header className="panel-head">
+                  <div>
+                    <h2>Аккаунт PurpleSchool</h2>
+                    <p>Агенты работают через AI-прокси PurpleSchool по ключу вашего аккаунта — без VPN. Без ключа claude и codex работают по вашим обычным подпискам.</p>
                   </div>
-                ))}
+                  {proxyOn && checkButton}
+                </header>
+                <div className="acc-who">
+                  <UserRound size={15} />
+                  <span>Вы вошли как <strong>{s.account.email || s.account.name}</strong></span>
+                  <span className="grow" />
+                  <button className="link" onClick={() => void logout()}>Выйти</button>
+                </div>
+                <AccountKeys />
+              </>
+            ) : (
+              // Без входа: описание и преимущества слева, форма справа — от верха плашки.
+              <div className="acc-signin">
+                <div className="acc-intro">
+                  <header className="panel-head">
+                    <div>
+                      <h2>Аккаунт PurpleSchool</h2>
+                      <p>Войдите или зарегистрируйтесь, чтобы claude и codex работали через AI-прокси PurpleSchool — без VPN, с оплатой в рублях. Без этого они работают по вашим обычным подпискам.</p>
+                    </div>
+                  </header>
+                  <ul className="acc-benefits">
+                    {ACCOUNT_BENEFITS.map((b) => (
+                      <li key={b.title}><Check size={13} /><div><strong>{b.title}</strong><span>{b.text}</span></div></li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="acc-form bezel">
+                  <AuthForms onDone={() => undefined} />
+                </div>
               </div>
             )}
+            {s.proxy.hasKey && (
+              <div className="user-config acc-use">
+                <button
+                  role="switch"
+                  aria-checked={s.proxy.enabled}
+                  className={`switch ${s.proxy.enabled ? 'is-on' : ''}`}
+                  onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
+                >
+                  <i />
+                  <span>Работать через PurpleSchool</span>
+                </button>
+                <p>
+                  {s.proxy.enabled
+                    ? 'Агенты ходят в модели по ключу AI-прокси PurpleSchool.'
+                    : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам. Аккаунт остаётся подключённым.'}
+                </p>
+              </div>
+            )}
+            {s.proxy.hasKey && !s.account && (
+              <p className="acc-legacy">
+                <KeyRound size={13} /> Сохранён ключ, вставленный раньше вручную. Войдите, чтобы управлять ключами аккаунта, или{' '}
+                <button className="link" onClick={() => void saveSettings({ proxy: { apiKey: '' } })}>удалите его</button>.
+              </p>
+            )}
+            {checks && checksView}
           </section>
           )}
           {tab === 'tools' && (
@@ -201,12 +242,16 @@ export function SettingsScreen() {
             <header className="panel-head">
               <div>
                 <h2>Инструменты</h2>
-                <p>Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную.</p>
+                <p>Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную. «Проверить подключение» отправит агентам короткий запрос — {proxyOn ? 'через AI-прокси PurpleSchool' : 'по вашим подпискам claude и codex'}.</p>
               </div>
-              <Button tone="quiet" icon={<RefreshCw size={14} />} busy={state.toolsLoading} onClick={() => void refreshTools()}>
-                Проверить снова
-              </Button>
+              <div className="panel-actions">
+                <Button tone="quiet" icon={<RefreshCw size={14} />} busy={state.toolsLoading} onClick={() => void refreshTools()}>
+                  Найти снова
+                </Button>
+                {checkButton}
+              </div>
             </header>
+            {checks && checksView}
             <div className="tools bezel">
               {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
                 const info = tools?.[t];

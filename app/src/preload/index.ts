@@ -15,6 +15,16 @@ const bridge: PsFlowBridge = {
     ipcRenderer.on('core:event', h);
     return () => ipcRenderer.removeListener('core:event', h);
   },
+  account: {
+    login: (email, password) => ipcRenderer.invoke('account:login', email, password),
+    register: (p) => ipcRenderer.invoke('account:register', p),
+    restore: (email) => ipcRenderer.invoke('account:restore', email),
+    logout: () => ipcRenderer.invoke('account:logout'),
+    keys: () => ipcRenderer.invoke('account:keys'),
+    createKey: () => ipcRenderer.invoke('account:createKey'),
+    useKey: (id) => ipcRenderer.invoke('account:useKey', id),
+    autoKey: () => ipcRenderer.invoke('account:autoKey'),
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch) => ipcRenderer.invoke('settings:set', patch),
