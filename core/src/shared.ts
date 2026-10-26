@@ -63,6 +63,25 @@ export const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
  * Число ошибок в выводе линтера или тестов — по итоговым строкам ESLint, tsc, Jest/Vitest, node:test, pytest, mocha, go.
  * null — если вывод не распознан.
  */
+/**
+ * Команда «выбранных тестов» из раздела «## Checks» proposal.md: только тесты, которых касается задача.
+ * Их гоняют до правок и после каждой попытки, полный набор — один раз перед приёмкой. «нет» или пусто — не выбраны.
+ */
+export function parseFocusTests(proposal: string): string | undefined {
+  const lines = proposal.split('\n');
+  const start = lines.findIndex((l) => /^##\s+Checks\s*$/i.test(l.trim()));
+  if (start < 0) return undefined;
+  for (const l of lines.slice(start + 1)) {
+    if (/^##\s/.test(l)) break;
+    const m = l.match(/`([^`\n]+)`/);
+    if (m) {
+      const cmd = m[1].trim();
+      return cmd && cmd.length <= 400 ? cmd : undefined;
+    }
+  }
+  return undefined;
+}
+
 /** Пункты раздела «## Next Parts» из proposal.md — следующие части большой задачи. */
 export function parseNextParts(proposal: string): string[] {
   const lines = proposal.split('\n');

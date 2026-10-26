@@ -73,6 +73,7 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
 
 /** Баг: доказательство воспроизведения. Рефакторинг: зелёный эталон до начала. */
 export function ReproView({ run, kind }: { run: RunFile; kind: 'bug' | 'baseline' }) {
+  if (kind === 'baseline' && run.mode !== 'refactor') return <BaseChecksView run={run} />;
   const r = run.repro;
   if (!r) return <Empty icon={<Sparkles />} title={kind === 'bug' ? 'Баг ещё не воспроизведён' : 'Базовые проверки ещё не запускались'} />;
   const ok = kind === 'bug' ? !r.passed : r.passed;
@@ -85,6 +86,28 @@ export function ReproView({ run, kind }: { run: RunFile; kind: 'bug' | 'baseline
           : (ok ? 'Проверки зелёные до рефакторинга — эталон зафиксирован' : 'Проверки красные ещё до рефакторинга')}
       </strong>
       {(failedCheck ?? r.checks?.[0]) && <pre className="output">{stripAnsi((failedCheck ?? r.checks![0]).output).split('\n').slice(-18).join('\n')}</pre>}
+    </div>
+  );
+}
+
+/** Обычная задача: проверки на коде до правок, снятые в фоне. Красные до задачи не блокируют — агенту нельзя добавлять ошибок. */
+function BaseChecksView({ run }: { run: RunFile }) {
+  const checks = run.baseChecks;
+  if (!checks?.length) return <Empty icon={<Sparkles />} title="Проверки до правок ещё идут" />;
+  const red = checks.find((c) => !c.passed);
+  return (
+    <div className={`repro ${red ? 'is-bad' : 'is-ok'}`}>
+      <strong>{red ? 'Красные ещё до задачи — от агента потребуется не добавлять новых ошибок' : 'Проверки зелёные до правок — эталон снят'}</strong>
+      <ul className="base-checks">
+        {checks.map((c) => (
+          <li key={`${c.kind}:${c.command}`} className={c.passed ? 'is-ok' : 'is-bad'}>
+            <span>{c.kind === 'lint' ? 'Линтер' : c.command === run.focusTestCommand ? 'Тесты задачи' : 'Тесты'}</span>
+            <code>{c.command}</code>
+          </li>
+        ))}
+      </ul>
+      {run.focusTestCommand && <p className="base-checks-note">Тесты задачи выбрал планировщик (раздел «Checks» плана): они идут на каждой попытке, полный набор <code>{run.testCommand}</code> — один раз перед приёмкой.</p>}
+      {red && <pre className="output">{stripAnsi(red.output).split('\n').slice(-18).join('\n')}</pre>}
     </div>
   );
 }

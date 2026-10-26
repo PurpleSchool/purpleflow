@@ -75,7 +75,12 @@ export function stagesFor(mode: Mode = 'task', visual = false): StageDef[] {
 export const runStages = (run: Pick<RunFile, 'mode' | 'visual'> & { attempts?: RunFile['attempts'] }) => {
   const all = stagesFor((run.mode ?? 'task') as Mode, Boolean(run.visual));
   const old = run.attempts?.length && !run.attempts.some((a) => a.stage === 'clarify');
-  return old ? all.filter((s) => s.id !== 'clarify') : all;
+  const rows = old ? all.filter((s) => s.id !== 'clarify') : all;
+  // Исходные проверки идут в фоне с уточнения — строка появляется, когда они запущены.
+  if (rows[0]?.id !== 'baseline' && run.attempts?.some((a) => a.stage === 'baseline')) {
+    return [{ ...BASE.baseline, hint: 'Код до правок: подготовка и линтер — пока идёт уточнение, тесты задачи — пока вы смотрите план' }, ...rows];
+  }
+  return rows;
 };
 
 /** Стадии обычной задачи — для мест, где режим не важен. */
@@ -112,6 +117,8 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
     if (run.status === 'stopped' || run.status === 'cancelled') return 'stopped';
   }
   if (!a) return 'idle';
+  // Исходные проверки идут в фоне и во время вопросов человеку.
+  if (stage === 'baseline' && a.status === 'running' && (run.status === 'running' || run.status === 'waiting')) return 'active';
   // Ревью идёт параллельно с проверками: строка «впереди», но стадия уже работает.
   if (a.status === 'running' && run.status === 'running') return 'active';
   if (me > cur) return 'stale';

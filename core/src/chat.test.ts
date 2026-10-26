@@ -158,3 +158,48 @@ test('аргументы CLI для чата: частичные сообщен�
   const ephemeral = codexArgs({ cwd: '/p', sandbox: 'read-only' }, { lastFile: '/t/last' });
   assert.ok(ephemeral.includes('--ephemeral'));
 });
+
+test('чат: сообщение во время ответа встаёт в очередь и уходит следующим ходом; прерванный ответ, удаление из очереди', async () => {
+  const calls: AgentRunOptions[] = [];
+  const gates: ((r: { stopped?: boolean }) => void)[] = [];
+  const claude = async (o: AgentRunOptions) => {
+    calls.push(o);
+    o.onStep?.({ kind: 'text', text: `ответ ${calls.length}`, delta: true });
+    const r = await new Promise<{ stopped?: boolean }>((res) => gates.push(res));
+    return r.stopped ? { ok: false, stopped: true, text: '', usage: emptyUsage() } : { ok: true, text: `ответ ${calls.length}`, usage: emptyUsage() };
+  };
+  const core = makeCore({ claude });
+  const chat = await core.createChat({ agent: 'claude' });
+  const until = async (pred: () => boolean) => {
+    for (let i = 0; i < 200 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(pred(), 'не дождались');
+  };
+
+  await core.sendChat(chat.id, 'Прогони тесты');
+  await until(() => gates.length === 1);
+  // Агент отвечает — два уточнения встают в очередь, третье человек убирает.
+  await core.sendChat(chat.id, 'Только один тест');
+  await core.sendChat(chat.id, 'math.test.js');
+  await core.sendChat(chat.id, 'лишнее');
+  let c = core.getChat(chat.id)!;
+  assert.equal(c.busy, true);
+  assert.deepEqual(c.chat.messages.filter((m) => m.queued).map((m) => m.text), ['Только один тест', 'math.test.js', 'лишнее']);
+  core.unqueueChat(chat.id, c.chat.messages.at(-1)!.id);
+  assert.throws(() => core.unqueueChat(chat.id, c.chat.messages[0].id), /уже ушло/);
+
+  // Ответ прерван — очередь уходит одним ходом, агент знает, что его прервали.
+  gates[0]({ stopped: true });
+  await until(() => gates.length === 2);
+  assert.equal(calls[1].resume, calls[0].sessionId);
+  assert.equal(calls[1].prompt, 'Я прервал твой предыдущий ответ.\n\nТолько один тест\n\nmath.test.js');
+  c = core.getChat(chat.id)!;
+  assert.deepEqual(c.chat.messages.map((m) => (m.pending ? `${m.role}:…` : `${m.role}:${m.text}${m.queued ? ':q' : ''}${m.stopped ? ':stopped' : ''}`)),
+    ['user:Прогони тесты', 'assistant:ответ 1:stopped', 'user:Только один тест', 'user:math.test.js', 'assistant:…']);
+
+  gates[1]({});
+  await untilIdle(core, chat.id);
+  assert.equal(calls.length, 2);
+  c = core.getChat(chat.id)!;
+  assert.equal(c.busy, false);
+  assert.equal(c.chat.messages.at(-1)!.text, 'ответ 2');
+});

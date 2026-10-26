@@ -4,6 +4,7 @@ import { afterChecks, afterReview, reviewInParallel } from '../route.js';
 import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from '../modes.js';
 import type { CheckResult, ReviewResult, RunFile, TestResult } from '../types.js';
 import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB, errorCount, failedTestNames } from '../shared.js';
+import { StopSignal } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
 export async function runChecks(h: Orchestrator, run: RunFile, testCommand = run.testCommand) : Promise<{ result: TestResult; failed: CheckResult[] }> {
@@ -117,17 +118,161 @@ export function checksFeedback(h: Orchestrator, failed: CheckResult[], base?: Ch
   }).join('\n\n');
 }
 
-/** Линтер и тесты на базовом коммите — один раз за прогон, до первых правок агента. */
-export async function captureBaseChecks(h: Orchestrator, run: RunFile) {
-  if (run.baseChecks || (!run.lintCommand && !run.testCommand)) return;
+/** Команда тестов на каждой попытке: выбранные планом, иначе быстрые из настроек проекта, иначе полный набор. */
+export function iterationTestCommand(h: Orchestrator, run: RunFile): string {
+  return run.focusTestCommand?.trim() || h.getProjectConfig(run.projectPath)?.quickTestCommand?.trim() || run.testCommand;
+}
+
+const hasBase = (run: RunFile, kind: CheckResult['kind'], command: string) =>
+  Boolean(run.baseChecks?.some((b) => b.kind === kind && b.command === command));
+
+/** Эталон копится по видам и командам: линтер снимается с уточнения, выбранные тесты — после плана. */
+function mergeBase(run: RunFile, checks: CheckResult[]) {
+  run.baseChecks = [...(run.baseChecks ?? []).filter((b) => !checks.some((x) => x.kind === b.kind && x.command === b.command)), ...checks];
+}
+
+/** Что из эталона ещё не снято: линтер и (если можно) тесты той команды, что пойдёт на попытках. */
+function missingBase(h: Orchestrator, run: RunFile, withTests: boolean): { lint: boolean; test: string } {
+  const lint = Boolean(run.lintCommand) && !hasBase(run, 'lint', run.lintCommand!);
+  // В баге планировщик уже написал падающий тест: тесты после плана — не «код до задачи».
+  const afterBugPlan = modeOf(run) === 'bug' && run.attempts.some((a) => a.stage === 'plan');
+  const cmd = withTests && !afterBugPlan ? iterationTestCommand(h, run) : '';
+  return { lint, test: cmd && !hasBase(run, 'test', cmd) ? cmd : '' };
+}
+
+async function runBase(h: Orchestrator, run: RunFile, need: { lint: boolean; test: string }): Promise<CheckResult[]> {
+  const s = h.opts.getSettings();
+  const out: CheckResult[] = [];
+  if (need.lint) out.push(await h.runCheck(run, 'lint', run.lintCommand!, s.testTimeoutMin, 'до правок'));
+  if (need.test) out.push(await h.runCheck(run, 'test', need.test, s.testTimeoutMin, 'до правок'));
+  return out;
+}
+
+function logRed(h: Orchestrator, run: RunFile, checks: CheckResult[]) {
+  const red = checks.filter((x) => !x.passed);
+  if (red.length) h.log(run, c.amber(`! красные ещё до задачи: ${red.map((x) => `${CHECK_NAME[x.kind]} (ошибок: ${errorCount(x.output) ?? '?'})`).join(', ')} — от агента потребуется не добавлять новых ошибок`) + '\n');
+}
+
+/** Линтер и тесты на коде до правок — то, чего ещё нет в эталоне. Синхронно: когда фона не было. */
+export async function captureBaseChecks(h: Orchestrator, run: RunFile, withTests = true) {
+  const need = missingBase(h, run, withTests);
+  if (!need.lint && !need.test) return;
   h.log(run, c.dim('Исходное состояние проверок (до правок агента):') + '\n');
-  const { result } = await h.runChecks(run);
-  run.baseChecks = result.checks ?? [];
-  const red = run.baseChecks.filter((x) => !x.passed);
-  if (red.length) {
-    h.log(run, c.amber(`! красные ещё до задачи: ${red.map((x) => `${CHECK_NAME[x.kind]} (ошибок: ${errorCount(x.output) ?? '?'})`).join(', ')} — от агента потребуется не добавлять новых ошибок`) + '\n');
-  }
+  const checks = await runBase(h, run, need);
+  mergeBase(run, checks);
+  logRed(h, run, checks);
   h.save(run);
+}
+
+/** Фоновая подготовка: чем закончилась и что написала в лог. */
+export interface BasePrep {
+  promise: Promise<void>;
+  /** undefined — ещё идёт. */
+  result?: { at: string; checks: CheckResult[]; prepared?: boolean; error?: string; stopped?: boolean };
+  log: string[];
+  applied?: boolean;
+}
+
+/**
+ * Эталон в фоне, пока агент или человек заняты другим. 'clarify' — команда подготовки и линтер, параллельно с уточнением
+ * (оно только читает код). 'plan' — выбранные планом тесты, пока человек смотрит план: код ещё не тронут.
+ */
+export function startBaseChecks(h: Orchestrator, run: RunFile, phase: 'clarify' | 'plan' = 'clarify') {
+  const mode = modeOf(run);
+  if (mode === 'quick' || mode === 'refactor' || h.basePrep.has(run.id)) return;
+  const setup = phase === 'clarify' && !run.prepared && run.setupCommand ? run.setupCommand : '';
+  const need = missingBase(h, run, phase === 'plan');
+  if (phase === 'plan') need.lint = false;
+  if (!setup && !need.lint && !need.test) return;
+  h.begin(run, 'baseline', undefined, true);
+  h.log(run, c.dim(phase === 'clarify'
+    ? 'Параллельно с уточнением: подготовка и линтер до правок — вывод появится в логе, когда закончатся.'
+    : `Пока вы смотрите план: тесты задачи на коде до правок (\`${need.test}\`) — вывод появится в логе, когда закончатся.`) + '\n');
+  const prep: BasePrep = { promise: Promise.resolve(), log: [] };
+  const s = h.opts.getSettings();
+  prep.promise = h.logHold.run(prep.log, async () => {
+    let prepared = run.prepared;
+    try {
+      if (setup) {
+        h.log(run, c.sky(`$ ${setup}`) + '\n');
+        const r = await h.shell(run, setup, s.testTimeoutMin);
+        h.checkStop(run);
+        if (r.code !== 0) throw new Error(`Команда подготовки «${setup}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
+        prepared = true;
+      }
+      prep.result = { at: new Date().toISOString(), checks: await runBase(h, run, need), prepared };
+    } catch (e) {
+      const stopped = e instanceof StopSignal || h.stopping.has(run.id);
+      prep.result = { at: new Date().toISOString(), checks: [], prepared, error: stopped ? undefined : (e as Error).message || String(e), stopped };
+    }
+  }).then(() => {
+    // Прогон сейчас никто не ведёт (ждёт человека) — записываем итог в свежую копию с диска.
+    if (h.basePrep.get(run.id) !== prep || h.driving.has(run.id)) return;
+    const fresh = h.store.load(run.id);
+    if (fresh) applyBase(h, fresh, prep);
+  });
+  h.basePrep.set(run.id, prep);
+}
+
+/** Итог фоновой подготовки — в прогон: эталон, отметка подготовки, строка «Базовые проверки» и вывод в лог. */
+function applyBase(h: Orchestrator, run: RunFile, prep: BasePrep) {
+  const res = prep.result;
+  if (!res || prep.applied || h.basePrep.get(run.id) !== prep) return;
+  prep.applied = true;
+  if (res.stopped) {
+    h.basePrep.delete(run.id);
+    return;
+  }
+  if (prep.log.length) {
+    h.log(run, '\n' + c.violet(c.bold('━━ Базовые проверки · в фоне')) + '\n');
+    h.log(run, prep.log.join(''), false);
+  }
+  if (res.prepared) run.prepared = true;
+  mergeBase(run, res.checks);
+  logRed(h, run, res.checks);
+  const red = res.checks.filter((x) => !x.passed);
+  const a = [...run.attempts].reverse().find((x) => x.stage === 'baseline' && x.status === 'running');
+  if (a) {
+    Object.assign(a, res.error
+      ? { status: 'failed', endedAt: res.at, error: res.error }
+      : { status: 'done', endedAt: res.at, summary: red.length ? `Красные до задачи: ${red.map((x) => CHECK_NAME[x.kind]).join(' и ')}` : res.checks.length ? 'Эталон снят' : 'Подготовка готова' });
+  }
+  if (!res.error) h.basePrep.delete(run.id);
+  h.save(run);
+}
+
+/** Фон уже закончил — записать итог сразу, не дожидаясь следующей стадии (например, перед вопросами человеку). */
+export function flushBaseChecks(h: Orchestrator, run: RunFile) {
+  const prep = h.basePrep.get(run.id);
+  if (prep?.result) applyBase(h, run, prep);
+}
+
+/**
+ * Дождаться фоновой подготовки (перед планом и перед первой реализацией). Если фон оборвался вместе с приложением,
+ * его строку закрываем — недостающее снимут синхронно captureBaseChecks.
+ */
+export async function settleBaseChecks(h: Orchestrator, run: RunFile) {
+  const prep = h.basePrep.get(run.id);
+  if (prep) {
+    if (!prep.result) h.log(run, c.dim('Жду проверки до правок…') + '\n');
+    await prep.promise;
+    h.checkStop(run);
+    applyBase(h, run, prep);
+    h.basePrep.delete(run.id);
+    if (prep.result?.error) throw new Error(prep.result.error);
+  }
+  if (modeOf(run) !== 'refactor') {
+    for (const a of run.attempts) if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
+  }
+  if (!run.prepared && run.setupCommand) {
+    const s = h.opts.getSettings();
+    h.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
+    const r = await h.shell(run, run.setupCommand, s.testTimeoutMin);
+    h.checkStop(run);
+    if (r.code !== 0) throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
+    run.prepared = true;
+    h.save(run);
+  }
 }
 
 /** Красная проверка, которая была красной и до задачи и ошибок в ней не прибавилось, не блокирует. */
@@ -176,9 +321,11 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
     : null;
   if (parallel) h.log(run, c.dim('Ревью идёт параллельно с проверками — его лог появится после них.') + '\n');
 
-  // Быстрые проверки (команда из настроек проекта) — на каждом круге; полный набор — один раз, когда всё остальное зелёное.
-  const quick = h.getProjectConfig(run.projectPath)?.quickTestCommand?.trim();
-  const useQuick = Boolean(quick && run.testCommand && quick !== run.testCommand);
+  // Выбранные планом тесты (или быстрые из настроек проекта) — на каждом круге; полный набор — один раз,
+  // когда всё остальное зелёное и ревью не вернуло задачу. У большой задачи — после последнего этапа.
+  const quick = iterationTestCommand(h, run);
+  const useQuick = Boolean(run.testCommand && quick !== run.testCommand);
+  const lastPhase = !(modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases);
   const probe = async (r: TestResult, f: CheckResult[]) => {
     const red = f.find((x) => x.kind === 'test' && !x.timedOut);
     if (!red) return { result: r, failed: f };
@@ -191,10 +338,10 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
   let result: TestResult;
   let failed: CheckResult[];
   try {
-    if (useQuick) h.log(run, c.dim(`Быстрые проверки: \`${quick}\` — полный набор \`${run.testCommand}\` пойдёт, когда остальное будет зелёным.`) + '\n');
+    if (useQuick) h.log(run, c.dim(`${run.focusTestCommand ? 'Тесты задачи' : 'Быстрые проверки'}: \`${quick}\` — полный набор \`${run.testCommand}\` пойдёт перед приёмкой, когда остальное будет зелёным.`) + '\n');
     const raw = await h.runChecks(run, useQuick ? quick : run.testCommand);
     ({ result, failed } = await probe(...Object.values(h.compareWithBase(run, raw.result)) as [TestResult, CheckResult[]]));
-    if (useQuick && result.passed) {
+    if (useQuick && result.passed && lastPhase) {
       // Полный набор — после ревью: если ревьюер вернёт задачу, гонять его сейчас незачем.
       if (reviewTask && !reviewed && !reviewErr) {
         h.log(run, c.dim('Быстрые проверки зелёные — жду ревью, чтобы решить, нужен ли полный набор…') + '\n');

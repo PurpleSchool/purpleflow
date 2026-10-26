@@ -4,9 +4,10 @@ import { c } from '../agents/common.js';
 import { OpenSpec } from '../openspec.js';
 import { modeOf } from '../modes.js';
 import type { RunFile } from '../types.js';
-import { PLAN_RETRIES, countPhases, firstLine, parseQuestions, planTitle } from '../shared.js';
+import { PLAN_RETRIES, countPhases, firstLine, parseFocusTests, parseQuestions, planTitle } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 export async function stageClarify(h: Orchestrator, run: RunFile) {
+  h.startBaseChecks(run);
   const attempt = h.begin(run, 'clarify', run.models.planner);
   // Профиль проекта собирается один раз — дальше его получают все агенты.
   await h.ensureProfile(run, attempt);
@@ -20,6 +21,7 @@ export async function stageClarify(h: Orchestrator, run: RunFile) {
     h.save(run);
     return;
   }
+  h.flushBaseChecks(run);
   run.clarify = { questions };
   h.log(run, c.amber(`? вопросы планировщика (${questions.length}):\n`) + questions.map((q, i) => `  ${i + 1}. ${q.q}${q.options?.length ? c.dim(` [${q.options.join(' / ')}]`) : ''}`).join('\n') + '\n');
   h.end(run, attempt, 'done', `Вопросов: ${questions.length}`);
@@ -50,15 +52,10 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   const tools = await h.tools(['openspec']);
   const attempt = h.begin(run, 'plan', run.models.planner);
 
-  if (!run.prepared && run.setupCommand) {
-    h.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
-    const r = await h.shell(run, run.setupCommand, s.testTimeoutMin);
-    h.checkStop(run);
-    if (r.code !== 0) throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
-    run.prepared = true;
-    h.save(run);
-  }
-  await h.captureBaseChecks(run);
+  // Подготовка и линтер до правок шли в фоне с уточнения — здесь их дожидаемся (или делаем, если фона не было).
+  // Тесты в эталон — после плана: план выберет, какие из них касаются задачи.
+  await h.settleBaseChecks(run);
+  await h.captureBaseChecks(run, false);
 
   const prompt = h.prompts.render('plan.md', {
     changeId: run.changeId,
@@ -90,17 +87,22 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   if (v.valid && mode === 'epic') {
     run.phases = Math.max(1, Math.min(8, countPhases((await h.getChangeDocs(run.id)).tasks)));
   }
+  if (v.valid) {
+    const focus = parseFocusTests((await h.getChangeDocs(run.id)).proposal);
+    run.focusTestCommand = focus && run.testCommand && focus !== run.testCommand ? focus : undefined;
+    if (run.focusTestCommand) h.log(run, c.dim(`Тесты задачи: \`${run.focusTestCommand}\` — на каждой попытке; полный набор — перед приёмкой.`) + '\n');
+  }
   if (v.valid && mode === 'bug') {
     // Воспроизведение засчитано, только если проверки на текущем коде красные.
     h.log(run, c.dim('Проверяем, что баг воспроизведён: проверки должны упасть…') + '\n');
-    const { result } = await h.runChecks(run);
+    const { result } = await h.runChecks(run, run.focusTestCommand || run.testCommand);
     run.repro = result;
     if (!result.checks?.length) {
       v.valid = false;
       v.issues.push({ level: 'ERROR', message: 'Не заданы команды тестов — воспроизвести баг тестом нельзя. Укажите команду тестов в командах проекта.' });
     } else if (result.passed) {
       v.valid = false;
-      v.issues.push({ level: 'ERROR', message: 'Тест воспроизведения не падает: все проверки зелёные на текущем коде. Напиши тест, который падает именно из-за бага.' });
+      v.issues.push({ level: 'ERROR', message: `Тест воспроизведения не падает: все проверки зелёные на текущем коде${run.focusTestCommand ? ` (запускалась команда из «## Checks»: \`${run.focusTestCommand}\` — она должна включать тест воспроизведения)` : ''}. Напиши тест, который падает именно из-за бага.` });
     } else {
       h.log(run, c.mint('✓ баг воспроизведён: проверки красные, как и ожидалось') + '\n');
     }
@@ -120,6 +122,8 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
     run.planRetries = 0;
     run.next = 'gate1';
     h.save(run);
+    // Пока человек читает план, тесты задачи снимаются на коде до правок.
+    h.startBaseChecks(run, 'plan');
     return;
   }
   const issues = v.issues.map((i) => `- [${i.level}] ${i.path ? i.path + ': ' : ''}${i.message}`).join('\n');

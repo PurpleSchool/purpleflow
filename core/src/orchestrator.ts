@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,7 +20,7 @@ import { DEFAULT_AGENTS } from './types.js';
 import type { ChatSummary, ControlAction, ManagerMessage, NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
 import { CoreOptions, IMPL_LIMIT, Listener, STAGE_TITLES, StopSignal, Tools, expandPorts, isGate, isImageFile, portEnv, readSmallText, waitForUrl } from './shared.js';
 export * from './shared.js';
-import { runChecks, runCheck, probeTests, checksFeedback, captureBaseChecks, compareWithBase, stageTests, stageBaseline, needsReview } from './pipeline/checks.js';
+import { runChecks, runCheck, probeTests, checksFeedback, captureBaseChecks, startBaseChecks, settleBaseChecks, flushBaseChecks, compareWithBase, stageTests, stageBaseline, needsReview, type BasePrep } from './pipeline/checks.js';
 import { summaryContext, summarizeChanges, mapFilesToPlan, previousReviewBlock, stageReview, reviewPass, verifyBlocking, reviewFeedback } from './pipeline/review.js';
 import { visualDir, stageVisual, startLiveBrowser, getVisualShot } from './pipeline/visual.js';
 import { stageClarify, answer, stagePlan, startFilesBlock } from './pipeline/plan.js';
@@ -27,7 +28,7 @@ import { stageImplement, dropArtifacts } from './pipeline/implement.js';
 import { stageFinish } from './pipeline/finish.js';
 import { applyPending, control } from './pipeline/control.js';
 import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
-import { chatChangedFiles, chatDiff, chatToTask, createChat, deleteChat, getChat, listChats, sendChat, startChatPreview, stopChat, updateChat } from './pipeline/chat.js';
+import { chatChangedFiles, chatDiff, chatToTask, createChat, deleteChat, getChat, listChats, sendChat, startChatPreview, stopChat, unqueueChat, updateChat } from './pipeline/chat.js';
 import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
 import { knowledgeOf, updateKnowledge, knowledgeBlock, relatedRepos, relatedState, checkRelatedUntouched, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
 import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps, prepareApp } from './pipeline/workspace.js';
@@ -38,6 +39,10 @@ export class Orchestrator {
   /** Прогоны, по которым сейчас крутится цикл стадий. */
   driving = new Set<string>();
   stopping = new Set<string>();
+  /** Подготовка и исходные проверки, идущие в фоне параллельно с уточнением. */
+  basePrep = new Map<string, BasePrep>();
+  /** Вывод фоновой работы копится здесь и попадает в лог одним куском, а не вперемешку с агентом. */
+  logHold = new AsyncLocalStorage<string[]>();
 
   constructor(readonly opts: CoreOptions) {
     this.store = new RunStore(opts.dataDir);
@@ -690,6 +695,8 @@ export class Orchestrator {
       this.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message });
       return;
     }
+    // Фоновые исходные проверки гибнут вместе с группой процессов — их итог больше не годится в эталон.
+    this.basePrep.delete(id);
     await killGroup(`${id}:server`);
     await this.stopPreview(id);
     if (this.driving.has(id)) {
@@ -699,6 +706,7 @@ export class Orchestrator {
     }
     await killGroup(id);
     if (r.status === 'running' || r.status === 'waiting') {
+      for (const a of r.attempts) if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
       r.status = 'stopped';
       r.message = 'Остановлено пользователем';
       this.save(r);
@@ -767,11 +775,12 @@ export class Orchestrator {
   /** Ход идёт в фоне: ответ приходит событиями chat.updated. */
   async sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void> {
     const p = sendChat(this, id, text, files);
-    // Ошибки до начала хода (занят, пустое сообщение) — сразу вызывающему; дальше всё в сообщении ответа.
+    // Ошибки до начала хода (пустое сообщение) — сразу вызывающему; дальше всё в сообщении ответа.
     await Promise.race([p, new Promise((r) => setTimeout(r, 50))]);
     p.catch(() => {});
   }
   stopChat(id: string) { return stopChat(this, id); }
+  unqueueChat(id: string, messageId: string) { return unqueueChat(this, id, messageId); }
   chatToTask(id: string) { return chatToTask(this, id); }
   getChatDiff(id: string) { return chatDiff(this, id); }
   getChatChangedFiles(id: string) { return chatChangedFiles(this, id); }
@@ -991,7 +1000,13 @@ export class Orchestrator {
 
   checksFeedback(failed: CheckResult[], base?: CheckResult[]) : string { return checksFeedback(this, failed, base); }
 
-  captureBaseChecks(run: RunFile) { return captureBaseChecks(this, run); }
+  captureBaseChecks(run: RunFile, withTests = true) { return captureBaseChecks(this, run, withTests); }
+
+  startBaseChecks(run: RunFile, phase: 'clarify' | 'plan' = 'clarify') { return startBaseChecks(this, run, phase); }
+
+  settleBaseChecks(run: RunFile) { return settleBaseChecks(this, run); }
+
+  flushBaseChecks(run: RunFile) { return flushBaseChecks(this, run); }
 
   compareWithBase(run: RunFile, result: TestResult) : { result: TestResult; failed: CheckResult[] } { return compareWithBase(this, run, result); }
 
@@ -1395,6 +1410,11 @@ export class Orchestrator {
 
   log(run: RunFile, text: string, convert = true) {
     const t = convert ? crlf(text) : text;
+    const hold = this.logHold.getStore();
+    if (hold) {
+      hold.push(t);
+      return;
+    }
     this.store.appendLog(run.id, t);
     this.emit({ type: 'agent.output', runId: run.id, stage: run.next, text: t });
   }

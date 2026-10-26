@@ -148,6 +148,8 @@ export interface CoreApi {
   deleteChat(id: string): Promise<void>;
   sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void>;
   stopChat(id: string): Promise<void>;
+  /** Убрать сообщение из очереди, пока агент его не получил. */
+  unqueueChat(id: string, messageId: string): Promise<ChatFile>;
   chatToTask(id: string): Promise<NextPartDraft>;
   /** Незакоммиченные изменения проекта чата относительно HEAD. */
   getChatDiff(id: string): Promise<DiffFile[]>;

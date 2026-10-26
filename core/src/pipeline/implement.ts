@@ -11,7 +11,11 @@ export async function stageImplement(h: Orchestrator, run: RunFile) {
 
   // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
   // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
-  if (!run.attempts.some((x) => x.stage === 'implement')) await h.captureBaseChecks(run);
+  if (!run.attempts.some((x) => x.stage === 'implement')) {
+    // Тесты задачи снимались в фоне, пока человек смотрел план, — дожидаемся; чего нет — снимаем здесь.
+    if (modeOf(run) !== 'quick') await h.settleBaseChecks(run);
+    await h.captureBaseChecks(run);
+  }
   run.implAttemptsUsed++;
   const attempt = h.begin(run, 'implement', run.models.executor);
   const prompt = h.prompts.render(h.tpl('implement', run), {

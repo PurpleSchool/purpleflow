@@ -25,7 +25,17 @@ const chatFile = (h: Orchestrator, id: string) => path.join(chatsDir(h), `${id}.
 const chatFilesDir = (h: Orchestrator, id: string) => path.join(chatsDir(h), id);
 const group = (id: string) => `chat:${id}`;
 
+/** Чат, по которому идёт ход: одна копия в памяти, чтобы сообщения в очередь и правки настроек не затирались сохранениями хода. */
+const live = new WeakMap<Orchestrator, Map<string, ChatFile>>();
+const liveOf = (h: Orchestrator) => {
+  let m = live.get(h);
+  if (!m) live.set(h, (m = new Map()));
+  return m;
+};
+
 function read(h: Orchestrator, id: string): ChatFile | null {
+  const cur = liveOf(h).get(id);
+  if (cur) return cur;
   try {
     const chat = JSON.parse(fs.readFileSync(chatFile(h, id), 'utf8')) as ChatFile;
     // Ответ, который писался при закрытии приложения, уже не допишется.
@@ -42,7 +52,11 @@ function must(h: Orchestrator, id: string): ChatFile {
   return c;
 }
 
+/** Удалённые чаты: ход, который ещё доигрывает, не должен воскресить файл. */
+const deleted = new Set<string>();
+
 function save(h: Orchestrator, chat: ChatFile) {
+  if (deleted.has(chat.id)) return;
   chat.updatedAt = new Date().toISOString();
   writeAtomic(chatFile(h, chat.id), JSON.stringify(chat, null, 2));
   h.emit({ type: 'chat.updated', chat: structuredClone(chat), busy: h.chatBusy.has(chat.id) });
@@ -99,6 +113,8 @@ export function updateChat(h: Orchestrator, id: string, patch: Partial<Pick<Chat
 }
 
 export async function deleteChat(h: Orchestrator, id: string): Promise<void> {
+  deleted.add(id);
+  liveOf(h).delete(id);
   await killGroup(group(id));
   await h.stopPreview(id);
   h.chatBusy.delete(id);
@@ -164,19 +180,61 @@ const saveAttachments = (h: Orchestrator, id: string, files: { name: string; dat
   });
 };
 
-/** Сообщение человека и ответ агента. Ответ приходит событиями chat.updated по мере генерации. */
+/**
+ * Сообщение человека. Если агент свободен — сразу ход; если отвечает — сообщение встаёт в очередь
+ * и уходит следующим ходом (все накопленные — одним). «Прервать и отправить» — это stopChat: ход обрывается, очередь уходит.
+ */
 export async function sendChat(h: Orchestrator, id: string, text: string, files: { name: string; data: Uint8Array }[] = []): Promise<void> {
-  if (h.chatBusy.has(id)) throw new Error('Агент ещё отвечает на прошлое сообщение');
   if (!text.trim() && !files.length) throw new Error('Пустое сообщение');
   const chat = must(h, id);
-  const prevMessages = [...chat.messages];
-  const at = () => new Date().toISOString();
   const attachments = saveAttachments(h, id, files);
-  chat.messages.push({ id: crypto.randomUUID(), role: 'user', at: at(), text: text.trim(), attachments: attachments.length ? attachments : undefined });
+  chat.messages.push({ id: crypto.randomUUID(), role: 'user', at: new Date().toISOString(), text: text.trim(), attachments: attachments.length ? attachments : undefined, queued: true });
   if (chat.title === 'Новый чат' && text.trim()) chat.title = text.trim().replace(/\s+/g, ' ').slice(0, 60);
+  save(h, chat);
+  if (h.chatBusy.has(id)) return;
+  h.chatBusy.add(id);
+  liveOf(h).set(id, chat);
+  try {
+    // Пока есть очередь — ход за ходом: сообщения, присланные во время ответа, уходят следующим ходом.
+    for (;;) {
+      const batch = chat.messages.filter((m) => m.queued);
+      if (!batch.length || !liveOf(h).has(id)) break;
+      await turn(h, chat, batch);
+    }
+  } finally {
+    h.chatBusy.delete(id);
+    if (liveOf(h).get(id) === chat) {
+      liveOf(h).delete(id);
+      save(h, chat);
+    }
+  }
+}
+
+/** Убрать сообщение из очереди, пока оно не ушло агенту. */
+export function unqueueChat(h: Orchestrator, id: string, messageId: string): ChatFile {
+  const chat = must(h, id);
+  const m = chat.messages.find((x) => x.id === messageId);
+  if (!m?.queued) throw new Error('Сообщение уже ушло агенту');
+  chat.messages = chat.messages.filter((x) => x.id !== messageId);
+  save(h, chat);
+  return chat;
+}
+
+/** Один ход: сообщения человека из очереди и ответ агента. Ответ приходит событиями chat.updated по мере генерации. */
+async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Promise<void> {
+  const id = chat.id;
+  const first = chat.messages.indexOf(batch[0]);
+  const prevMessages = chat.messages.slice(0, first).filter((m) => !m.queued);
+  for (const m of batch) m.queued = undefined;
+  // Сообщения из очереди встают перед ответом, даже если пришли, пока писался прошлый.
+  chat.messages = [...chat.messages.filter((m) => !batch.includes(m)), ...batch];
+  const attachments = batch.flatMap((m) => m.attachments ?? []);
+  const lastAnswer = [...prevMessages].reverse().find((m) => m.role === 'assistant');
+  const said = batch.map((m) => m.text.trim()).filter(Boolean).join('\n\n');
+  const text = (lastAnswer?.stopped ? 'Я прервал твой предыдущий ответ.\n\n' : '') + said;
+  const at = () => new Date().toISOString();
   const answer: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', at: at(), text: '', parts: [], pending: true };
   chat.messages.push(answer);
-  h.chatBusy.add(id);
   save(h, chat);
 
   // Шаги ответа копятся здесь и уходят в окно не чаще FLUSH_MS.
@@ -251,7 +309,6 @@ export async function sendChat(h: Orchestrator, id: string, text: string, files:
     res = { ok: false, text: '', usage: emptyUsage(), error: (e as Error).message };
   } finally {
     if (timer) clearTimeout(timer);
-    h.chatBusy.delete(id);
   }
 
   // Финальный ответ: если шагов не было (ошибка до старта или codex без событий), берём итоговый текст.

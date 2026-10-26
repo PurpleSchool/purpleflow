@@ -76,7 +76,7 @@ function makeRepo(): string {
 const ok = (text: string): AgentResult => ({ ok: true, text, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } });
 
 /** Фейковый claude: отвечает по роли (видно по промпту) и пишет файлы, как настоящий агент. */
-function fakeClaude(script: { implement: (n: number, cwd: string, prompt: string) => void; review: (n: number) => object; manager?: (prompt: string) => string }) {
+function fakeClaude(script: { implement: (n: number, cwd: string, prompt: string) => void; review: (n: number) => object; manager?: (prompt: string) => string; checks?: string }) {
   let impl = 0;
   let rev = 0;
   const prompts: string[] = [];
@@ -93,7 +93,7 @@ function fakeClaude(script: { implement: (n: number, cwd: string, prompt: string
       const id = p.match(/используй ровно его\): `([^`]+)`/)![1];
       const d = path.join(o.cwd, 'openspec', 'changes', id);
       fs.mkdirSync(path.join(d, 'specs', 'calc'), { recursive: true });
-      fs.writeFileSync(path.join(d, 'proposal.md'), '# Умножение\n\n## Why\nНужно умножать два числа, сейчас есть только сложение, и это неудобно.\n\n## What Changes\n- mul\n\n## Impact\n- `src/math.js`\n\n## Invariants\n- add работает\n');
+      fs.writeFileSync(path.join(d, 'proposal.md'), '# Умножение\n\n## Why\nНужно умножать два числа, сейчас есть только сложение, и это неудобно.\n\n## What Changes\n- mul\n\n## Impact\n- `src/math.js`\n\n## Invariants\n- add работает\n' + (script.checks ? `\n## Checks\n- \`${script.checks}\`\n` : ''));
       fs.writeFileSync(path.join(d, 'tasks.md'), '## 1. Код\n- [ ] 1.1 mul в src/math.js\n- [ ] 1.2 тест\n');
       fs.writeFileSync(path.join(d, 'specs', 'calc', 'spec.md'), '## ADDED Requirements\n### Requirement: Умножение\nКалькулятор SHALL умножать.\n\n#### Scenario: Два числа\n- **WHEN** mul(2, 3)\n- **THEN** 6\n');
       return ok('План готов.');
@@ -144,7 +144,7 @@ test('конвейер: красные тесты и блокирующее ре
   const r = await untilGate(core, runId, 'gate2');
 
   const seq = r.attempts.filter((a) => a.stage !== 'gate1').map((a) => `${a.stage}:${a.status}`);
-  assert.deepEqual(seq, ['clarify:done', 'plan:done', 'implement:done', 'tests:failed', 'review:failed', 'implement:done', 'tests:done', 'review:done', 'gate2:running']);
+  assert.deepEqual(seq, ['clarify:done', 'plan:done', 'baseline:done', 'implement:done', 'tests:failed', 'review:failed', 'implement:done', 'tests:done', 'review:done', 'gate2:running']);
   // Вторая попытка получила и упавшие тесты, и замечание ревью — одним возвратом.
   const second = fake.prompts()[1];
   assert.match(second, /Тесты не прошли/);
@@ -152,6 +152,63 @@ test('конвейер: красные тесты и блокирующее ре
   // Первое ревью — с проверкой найденного вторым проходом: замечание подтверждено со сценарием.
   assert.match(r.reviews[0].blocking[0].message, /Сценарий: сценарий есть/);
   assert.equal(fake.reviews(), 2);
+});
+
+test('эталон в фоне: линтер — с уточнения, тесты задачи из «## Checks» — пока человек смотрит план; полный набор — один раз перед приёмкой', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  const repo = makeRepo();
+  const focus = 'node --test test/';
+  const fake = fakeClaude({
+    checks: focus,
+    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+    review: () => ({ blocking: [], notes: [] }),
+  });
+  const base = fake.fn;
+  let planSawLint: boolean | undefined;
+  let core: Orchestrator;
+  fake.fn = async (o) => {
+    if (/Перед планом проверь/.test(o.prompt)) {
+      await new Promise((r) => setTimeout(r, 50));
+      return ok('{"questions": [{"q": "Какие числа поддерживать?"}]}');
+    }
+    if (/планировщик/.test(o.systemPrompt ?? '')) planSawLint = Boolean(core.getRun(runId)?.baseChecks?.some((b) => b.kind === 'lint'));
+    return base(o);
+  };
+  core = makeCore(fake);
+  const lint = 'node -e "setTimeout(() => {}, 400)"';
+  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', lintCommand: lint, testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
+  const until = async (pred: (r: RunFile) => boolean) => {
+    for (let i = 0; i < 150; i++) {
+      const r = core.getRun(runId)!;
+      if (pred(r)) return r;
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    throw new Error('не дождались');
+  };
+  const waiting = await untilGate(core, runId, 'gate0');
+  // Уточнение не ждало линтер: оно закончилось раньше него.
+  const [b, cl] = ['baseline', 'clarify'].map((st) => waiting.attempts.find((a) => a.stage === st)!);
+  assert.ok(b.startedAt <= cl.startedAt);
+  // Пока человек думает над вопросами, линтер до правок уже в эталоне, а его вывод — в логе одним куском. Тестов в эталоне ещё нет.
+  let r = await until((x) => x.attempts[0].status === 'done');
+  assert.equal(r.status, 'waiting');
+  assert.deepEqual(r.baseChecks?.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`]);
+  assert.match(core.getLog(runId), /Базовые проверки · в фоне[\s\S]*✓ линтер: ok/);
+
+  await core.dispatch({ type: 'gate.answer', runId, answers: [{ q: 'Какие числа поддерживать?', a: 'целые' }] } as never);
+  await untilGate(core, runId, 'gate1');
+  assert.equal(planSawLint, true);
+  // Пока план ждёт утверждения, тесты задачи из «## Checks» снимаются на коде до правок.
+  r = await until((x) => x.attempts.filter((a) => a.stage === 'baseline').every((a) => a.status === 'done') && x.attempts.filter((a) => a.stage === 'baseline').length === 2);
+  assert.equal(r.focusTestCommand, focus);
+  assert.deepEqual(r.baseChecks?.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`, `test:${focus}`]);
+
+  await core.dispatch({ type: 'gate.approve', runId });
+  const done = await untilGate(core, runId, 'gate2');
+  const log = core.getLog(runId);
+  // На попытке — тесты задачи, полный набор — один раз, перед приёмкой.
+  assert.equal(log.match(/полный набор перед приёмкой/g)?.length, 1);
+  assert.deepEqual(done.tests.at(-1)!.checks!.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`, 'test:node --test']);
+  assert.ok(done.tests.at(-1)!.passed);
 });
 
 test('конвейер: «Поправить» с приёмки — правка и проверки, без ревью, снова приёмка', { skip: !hasOpenspec, timeout: 120_000 }, async () => {

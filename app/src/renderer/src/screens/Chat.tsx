@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, FilePen, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
+import { ArrowUp, Clock, FilePen, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
 import type { AgentKind, ChatFile, ChatMessage, ChatPart, ProjectListItem } from '@psflow/core';
 import { Markdown } from '../components/Markdown';
 import { Button } from '../components/ui';
@@ -136,9 +136,11 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     }
   };
 
+  const queued = Boolean(chat?.messages.some((m) => m.queued));
+
   const send = async (override?: string) => {
     const t = (override ?? text).trim();
-    if ((!t && !files.length) || busy) return;
+    if (!t && !files.length) return;
     setError(null);
     stick.current = true;
     try {
@@ -313,7 +315,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               </div>
             </div>
           )}
-          {messages.map((m) => m.role === 'user' ? <UserMessage key={m.id} m={m} /> : <AssistantMessage key={m.id} m={m} />)}
+          {messages.map((m) => m.role === 'user' ? <UserMessage key={m.id} m={m} chatId={chat!.id} /> : <AssistantMessage key={m.id} m={m} />)}
         </div>
       </div>
 
@@ -340,14 +342,15 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               ref={input}
               rows={1}
               value={text}
-              placeholder={busy ? 'Агент отвечает…' : conf.edits && projectPath ? 'Спросите или попросите небольшую правку…' : 'Напишите сообщение…'}
+              placeholder={busy ? 'Агент отвечает — можно дописать уточнение, оно уйдёт следующим' : conf.edits && projectPath ? 'Спросите или попросите небольшую правку…' : 'Напишите сообщение…'}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={onKey}
             />
-            {busy ? (
-              <button type="button" className="chat-send is-stop" title="Остановить ответ" onClick={() => chat && void window.psflow.core.stopChat(chat.id)}><Square size={13} /></button>
-            ) : (
-              <button type="submit" className="chat-send" disabled={!text.trim() && !files.length} aria-label="Отправить"><ArrowUp size={16} /></button>
+            {busy && (
+              <button type="button" className="chat-send is-stop" title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'} onClick={() => chat && void window.psflow.core.stopChat(chat.id)}><Square size={13} /></button>
+            )}
+            {(!busy || text.trim() || files.length > 0) && (
+              <button type="submit" className="chat-send" disabled={!text.trim() && !files.length} aria-label={busy ? 'В очередь: уйдёт после ответа' : 'Отправить'} title={busy ? 'В очередь: уйдёт после ответа' : undefined}><ArrowUp size={16} /></button>
             )}
           </div>
         </form>
@@ -360,9 +363,9 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   );
 }
 
-function UserMessage({ m }: { m: ChatMessage }) {
+function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
   return (
-    <div className="chat-msg is-user">
+    <div className={`chat-msg is-user ${m.queued ? 'is-queued' : ''}`}>
       {m.attachments?.length ? (
         <div className="chat-msg-files">
           {m.attachments.map((f) => (
@@ -373,6 +376,13 @@ function UserMessage({ m }: { m: ChatMessage }) {
         </div>
       ) : null}
       {m.text && <p>{m.text}</p>}
+      {m.queued && (
+        <div className="chat-queued">
+          <Clock size={12} /><span>Уйдёт после ответа</span>
+          <button type="button" onClick={() => void window.psflow.core.stopChat(chatId)} title="Остановить текущий ответ и сразу отправить это сообщение">Прервать и отправить</button>
+          <button type="button" onClick={() => void window.psflow.core.unqueueChat(chatId, m.id)}>Убрать</button>
+        </div>
+      )}
     </div>
   );
 }

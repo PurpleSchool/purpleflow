@@ -115,3 +115,11 @@ test('parseNextParts: пункты раздела до следующего за
   assert.deepEqual(parseNextParts(p), ['Часть 2: озвучка и дубли голоса', 'Часть 3: сцены']);
   assert.deepEqual(parseNextParts('# Т\n## Why\nx'), []);
 });
+
+test('тесты задачи: команда из «## Checks» proposal.md; «нет» и пустой раздел — не выбраны', async () => {
+  const { parseFocusTests } = await import('./shared.js');
+  assert.equal(parseFocusTests('# X\n\n## Why\nтекст\n\n## Checks\n- `npx vitest run src/audio`\n'), 'npx vitest run src/audio');
+  assert.equal(parseFocusTests('## Checks\n\n- `pytest tests/audio -q`\n\n## Next Parts\n- `другое`\n'), 'pytest tests/audio -q');
+  assert.equal(parseFocusTests('## Checks\n- нет\n\n## Next Parts\n- `npm test`\n'), undefined);
+  assert.equal(parseFocusTests('## Why\n`npm test`\n'), undefined);
+});

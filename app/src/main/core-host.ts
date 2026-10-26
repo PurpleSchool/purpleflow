@@ -58,6 +58,7 @@ function api(c: Orchestrator): CoreApi {
     deleteChat: (id) => c.deleteChat(id),
     sendChat: (id, text, files) => c.sendChat(id, text, files),
     stopChat: (id) => c.stopChat(id),
+    unqueueChat: async (id, messageId) => c.unqueueChat(id, messageId),
     chatToTask: (id) => c.chatToTask(id),
     getChatDiff: (id) => c.getChatDiff(id),
     getChatChangedFiles: (id) => c.getChatChangedFiles(id),
