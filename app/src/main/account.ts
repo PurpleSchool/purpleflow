@@ -1,5 +1,5 @@
 import type { AccountKey, AccountOverview, AccountResult, AccountUsage, UsageBucket } from '../shared/ipc';
-import { accountToken, proxyKey, setAccount, setProxyKey } from './settings';
+import { accountToken, proxyKey, setAccount, setAccountProfile, setProxyKey } from './settings';
 
 /**
  * Аккаунт PurpleSchool: вход, регистрация и ключи AI-прокси.
@@ -57,9 +57,48 @@ function tokenEmail(token: string): string {
   }
 }
 
-function signedIn(token: string | undefined, email: string, name?: string): AccountResult {
+async function signedIn(token: string | undefined, email: string, name?: string): Promise<AccountResult> {
   if (!token) return { ok: false, error: 'PurpleSchool не вернул токен. Попробуйте ещё раз.' };
   setAccount({ token, email: tokenEmail(token) || email, name });
+  // Имя и аватар — не повод проваливать вход: не загрузились сейчас, подтянутся при открытии аккаунта.
+  await profile();
+  return { ok: true, data: null };
+}
+
+const PHOTO_MAX = 2 * 1024 * 1024;
+
+/** Фото скачиваем в main и отдаём окну data URL: CSP окна не пускает внешние картинки. Токен на хост фото не отправляем. */
+async function photoDataUrl(src: string): Promise<string | null> {
+  let url: URL;
+  try {
+    url = new URL(src, `${new URL(API).origin}/`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:') return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const type = res.headers.get('content-type')?.split(';')[0].trim() ?? '';
+    if (!res.ok || !type.startsWith('image/')) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > PHOTO_MAX) return null;
+    return `data:${type};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Имя и аватар из профиля PurpleSchool (GET /user/profile). from/to — период активности, она нам не нужна: берём один день. */
+export async function profile(): Promise<AccountResult> {
+  const today = new Date().toISOString().slice(0, 10);
+  const r = await authed<{ profile?: { name?: string | null; surname?: string | null; photo?: string | null } }>('GET', `/user/profile?from=${today}&to=${today}`);
+  if (!r.ok) return r;
+  const p = r.data?.profile;
+  if (!p) return { ok: true, data: null };
+  const name = [p.name, p.surname].map((x) => x?.trim()).filter(Boolean).join(' ');
+  // Фото не скачалось — оставляем прежнее; в профиле его нет — убираем.
+  const photo = p.photo ? await photoDataUrl(p.photo) : '';
+  setAccountProfile({ name, ...(photo === null ? {} : { photo }) });
   return { ok: true, data: null };
 }
 

@@ -20,6 +20,7 @@ const bridge: PsFlowBridge = {
     register: (p) => ipcRenderer.invoke('account:register', p),
     restore: (email) => ipcRenderer.invoke('account:restore', email),
     logout: () => ipcRenderer.invoke('account:logout'),
+    profile: () => ipcRenderer.invoke('account:profile'),
     keys: () => ipcRenderer.invoke('account:keys'),
     createKey: () => ipcRenderer.invoke('account:createKey'),
     useKey: (id) => ipcRenderer.invoke('account:useKey', id),

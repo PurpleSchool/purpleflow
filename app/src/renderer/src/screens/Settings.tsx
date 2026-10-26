@@ -58,6 +58,15 @@ export function SettingsScreen() {
     setParallel(s.maxParallel ?? 2);
   }, [s]);
 
+  // Имя и аватар могли поменяться на сайте — обновляем при открытии вкладки аккаунта.
+  const accountEmail = s?.account?.email;
+  useEffect(() => {
+    if (tab !== 'account' || !accountEmail) return;
+    void window.psflow.account.profile().then((r) => {
+      if (r.ok || r.code === 'unauthorized') void reloadSettings();
+    });
+  }, [tab, accountEmail]);
+
   if (!s) return null;
   const first = !s.onboarded;
 
@@ -187,7 +196,9 @@ export function SettingsScreen() {
                 </header>
                 <div className="acc-card">
                   <div className="acc-profile">
-                    <span className="acc-avatar" aria-hidden>{(s.account.name || s.account.email || '?').trim().charAt(0).toUpperCase()}</span>
+                    <span className="acc-avatar" aria-hidden>
+                      {s.account.photo ? <img src={s.account.photo} alt="" /> : (s.account.name || s.account.email || '?').trim().charAt(0).toUpperCase()}
+                    </span>
                     <div className="acc-profile-text">
                       <strong>{s.account.name || s.account.email}</strong>
                       <span>{s.account.name ? s.account.email : 'Аккаунт PurpleSchool'}</span>

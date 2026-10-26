@@ -23,8 +23,8 @@ interface StoredSettings {
   claudeAuth: 'login' | 'env';
   /** Подключать агентам настройки пользователя: MCP, скиллы, плагины. */
   userConfig: boolean;
-  /** Вход в аккаунт PurpleSchool: токен — только зашифрованным, email и имя — для подписи в интерфейсе. */
-  account: { tokenEnc: string; email: string; name: string };
+  /** Вход в аккаунт PurpleSchool: токен — только зашифрованным, email, имя и фото (data URL) — для подписи в интерфейсе. */
+  account: { tokenEnc: string; email: string; name: string; photo: string };
   /** Экран входа при первом запуске уже показан: вошли или нажали «Пропустить». */
   authPrompted: boolean;
 }
@@ -43,7 +43,7 @@ const DEFAULTS: StoredSettings = {
   sound: true,
   claudeAuth: 'login',
   userConfig: true,
-  account: { tokenEnc: '', email: '', name: '' },
+  account: { tokenEnc: '', email: '', name: '', photo: '' },
   authPrompted: false,
 };
 
@@ -107,8 +107,17 @@ export function accountToken(): string {
 
 export function setAccount(a: { token: string; email: string; name?: string } | null) {
   const s = structuredClone(load());
-  s.account = a ? { tokenEnc: encryptKey(a.token), email: a.email, name: a.name ?? '' } : { ...DEFAULTS.account };
+  s.account = a ? { tokenEnc: encryptKey(a.token), email: a.email, name: a.name ?? '', photo: '' } : { ...DEFAULTS.account };
   if (a) s.authPrompted = true;
+  persist(s);
+}
+
+/** Имя и фото из профиля PurpleSchool; пока вход не выполнен — не сохраняем. */
+export function setAccountProfile(p: { name?: string; photo?: string }) {
+  const s = structuredClone(load());
+  if (!s.account.tokenEnc) return;
+  if (p.name) s.account.name = p.name;
+  if (p.photo !== undefined) s.account.photo = p.photo;
   persist(s);
 }
 
@@ -140,7 +149,7 @@ export function publicSettings(): PublicSettings {
     sound: s.sound,
     claudeAuth: s.claudeAuth,
     userConfig: s.userConfig,
-    account: s.account.tokenEnc ? { email: s.account.email, name: s.account.name } : null,
+    account: s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
   };
 }

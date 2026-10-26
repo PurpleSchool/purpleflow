@@ -19,7 +19,7 @@ export interface PublicSettings {
   claudeAuth: 'login' | 'env';
   userConfig: boolean;
   /** Вход в PurpleSchool: null — не вошли. Токен в окно не передаётся. */
-  account: { email: string; name: string } | null;
+  account: { email: string; name: string; /** Аватар data URL; пусто — фото в профиле нет. */ photo: string } | null;
   authPrompted: boolean;
 }
 
@@ -75,6 +75,8 @@ export interface AccountApi {
   register(p: { name: string; email: string; password: string; mailing: boolean }): Promise<AccountResult>;
   restore(email: string): Promise<AccountResult<string>>;
   logout(): Promise<void>;
+  /** Обновить имя и аватар из профиля PurpleSchool. */
+  profile(): Promise<AccountResult>;
   keys(): Promise<AccountResult<{ items: AccountKey[]; limit: number }>>;
   createKey(): Promise<AccountResult>;
   useKey(id: number): Promise<AccountResult>;

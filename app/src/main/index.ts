@@ -216,6 +216,7 @@ ipcMain.handle('account:register', (_e, p: { name?: unknown; email?: unknown; pa
   account.register({ name: str(p?.name), email: str(p?.email), password: str(p?.password), mailing: p?.mailing === true }));
 ipcMain.handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
 ipcMain.handle('account:logout', () => account.logout());
+ipcMain.handle('account:profile', () => account.profile());
 ipcMain.handle('account:keys', () => account.keys());
 ipcMain.handle('account:createKey', async () => {
   const r = await account.createKey();
