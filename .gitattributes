@@ -1,0 +1,2 @@
+# Одинаковые переводы строк на всех ОС — иначе Prettier в CI на Windows видит CRLF.
+* text=auto eol=lf

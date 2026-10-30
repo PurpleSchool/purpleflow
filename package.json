@@ -11,7 +11,7 @@
     "dev": "npm run dev -w @purpleflow/app",
     "build": "npm run build -w @purpleflow/core && npm run build -w @purpleflow/app",
     "typecheck": "npm run typecheck -w @purpleflow/core && npm run typecheck -w @purpleflow/app",
-    "test": "npm test -w @purpleflow/core",
+    "test": "npm test -w @purpleflow/core && npm test -w @purpleflow/app",
     "make-sample": "node scripts/make-sample.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

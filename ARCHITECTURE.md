@@ -67,3 +67,4 @@ model/, parse.ts, route.ts, git.ts, proc.ts, env.ts, store.ts …   типы и 
 - `core/src/*.test.ts` — `node:test` через `tsx`.
 - `pipeline.test.ts` и `chat.test.ts` прогоняют конвейер и чат целиком: временный git-репозиторий, настоящие git и openspec, фейковые агенты (`CoreOptions.runners`).
 - `scripts/e2e.ts` — тот же флоу на настоящих агентах, вручную.
+- `app/src/renderer/src/lib/*.test.ts` — чистая логика окна (маршрут стадий, форматирование), тоже `node:test` через `tsx`.
