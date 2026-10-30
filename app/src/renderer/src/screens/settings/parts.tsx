@@ -1,5 +1,8 @@
 // Справочники и мелкие элементы вкладок настроек.
-import type { AgentKind, Role, ToolName } from '@purpleflow/core';
+import type { AgentKind, ConnectionCheck, Role, ToolName } from '@purpleflow/core';
+import { CheckCircle2, PlugZap, XCircle } from 'lucide-react';
+import { Button } from '../../components/ui';
+import type { SettingsDraft } from './useSettingsDraft';
 
 export const TOOL_INFO: Record<ToolName, { title: string; install: string }> = {
   git: { title: 'Git', install: 'git-scm.com' },
@@ -21,6 +24,35 @@ export function AgentSwitch({ label, value, onChange }: { label: string; value: 
         <button key={a} role="radio" aria-checked={value === a} className={value === a ? 'is-on' : ''} onClick={() => onChange(a)}>
           {a}
         </button>
+      ))}
+    </div>
+  );
+}
+
+/** Сохранить настройки и отправить агентам короткий запрос. */
+export function CheckButton({ draft }: { draft: SettingsDraft }) {
+  return (
+    <Button tone="ghost" icon={<PlugZap size={15} />} busy={draft.checking} onClick={() => void draft.check()}>
+      Проверить подключение
+    </Button>
+  );
+}
+
+/** Ответы агентов на проверку подключения. */
+export function ChecksList({ checks }: { checks: ConnectionCheck[] }) {
+  return (
+    <div className="checks">
+      {checks.map((c) => (
+        <div key={c.agent} className={`check ${c.ok ? 'is-ok' : 'is-bad'}`}>
+          {c.ok ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+          <div>
+            <strong>{c.agent}</strong>{' '}
+            <span className="muted mono">
+              {c.model} · {(c.durationMs / 1000).toFixed(1)} с
+            </span>
+            <p>{c.ok ? `Ответил: «${c.reply}»` : c.error}</p>
+          </div>
+        </div>
       ))}
     </div>
   );

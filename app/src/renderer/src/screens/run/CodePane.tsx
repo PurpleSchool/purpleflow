@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleAlert, FileCode2, RefreshCw } from 'lucide-react';
 import type { DiffFile, LineComment, ReviewItem, RunFile } from '@purpleflow/core';
-import { DiffReview } from '../../components/DiffReview';
+import { DiffReview } from '../../components/diff/DiffReview';
 import { PillTabs } from '../../components/PillTabs';
 import { Button, Empty } from '../../components/ui';
 import { bridge, cleanErr } from '../../lib/api';

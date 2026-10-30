@@ -2,7 +2,7 @@ import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'rea
 import { CircleAlert, FileCode2, Globe, PanelRightClose, RefreshCw } from 'lucide-react';
 import type { ChatFile, DiffFile, ProjectConfig } from '@purpleflow/core';
 import { BrowserPane, usePreview } from '../components/BrowserPane';
-import { DiffReview } from '../components/DiffReview';
+import { DiffReview } from '../components/diff/DiffReview';
 import { PillTabs } from '../components/PillTabs';
 import { Button, Empty } from '../components/ui';
 import { bridge, cleanErr } from '../lib/api';

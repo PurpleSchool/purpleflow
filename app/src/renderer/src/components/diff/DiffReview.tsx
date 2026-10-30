@@ -1,103 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
-import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import {
-  Check,
-  ChevronRight,
-  ListChecks,
-  FileCode2,
-  FilePlus2,
-  FileMinus2,
-  Folder,
-  ListTree,
-  List,
-  MessageSquarePlus,
-  Sparkles,
-  Trash2,
-} from 'lucide-react';
-import { Markdown } from './Markdown';
-import { PillTabs } from './PillTabs';
+// Дифф прогона или чата: дерево файлов, Monaco, комментарии к строкам и замечания ревью.
+import { DiffEditor, type DiffOnMount } from '@monaco-editor/react';
 import type { DiffFile, LineComment, ReviewItem } from '@purpleflow/core';
-import { Button, TextArea } from './ui';
-
-// Monaco из бандла, без CDN: приложение работает офлайн.
-self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-loader.config({ monaco });
-
-// Дифф только для чтения: языковые сервисы TS/JS не нужны и без своих воркеров дают ложные ошибки.
-{
-  const m = monaco as unknown as { languages?: { typescript?: TsApi }; typescript?: TsApi };
-  const ts = m.typescript ?? m.languages?.typescript;
-  for (const d of [ts?.typescriptDefaults, ts?.javascriptDefaults]) {
-    d?.setDiagnosticsOptions?.({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });
-  }
-}
-interface TsApi {
-  typescriptDefaults?: { setDiagnosticsOptions?: (o: object) => void };
-  javascriptDefaults?: { setDiagnosticsOptions?: (o: object) => void };
-}
-
-monaco.editor.defineTheme('purpleflow-night', {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    { token: 'comment', foreground: '5f616a', fontStyle: 'italic' },
-    { token: 'keyword', foreground: 'b2a5f5' },
-    { token: 'string', foreground: '9fcfb5' },
-    { token: 'number', foreground: 'd9b97f' },
-    { token: 'type', foreground: '9cc0dc' },
-  ],
-  colors: {
-    'editor.background': '#00000000',
-    'editor.foreground': '#d4d5da',
-    'editorLineNumber.foreground': '#3e4047',
-    'editorLineNumber.activeForeground': '#a7a9b1',
-    'editor.lineHighlightBackground': '#14151900',
-    'editor.lineHighlightBorder': '#00000000',
-    'editorGutter.background': '#00000000',
-    'diffEditor.insertedTextBackground': '#74c4a01c',
-    'diffEditor.removedTextBackground': '#df7e8d22',
-    'diffEditor.insertedLineBackground': '#74c4a00c',
-    'diffEditor.removedLineBackground': '#df7e8d0e',
-    'diffEditorGutter.insertedLineBackground': '#74c4a018',
-    'diffEditorGutter.removedLineBackground': '#df7e8d18',
-    'diffEditor.diagonalFill': '#ffffff0c',
-    'diffEditor.border': '#ffffff0e',
-    'editor.selectionBackground': '#8a74ee40',
-    'scrollbarSlider.background': '#ffffff12',
-    'scrollbarSlider.hoverBackground': '#ffffff22',
-    'editorOverviewRuler.border': '#00000000',
-    'editorWidget.background': '#1a1b1fee',
-  },
-});
-
-const LANG: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  json: 'json',
-  md: 'markdown',
-  css: 'css',
-  scss: 'scss',
-  html: 'html',
-  py: 'python',
-  go: 'go',
-  rs: 'rust',
-  yml: 'yaml',
-  yaml: 'yaml',
-  sh: 'shell',
-  java: 'java',
-  kt: 'kotlin',
-  rb: 'ruby',
-  php: 'php',
-  sql: 'sql',
-  vue: 'html',
-};
-const langOf = (p: string) => LANG[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'plaintext';
+import { Check, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import * as monaco from 'monaco-editor';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Markdown } from '../Markdown';
+import { PillTabs } from '../PillTabs';
+import { Button, TextArea } from '../ui';
+import { FileList, type FilesView } from './FileList';
+import { NoteList } from './ReviewNotes';
+import { langOf } from './monaco';
+import { buildTree, treeOrder } from './tree';
+import { fingerprint, useViewed } from './viewed';
 
 interface Props {
   files: DiffFile[];
@@ -120,112 +34,11 @@ interface Props {
   /** Ключ для отметок «Просмотрено» (id прогона); без него отметок нет. */
   viewedKey?: string;
 }
-
-/** Отпечаток содержимого: отметка «Просмотрено» снимается, если файл потом изменился. */
-function fingerprint(f: DiffFile): string {
-  let h = 5381;
-  const text = `${f.status}\0${f.original}\0${f.modified}`;
-  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
-  return `${text.length}:${(h >>> 0).toString(36)}`;
-}
-
-/** Просмотренные файлы прогона: путь → отпечаток. Удобство одного человека — хватает localStorage. */
-function useViewed(key: string | undefined) {
-  const storageKey = key ? `purpleflow.viewed.${key}` : null;
-  const read = (): Record<string, string> => {
-    if (!storageKey) return {};
-    try {
-      return JSON.parse(localStorage.getItem(storageKey) ?? '{}') as Record<string, string>;
-    } catch {
-      return {};
-    }
-  };
-  const [marks, setMarks] = useState(read);
-  useEffect(() => setMarks(read()), [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const save = (next: Record<string, string>) => {
-    setMarks(next);
-    if (!storageKey) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
-      /* без памяти об отметках */
-    }
-  };
-  return { marks, save, enabled: Boolean(storageKey) };
-}
-
-export const reviewKey = (r: ReviewItem) => `${r.file ?? ''}:${r.line ?? ''}:${r.message}`;
-
-/** Галочка «исправить» у замечания ревьюера. */
-export function PickBox({ item, picked, onPicked }: { item: ReviewItem; picked: ReviewItem[]; onPicked: (items: ReviewItem[]) => void }) {
-  const on = picked.some((x) => reviewKey(x) === reviewKey(item));
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      className={`switch pick-switch ${on ? 'is-on' : ''}`}
-      title={on ? 'Убрать из исправлений' : 'Отдать исполнителю на исправление'}
-      onClick={() => onPicked(on ? picked.filter((x) => reviewKey(x) !== reviewKey(item)) : [...picked, item])}
-    >
-      <i />
-      <span>Исправить</span>
-    </button>
-  );
-}
-
 type Marker = { line: number; kind: 'blocking' | 'note' | 'mine'; text: string; idx?: number };
-
-interface TreeDir {
-  /** Полный путь папки (ключ для свёрнутых). */
-  path: string;
-  /** Подпись: одиночные вложенные папки склеены — «packages/api/src». */
-  name: string;
-  dirs: TreeDir[];
-  files: DiffFile[];
-  /** Сколько файлов внутри, включая вложенные папки. */
-  count: number;
-}
-
-/** Дерево изменённых файлов: папки раньше файлов, openspec/ — в конце, цепочки из одной папки склеены. */
-function buildTree(files: DiffFile[]): TreeDir {
-  const root: TreeDir = { path: '', name: '', dirs: [], files: [], count: 0 };
-  for (const f of files) {
-    const parts = f.path.split('/');
-    let node = root;
-    for (const part of parts.slice(0, -1)) {
-      const p = node.path ? `${node.path}/${part}` : part;
-      let next = node.dirs.find((d) => d.path === p);
-      if (!next) node.dirs.push((next = { path: p, name: part, dirs: [], files: [], count: 0 }));
-      node = next;
-    }
-    node.files.push(f);
-  }
-  const finish = (d: TreeDir): TreeDir => {
-    d.dirs = d.dirs.map(finish);
-    // Папка, где только одна вложенная папка и нет файлов, склеивается с ней.
-    while (d.path && d.dirs.length === 1 && !d.files.length) {
-      const only = d.dirs[0];
-      Object.assign(d, { path: only.path, name: `${d.name}/${only.name}`, dirs: only.dirs, files: only.files });
-    }
-    d.dirs.sort((a, b) => Number(a.name.startsWith('openspec')) - Number(b.name.startsWith('openspec')) || a.name.localeCompare(b.name));
-    d.files.sort((a, b) => a.path.localeCompare(b.path));
-    d.count = d.files.length + d.dirs.reduce((n, x) => n + x.count, 0);
-    return d;
-  };
-  return finish(root);
-}
-
-/** Файлы в порядке дерева — чтобы первым открывался верхний файл дерева. */
-function treeOrder(d: TreeDir): DiffFile[] {
-  return [...d.dirs.flatMap(treeOrder), ...d.files];
-}
-
 const TREE_KEY = 'purpleflow.diffTree';
 const WIDTH_KEY = 'purpleflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
-
 export function DiffReview({
   files,
   review,
@@ -254,7 +67,6 @@ export function DiffReview({
     [files],
   );
   const tree = useMemo(() => buildTree(files), [files]);
-  type FilesView = 'plan' | 'tree' | 'list';
   const [viewPref, setViewPref] = useState<FilesView>(() => {
     try {
       const v = localStorage.getItem(TREE_KEY);
@@ -282,7 +94,6 @@ export function DiffReview({
       /* без памяти о виде */
     }
   };
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   /** Ширина панели файлов — тянется за правый край, запоминается. */
   const [filesW, setFilesW] = useState(() => {
     try {
@@ -458,72 +269,6 @@ export function DiffReview({
     ed?.setPosition({ lineNumber: line, column: 1 });
   };
 
-  const fileRow = (f: DiffFile, depth: number, withDir: boolean) => {
-    const n = countFor(f.path);
-    const name = f.path.split('/').pop();
-    const dir = f.path.slice(0, f.path.length - (name?.length ?? 0));
-    return (
-      <li key={f.path}>
-        <button
-          className={`file ${f.path === current ? 'is-on' : ''} ${isViewed(f.path) ? 'is-viewed' : ''}`}
-          style={{ paddingLeft: 12 + depth * 14 }}
-          onClick={() => {
-            setCurrent(f.path);
-            setDraftLine(null);
-          }}
-          title={f.path}
-        >
-          <span className={`file-st st-${f.status}`}>
-            {f.status === 'A' ? <FilePlus2 size={14} /> : f.status === 'D' ? <FileMinus2 size={14} /> : <FileCode2 size={14} />}
-          </span>
-          <span className="file-name">
-            <span>{name}</span>
-            {withDir && dir && <small>{dir}</small>}
-          </span>
-          {n > 0 && <span className="file-n">{n}</span>}
-          {isViewed(f.path) && <Check size={13} className="file-viewed" aria-label="Просмотрено" />}
-        </button>
-      </li>
-    );
-  };
-
-  const toggleDir = (p: string) =>
-    setCollapsed((cur) => {
-      const next = new Set(cur);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
-
-  const renderDir = (d: TreeDir, depth: number): ReactNode[] => {
-    const inner = [
-      ...d.dirs.flatMap((x) => {
-        const shut = collapsed.has(x.path);
-        const n = treeOrder(x).reduce((k, f) => k + countFor(f.path), 0);
-        return [
-          <li key={`d:${x.path}`}>
-            <button
-              className={`file dir ${shut ? 'is-shut' : ''}`}
-              style={{ paddingLeft: 12 + depth * 14 }}
-              onClick={() => toggleDir(x.path)}
-              title={x.path}
-            >
-              <ChevronRight size={13} className="dir-caret" />
-              <Folder size={14} className="dir-icon" />
-              <span className="file-name">
-                <span>{x.name}</span>
-              </span>
-              {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{x.count}</span>}
-            </button>
-          </li>,
-          ...(shut ? [] : renderDir(x, depth + 1)),
-        ];
-      }),
-      ...d.files.map((f) => fileRow(f, depth, false)),
-    ];
-    return inner;
-  };
-
   const jumpTo = (r: { file: string | null; line: number | null }) => {
     setTab('code');
     if (r.file) setCurrent(r.file);
@@ -575,70 +320,22 @@ export function DiffReview({
           }}
           title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию"
         />
-        <aside className="diff-files">
-          <div className="diff-files-head">
-            <span>Файлы</span>
-            <span className="muted">{viewed.enabled ? `${viewedCount} из ${files.length}` : files.length}</span>
-            <span className="grow" />
-            <span className="diff-files-modes" role="radiogroup" aria-label="Вид списка файлов">
-              {planGroups.length > 0 && (
-                <button
-                  role="radio"
-                  aria-checked={view === 'plan'}
-                  className={`diff-files-mode ${view === 'plan' ? 'is-on' : ''}`}
-                  title="По пунктам плана"
-                  onClick={() => setView('plan')}
-                >
-                  <ListChecks size={14} />
-                </button>
-              )}
-              <button
-                role="radio"
-                aria-checked={view === 'tree'}
-                className={`diff-files-mode ${view === 'tree' ? 'is-on' : ''}`}
-                title="Деревом"
-                onClick={() => setView('tree')}
-              >
-                <ListTree size={14} />
-              </button>
-              <button
-                role="radio"
-                aria-checked={view === 'list'}
-                className={`diff-files-mode ${view === 'list' ? 'is-on' : ''}`}
-                title="Списком"
-                onClick={() => setView('list')}
-              >
-                <List size={14} />
-              </button>
-            </span>
-          </div>
-          <ul>
-            {view === 'plan'
-              ? planGroups.flatMap((g) => {
-                  const shut = collapsed.has(`plan:${g.title}`);
-                  const n = g.items.reduce((k, f) => k + countFor(f.path), 0);
-                  return [
-                    <li key={`g:${g.title}`}>
-                      <button
-                        className={`file dir plan-group ${shut ? 'is-shut' : ''} ${/^Без пункта|^Вне плана/.test(g.title) ? 'is-offplan' : ''}`}
-                        onClick={() => toggleDir(`plan:${g.title}`)}
-                        title={g.title}
-                      >
-                        <ChevronRight size={13} className="dir-caret" />
-                        <span className="file-name">
-                          <span>{g.title}</span>
-                        </span>
-                        {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{g.items.length}</span>}
-                      </button>
-                    </li>,
-                    ...(shut ? [] : g.items.map((f) => fileRow(f, 1, true))),
-                  ];
-                })
-              : asTree
-                ? renderDir(tree, 0)
-                : sorted.map((f) => fileRow(f, 0, true))}
-          </ul>
-        </aside>
+        <FileList
+          files={files}
+          sorted={sorted}
+          tree={tree}
+          planGroups={planGroups}
+          view={view}
+          onView={setView}
+          current={current}
+          onPick={(p) => {
+            setCurrent(p);
+            setDraftLine(null);
+          }}
+          countFor={countFor}
+          isViewed={isViewed}
+          viewedCount={viewed.enabled ? viewedCount : null}
+        />
 
         <div className={`diff-main ${viewed.enabled && file ? 'has-head' : ''}`}>
           {viewed.enabled && file && (
@@ -793,59 +490,5 @@ export function DiffReview({
         </div>
       )}
     </div>
-  );
-}
-
-const ORIGIN: Record<NonNullable<ReviewItem['origin']>, { label: string; title: string }> = {
-  unfixed: { label: 'не исправлено', title: 'Это замечание было и на прошлом ревью — исполнитель его не исправил или обошёл' },
-  from_fix: { label: 'из‑за исправления', title: 'Появилось в коде, который исполнитель поменял, исправляя прошлые замечания' },
-  new: { label: 'новое', title: 'В коде, который был и на прошлом ревью, — ревьюер заметил только сейчас' },
-};
-
-/** Пометка повторного ревью: ходит ли прогон по кругу. */
-export function OriginTag({ origin }: { origin?: ReviewItem['origin'] }) {
-  if (!origin) return null;
-  return (
-    <span className={`origin-tag o-${origin}`} title={ORIGIN[origin].title}>
-      {ORIGIN[origin].label}
-    </span>
-  );
-}
-
-function NoteList({
-  title,
-  kind,
-  items,
-  onJump,
-  picked,
-  onPicked,
-}: {
-  title: string;
-  kind: 'blocking' | 'note';
-  items: ReviewItem[];
-  onJump: (r: ReviewItem) => void;
-  picked?: ReviewItem[];
-  onPicked?: (items: ReviewItem[]) => void;
-}) {
-  if (!items.length) return null;
-  return (
-    <section className="notes">
-      <h4>
-        {title} <span className="muted">{items.length}</span>
-      </h4>
-      {items.map((r, i) => (
-        <div key={i} className={`note n-${kind}`}>
-          {r.file && (
-            <button className="note-loc" onClick={() => onJump(r)}>
-              {r.file.split('/').pop()}
-              {r.line ? `:${r.line}` : ''}
-            </button>
-          )}
-          <OriginTag origin={r.origin} />
-          <p>{r.message}</p>
-          {picked && onPicked && <PickBox item={r} picked={picked} onPicked={onPicked} />}
-        </div>
-      ))}
-    </section>
   );
 }

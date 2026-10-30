@@ -1,42 +1,47 @@
-import { useEffect, useRef, useState } from 'react';
+import type { StageId } from '@purpleflow/core';
 import {
-  MessageCircleQuestion,
   ArrowRight,
   ChevronDown,
-  FileText,
-  Paperclip,
   CircleStop,
+  FileText,
   FolderOpen,
-  MousePointerClick,
   GitBranch,
+  MessageCircleQuestion,
+  MousePointerClick,
+  Paperclip,
   Play,
   SkipForward,
   Sparkles,
   TriangleAlert,
   X,
 } from 'lucide-react';
-import type { StageId } from '@purpleflow/core';
-import { STAGE_ICON } from '../components/StageRail';
-import { PillTabs } from '../components/PillTabs';
-import { Timeline } from '../components/Timeline';
-import { isGate } from '../lib/bars';
-import { MODES, acceptTarget, limitRow, nodeState, runStages } from '../lib/stages';
-import { MODE_ICON } from '../components/ModeIcon';
-import { LiveLog, type LogSlice } from '../components/Terminal';
-import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
-import { PrPane } from '../components/PrPane';
-import { Button, Empty, StatusPill } from '../components/ui';
-import { onCoreEvent, useStore } from '../lib/store';
-import { shortPath } from '../lib/format';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeDocs } from '../../../shared/ipc';
-import { GateBar } from './run/GateBar';
-import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInline, Warnings } from './run/RunHeader';
-import { ManagerChat, useManagerLayout } from './run/ManagerChat';
-import { CodePane, useChangedFiles } from './run/CodePane';
-import { AgentOutput, ClarifyView, InProgress, PlanView, ReproView, ReviewView, TestsView, VisualView } from './run/StageViews';
-import { LOG_TITLE, currentStage, unstableText, withPicked } from './run/util';
-import { useRunGate } from './run/useRunGate';
+import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
+import { MODE_ICON } from '../components/ModeIcon';
+import { PillTabs } from '../components/PillTabs';
+import { PrPane } from '../components/PrPane';
+import { STAGE_ICON } from '../components/StageRail';
+import { LiveLog, type LogSlice } from '../components/Terminal';
+import { Timeline } from '../components/Timeline';
+import { Button, Empty, StatusPill } from '../components/ui';
 import { bridge, cleanErr } from '../lib/api';
+import { isGate } from '../lib/bars';
+import { shortPath } from '../lib/format';
+import { MODES, acceptTarget, limitRow, nodeState, runStages } from '../lib/stages';
+import { onCoreEvent, useStore } from '../lib/store';
+import { CodePane, useChangedFiles } from './run/CodePane';
+import { GateBar } from './run/GateBar';
+import { ManagerChat, useManagerLayout } from './run/ManagerChat';
+import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInline, Warnings } from './run/RunHeader';
+import { useRunGate } from './run/useRunGate';
+import { LOG_TITLE, currentStage, unstableText, withPicked } from './run/util';
+import { ReproView, TestsView } from './run/views/ChecksViews';
+import { ClarifyView } from './run/views/ClarifyView';
+import { PlanView } from './run/views/PlanView';
+import { AgentOutput, InProgress } from './run/views/Progress';
+import { ReviewView } from './run/views/ReviewView';
+import { VisualView } from './run/views/VisualView';
 
 type View = 'timeline' | 'log' | 'browser' | 'code' | 'pr';
 

@@ -8,7 +8,7 @@ import { onPrRefreshed } from '../../components/PrPane';
 import { Select } from '../../components/Dropdown';
 import { Button } from '../../components/ui';
 import { tokens, usageTotal, when } from '../../lib/format';
-import { Lightbox } from './StageViews';
+import { Lightbox } from './views/VisualView';
 import { bridge, cleanErr } from '../../lib/api';
 
 /** Удаление прогона с подтверждением: worktree и данные приложения, ветка — по выбору. */
