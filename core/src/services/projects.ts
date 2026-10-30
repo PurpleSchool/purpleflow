@@ -1,40 +1,44 @@
+// Проекты: сохранённые команды, знания (профиль и уроки), проверка окружения, обзор и статистика.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { addUsage, c, emptyUsage, type AgentResult } from '../agents/common.js';
 import { prependPath } from '../env.js';
-import { prReadiness } from '../github.js';
 import { Git } from '../git.js';
+import { prReadiness } from '../github.js';
 import { isRunBranch } from '../ids.js';
 import { parseJsonReply } from '../json.js';
-import { ARTIFACT_RE } from '../reviewdiff.js';
+import type { Kernel } from '../kernel.js';
+import { expandPorts, portEnv, waitForUrl } from '../net.js';
+import { parseNextParts } from '../parse.js';
 import { killGroup, run as runProc } from '../proc.js';
+import { ARTIFACT_RE } from '../reviewdiff.js';
 import { projectStats as computeProjectStats } from '../stats.js';
 import type {
-  NextPartDraft,
+  AiCommands,
   EnvCheck,
+  ModeSuggestion,
+  NextPartDraft,
+  ProjectBranches,
+  ProjectConfig,
+  ProjectKnowledge,
   ProjectListItem,
   ProjectOverview,
   ProjectStats,
-  ProjectBranches,
-  ProjectKnowledge,
-  AiCommands,
-  ModeSuggestion,
-  ProjectConfig,
   RelatedRepo,
-  RunMode,
   RunFile,
+  RunMode,
   StageAttempt,
 } from '../types.js';
-import { expandPorts, portEnv, waitForUrl } from '../net.js';
-import { parseNextParts } from '../parse.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { service } from './agents.js';
+import { ghBin } from './pr.js';
+import { getChangeDocs } from './runs.js';
 import { prepareApp } from './workspace.js';
-export function knowledgeOf(h: Orchestrator, repo: string): ProjectKnowledge {
-  return h.getProjectConfig(repo)?.knowledge ?? {};
+export function knowledgeOf(h: Kernel, repo: string): ProjectKnowledge {
+  return getProjectConfig(h, repo)?.knowledge ?? {};
 }
 
-export function updateKnowledge(h: Orchestrator, repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) {
+export function updateKnowledge(h: Kernel, repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) {
   const all = h.store.readProjects();
   const key = path.resolve(repo);
   const cfg: ProjectConfig = all[key] ?? {
@@ -48,8 +52,8 @@ export function updateKnowledge(h: Orchestrator, repo: string, fn: (k: ProjectKn
 }
 
 /** Блок для системного промпта агентов. */
-export function knowledgeBlock(h: Orchestrator, run: RunFile): string {
-  const k = h.knowledgeOf(run.projectPath);
+export function knowledgeBlock(h: Kernel, run: RunFile): string {
+  const k = knowledgeOf(h, run.projectPath);
   const lessons = k.lessons?.map((l) => `- ${l.text}`).join('\n');
   const related = relatedBlock(h, run.projectPath);
   if (!k.profile && !lessons) return related;
@@ -60,19 +64,19 @@ export function knowledgeBlock(h: Orchestrator, run: RunFile): string {
 }
 
 /** Соседние репозитории проекта, которые есть на диске. */
-export function relatedRepos(h: Orchestrator, repo: string): RelatedRepo[] {
-  return (h.getProjectConfig(repo)?.relatedRepos ?? []).filter((r) => fs.existsSync(r.path));
+export function relatedRepos(h: Kernel, repo: string): RelatedRepo[] {
+  return (getProjectConfig(h, repo)?.relatedRepos ?? []).filter((r) => fs.existsSync(r.path));
 }
 
 /** Блок для агентов: где лежат соседние репозитории и что их можно только читать. */
-export function relatedBlock(h: Orchestrator, repo: string): string {
+export function relatedBlock(h: Kernel, repo: string): string {
   const list = relatedRepos(h, repo);
   if (!list.length) return '';
   return `\n\n## Соседние репозитории (только чтение)\n\nЗадача делается в текущем репозитории, но он работает вместе с соседними. Читай их, чтобы сверяться с контрактами (API, типы, события, конфиги), — инструментами Read, Grep, Glob по абсолютным путям. Ничего в них не меняй: ни файлов, ни git. Если для задачи нужна правка соседа — напиши об этом в отчёте.\n\n${list.map((r) => `- \`${r.path}\`${r.note ? ` — ${r.note}` : ''}`).join('\n')}`;
 }
 
 /** Отпечатки соседних репозиториев (только git) — до и после работы исполнителя. */
-export async function relatedState(h: Orchestrator, repo: string): Promise<Map<string, string>> {
+export async function relatedState(h: Kernel, repo: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const list = relatedRepos(h, repo);
   if (!list.length) return out;
@@ -87,7 +91,7 @@ export async function relatedState(h: Orchestrator, repo: string): Promise<Map<s
 }
 
 /** Исполнитель мог записать в соседний репозиторий (у claude запись туда не запретить) — предупреждаем человека. */
-export async function checkRelatedUntouched(h: Orchestrator, run: RunFile, before: Map<string, string>) {
+export async function checkRelatedUntouched(h: Kernel, run: RunFile, before: Map<string, string>) {
   if (!before.size) return;
   const after = await relatedState(h, run.projectPath);
   const changed = [...before].filter(([p, f]) => after.has(p) && after.get(p) !== f).map(([p]) => p);
@@ -98,21 +102,15 @@ export async function checkRelatedUntouched(h: Orchestrator, run: RunFile, befor
     );
 }
 
-export async function profileFor(
-  h: Orchestrator,
-  repo: string,
-  cwd: string,
-  onOutput: (t: string) => void,
-  group: string,
-): Promise<AgentResult> {
-  return h.service({ prompt: h.prompts.raw('profile.md'), cwd, group, onOutput, timeoutMs: 10 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
+export async function profileFor(h: Kernel, repo: string, cwd: string, onOutput: (t: string) => void, group: string): Promise<AgentResult> {
+  return service(h, { prompt: h.prompts.raw('profile.md'), cwd, group, onOutput, timeoutMs: 10 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
 }
 
 /** Профиль проекта — один раз, перед первым планом. Сбой не останавливает прогон. */
-export async function ensureProfile(h: Orchestrator, run: RunFile, attempt: StageAttempt) {
-  if (h.knowledgeOf(run.projectPath).profile) return;
+export async function ensureProfile(h: Kernel, run: RunFile, attempt: StageAttempt) {
+  if (knowledgeOf(h, run.projectPath).profile) return;
   h.log(run, c.dim('Изучаю проект для профиля — один раз, дальше он достаётся всем агентам…') + '\n');
-  const res = await h.profileFor(run.projectPath, run.worktreePath, (t) => h.log(run, c.dim(t), false), run.id);
+  const res = await profileFor(h, run.projectPath, run.worktreePath, (t) => h.log(run, c.dim(t), false), run.id);
   attempt.tokens = addUsage(attempt.tokens ?? emptyUsage(), res.usage);
   run.totals = addUsage(run.totals, res.usage);
   h.checkStop(run);
@@ -120,32 +118,32 @@ export async function ensureProfile(h: Orchestrator, run: RunFile, attempt: Stag
     h.log(run, c.amber(`! профиль проекта не собран: ${res.error ?? 'пустой ответ'} — продолжаю без него`) + '\n');
     return;
   }
-  h.updateKnowledge(run.projectPath, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
+  updateKnowledge(h, run.projectPath, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
   h.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Проекты → Знания о проекте»') + '\n');
 }
 
 /** Пересобрать профиль по кнопке в «Знаниях о проекте». */
-export async function refreshProfile(h: Orchestrator, repo: string): Promise<ProjectKnowledge> {
-  const res = await h.profileFor(repo, repo, () => {}, `profile-${Date.now()}`);
+export async function refreshProfile(h: Kernel, repo: string): Promise<ProjectKnowledge> {
+  const res = await profileFor(h, repo, repo, () => {}, `profile-${Date.now()}`);
   if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Нейросеть вернула пустой профиль');
-  h.updateKnowledge(repo, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
-  return h.knowledgeOf(repo);
+  updateKnowledge(h, repo, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
+  return knowledgeOf(h, repo);
 }
 
-export function saveKnowledge(h: Orchestrator, repo: string, k: ProjectKnowledge): ProjectKnowledge {
-  h.updateKnowledge(repo, () => ({
+export function saveKnowledge(h: Kernel, repo: string, k: ProjectKnowledge): ProjectKnowledge {
+  updateKnowledge(h, repo, () => ({
     profile: k.profile?.trim() || undefined,
     profileAt: k.profileAt,
     lessons: k.lessons?.filter((l) => l.text.trim()).map((l) => ({ ...l, text: l.text.trim() })),
   }));
-  return h.knowledgeOf(repo);
+  return knowledgeOf(h, repo);
 }
 
-export function getKnowledge(h: Orchestrator, repo: string): ProjectKnowledge {
-  return h.knowledgeOf(repo);
+export function getKnowledge(h: Kernel, repo: string): ProjectKnowledge {
+  return knowledgeOf(h, repo);
 }
 
-export async function learn(h: Orchestrator, run: RunFile) {
+export async function learn(h: Kernel, run: RunFile) {
   // Круг по PR: уроки только из его замечаний — прошлые круги уже разобраны.
   const since = run.prRound ? (run.prRounds?.at(-1)?.at ?? '') : '';
   const prItems = run.prRound
@@ -180,14 +178,12 @@ export async function learn(h: Orchestrator, run: RunFile) {
     );
   const digest = [...prItems, ...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
   if (!digest.trim()) return;
-  const known = h.knowledgeOf(run.projectPath).lessons ?? [];
-  const res = await h
-    .service({
-      prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }),
-      group: `${run.id}:learn`,
-      timeoutMs: 3 * 60_000,
-    })
-    .catch(() => null);
+  const known = knowledgeOf(h, run.projectPath).lessons ?? [];
+  const res = await service(h, {
+    prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }),
+    group: `${run.id}:learn`,
+    timeoutMs: 3 * 60_000,
+  }).catch(() => null);
   if (!res?.ok) return;
   const j = parseJsonReply<{ lessons?: unknown }>(res.text) ?? {};
   const lessons: string[] = Array.isArray(j.lessons)
@@ -198,7 +194,7 @@ export async function learn(h: Orchestrator, run: RunFile) {
   if (!fresh.length) return;
   const at = new Date().toISOString();
   // Не больше 40 уроков: старые уходят первыми.
-  h.updateKnowledge(run.projectPath, (k) => ({
+  updateKnowledge(h, run.projectPath, (k) => ({
     ...k,
     lessons: [...(k.lessons ?? []), ...fresh.map((text) => ({ text, at, runId: run.id }))].slice(-40),
   }));
@@ -206,12 +202,12 @@ export async function learn(h: Orchestrator, run: RunFile) {
 }
 
 /** Проекты, с которыми работали: настроенные и те, где были прогоны. Сначала недавние. */
-export function listProjects(h: Orchestrator): ProjectListItem[] {
+export function listProjects(h: Kernel): ProjectListItem[] {
   const map = new Map<string, ProjectListItem>();
   for (const [p, cfg] of Object.entries(h.store.readProjects())) {
     map.set(p, { path: p, configured: true, exists: fs.existsSync(p), updatedAt: cfg.updatedAt, runs: 0, active: 0, lastRunAt: null });
   }
-  for (const r of h.listRuns()) {
+  for (const r of h.store.list()) {
     const p = path.resolve(r.projectPath);
     const it = map.get(p) ?? { path: p, configured: false, exists: fs.existsSync(p), runs: 0, active: 0, lastRunAt: null };
     it.runs++;
@@ -224,9 +220,9 @@ export function listProjects(h: Orchestrator): ProjectListItem[] {
 }
 
 /** Следующая часть большой задачи: из «Next Parts» плана — текст задачи и вложения для нового прогона. */
-export async function nextPartDraft(h: Orchestrator, id: string): Promise<NextPartDraft | null> {
+export async function nextPartDraft(h: Kernel, id: string): Promise<NextPartDraft | null> {
   const r = h.mustLoad(id);
-  const docs = await h.getChangeDocs(id).catch(() => null);
+  const docs = await getChangeDocs(h, id).catch(() => null);
   const parts = parseNextParts(docs?.proposal ?? '');
   if (!parts.length) return null;
   const [next, ...rest] = parts;
@@ -254,10 +250,10 @@ export async function nextPartDraft(h: Orchestrator, id: string): Promise<NextPa
  * Проверка окружения перед задачами: команда запуска поднимает приложение в папке проекта, агент в браузере
  * пробует вход и разделы из инструкции для проверки. Сборочные артефакты, которые поменял dev-сервер, откатываются.
  */
-export async function checkEnvironment(h: Orchestrator, repo: string): Promise<EnvCheck> {
+export async function checkEnvironment(h: Kernel, repo: string): Promise<EnvCheck> {
   const key = path.resolve(repo);
   const at = new Date().toISOString();
-  const cfg = h.getProjectConfig(key);
+  const cfg = getProjectConfig(h, key);
   if (!cfg?.runCommand?.trim() || !cfg.appUrl?.trim())
     return { ready: false, steps: [], fix: 'Задайте команду запуска приложения и адрес в командах проекта.', at };
   if (h.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
@@ -343,7 +339,7 @@ export async function checkEnvironment(h: Orchestrator, repo: string): Promise<E
     fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, {
       mode: 0o755,
     });
-    const res = await h.service({
+    const res = await service(h, {
       prompt: h.prompts.render('env-check.md', {
         url,
         notes: cfg.visualNotes?.trim() || '(нет)',
@@ -402,7 +398,7 @@ export async function checkEnvironment(h: Orchestrator, repo: string): Promise<E
 }
 
 /** Незакоммиченные изменения в рабочей копии проекта — по кнопке человека перед стартом в режиме «Ветка». */
-export async function cleanWorkingCopy(h: Orchestrator, repo: string, how: 'stash' | 'discard'): Promise<{ files: number }> {
+export async function cleanWorkingCopy(h: Kernel, repo: string, how: 'stash' | 'discard'): Promise<{ files: number }> {
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
   const dirty = await git.dirtyFiles(repo);
@@ -413,7 +409,7 @@ export async function cleanWorkingCopy(h: Orchestrator, repo: string, how: 'stas
 }
 
 /** Состояние репозитория проекта для страницы «Обзор». */
-export async function projectOverview(h: Orchestrator, repo: string): Promise<ProjectOverview> {
+export async function projectOverview(h: Kernel, repo: string): Promise<ProjectOverview> {
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
   const [branch, dirty, remote, pr] = await Promise.all([
@@ -425,16 +421,16 @@ export async function projectOverview(h: Orchestrator, repo: string): Promise<Pr
     runProc(tools.git, ['remote', 'get-url', 'origin'], { cwd: repo, env: h.opts.env, timeoutMs: 10_000 })
       .then((x) => (x.code === 0 ? x.stdout.trim() : null))
       .catch(() => null),
-    prReadiness(h.ghBin(), tools.git, repo, h.opts.env).catch((e) => String((e as Error).message)),
+    prReadiness(ghBin(h), tools.git, repo, h.opts.env).catch((e) => String((e as Error).message)),
   ]);
   return { branch, dirty, remote, prReady: pr };
 }
 
 /** Статистика по прогонам проекта. */
-export function projectStats(h: Orchestrator, repo: string): ProjectStats {
+export function projectStats(h: Kernel, repo: string): ProjectStats {
   const root = path.resolve(repo);
-  const runs = h
-    .listRuns()
+  const runs = h.store
+    .list()
     .filter((r) => !r.missing && path.resolve(r.projectPath) === root)
     .map((r) => h.store.load(r.id))
     .filter((r): r is RunFile => Boolean(r));
@@ -442,7 +438,7 @@ export function projectStats(h: Orchestrator, repo: string): ProjectStats {
 }
 
 /** Ветки проекта для «От ветки» в новой задаче. fetch — сначала подтянуть ветки origin. */
-export async function projectBranches(h: Orchestrator, repo: string, fetch = false): Promise<ProjectBranches> {
+export async function projectBranches(h: Kernel, repo: string, fetch = false): Promise<ProjectBranches> {
   const tools = await h.tools(['git']);
   const all = await new Git(tools.git, h.opts.env).allBranches(repo, fetch);
   // Ветки прогонов PurpleFlow — в конец: от них новые задачи начинают редко.
@@ -451,16 +447,16 @@ export async function projectBranches(h: Orchestrator, repo: string, fetch = fal
 }
 
 /** Убрать проект из списка: команды и знания удаляются, прогоны остаются. */
-export function forgetProject(h: Orchestrator, repo: string): void {
+export function forgetProject(h: Kernel, repo: string): void {
   h.store.removeProject(path.resolve(repo));
 }
 
 /** Сохранённые команды проекта (null — ещё не настраивали). */
-export function getProjectConfig(h: Orchestrator, repo: string): ProjectConfig | null {
+export function getProjectConfig(h: Kernel, repo: string): ProjectConfig | null {
   return h.store.readProjects()[path.resolve(repo)] ?? null;
 }
 
-export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>): ProjectConfig {
+export function saveProjectConfig(h: Kernel, repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>): ProjectConfig {
   const full: ProjectConfig = {
     setupCommand: cfg.setupCommand.trim(),
     lintCommand: cfg.lintCommand.trim(),
@@ -477,7 +473,7 @@ export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<Proje
     workspace: cfg.workspace,
     notes: cfg.notes,
     // Знания собираются отдельно — сохранение команд их не трогает.
-    knowledge: cfg.knowledge ?? h.getProjectConfig(repo)?.knowledge,
+    knowledge: cfg.knowledge ?? getProjectConfig(h, repo)?.knowledge,
     updatedAt: new Date().toISOString(),
   };
   h.store.writeProject(path.resolve(repo), full);
@@ -488,8 +484,8 @@ export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<Proje
  * Нейросеть осматривает проект (только чтение: Read/Glob/Grep) и предлагает команды
  * подготовки, линтера и тестов. Работает в папке проекта, ничего не меняя.
  */
-export async function detectCommandsAI(h: Orchestrator, dir: string): Promise<AiCommands> {
-  const res = await h.service({
+export async function detectCommandsAI(h: Kernel, dir: string): Promise<AiCommands> {
+  const res = await service(h, {
     prompt: h.prompts.raw('detect-commands.md'),
     cwd: dir,
     group: `detect-${Date.now()}`,
@@ -517,8 +513,8 @@ export async function detectCommandsAI(h: Orchestrator, dir: string): Promise<Ai
 }
 
 /** Режим по тексту задачи — подсказка человеку, решение за ним. */
-export async function suggestMode(h: Orchestrator, task: string): Promise<ModeSuggestion> {
-  const res = await h.service({ prompt: h.prompts.render('suggest-mode.md', { task }), group: `mode-${Date.now()}`, timeoutMs: 90_000 });
+export async function suggestMode(h: Kernel, task: string): Promise<ModeSuggestion> {
+  const res = await service(h, { prompt: h.prompts.render('suggest-mode.md', { task }), group: `mode-${Date.now()}`, timeoutMs: 90_000 });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить режим');
   try {
     const j = parseJsonReply<Record<string, unknown>>(res.text);

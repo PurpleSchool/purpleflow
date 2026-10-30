@@ -1,17 +1,23 @@
+// Стадия «Визуальная проверка»: приложение из ветки прогона, браузер и скриншоты для приёмки.
 import fs from 'node:fs';
 import path from 'node:path';
 import { c, crlf } from '../agents/common.js';
 import { prependPath } from '../env.js';
 import { Git } from '../git.js';
 import { formatItem } from '../items.js';
-import { killGroup, run as runProc } from '../proc.js';
-import { Screencast, findChrome, waitForCdp } from '../screencast.js';
-import type { VisualResult, RunFile } from '../types.js';
+import type { Kernel } from '../kernel.js';
 import { expandPorts, freePort, portEnv, waitForUrl } from '../net.js';
 import { parseReview, parseShots, parseUnverified } from '../parse.js';
-import type { Orchestrator } from '../orchestrator.js';
-import { prepareApp } from './workspace.js';
-export function visualDir(h: Orchestrator, run: RunFile, attempt: number): string {
+import { killGroup, run as runProc } from '../proc.js';
+import { Screencast, findChrome, waitForCdp } from '../screencast.js';
+import { agentBase, agentModel, claudeModel } from '../services/agents.js';
+import { attachmentsBlock } from '../services/attachments.js';
+import { getProjectConfig } from '../services/projects.js';
+import { modeRules, taskText } from '../services/prompting.js';
+import { getChangeDocs } from '../services/runs.js';
+import { diffBase, prepareApp } from '../services/workspace.js';
+import type { RunFile, VisualResult } from '../types.js';
+export function visualDir(h: Kernel, run: RunFile, attempt: number): string {
   return path.join(h.opts.dataDir, 'visual', run.id, String(attempt));
 }
 
@@ -20,14 +26,14 @@ export function visualDir(h: Orchestrator, run: RunFile, attempt: number): strin
  * браузер (Playwright CLI через обёртку pw — служебные файлы остаются вне репозитория),
  * собрать скриншоты и вердикт { blocking, notes, shots }.
  */
-export async function stageVisual(h: Orchestrator, run: RunFile) {
+export async function stageVisual(h: Kernel, run: RunFile) {
   const agent = run.agents?.visual ?? 'claude';
   const tools = await h.tools([agent]);
   // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
   const model =
-    run.models.visual || (agent === 'claude' ? h.claudeModel(run.agents, run.models) : h.agentModel('codex', run.agents, run.models));
+    run.models.visual || (agent === 'claude' ? claudeModel(h, run.agents, run.models) : agentModel(h, 'codex', run.agents, run.models));
   const attempt = h.begin(run, 'visual', model || agent);
-  const dir = h.visualDir(run, attempt.attempt);
+  const dir = visualDir(h, run, attempt.attempt);
   fs.mkdirSync(dir, { recursive: true });
   const { port, url, command } = await expandPorts(run.appUrl!, run.runCommand!);
   const serverGroup = `${run.id}:server`;
@@ -87,16 +93,16 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
     }
 
     // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
-    const live = await h.startLiveBrowser(run, dir, url, serverGroup, session);
+    const live = await startLiveBrowser(h, run, dir, url, serverGroup, session);
     cast = live?.cast ?? null;
-    const docs = await h.getChangeDocs(run.id);
+    const docs = await getChangeDocs(h, run.id);
     const tg = await h.tools(['git']);
-    const changed = await new Git(tg.git, h.opts.env).changedFiles(run.worktreePath, h.diffBase(run));
+    const changed = await new Git(tg.git, h.opts.env).changedFiles(run.worktreePath, diffBase(h, run));
     const prompt = h.prompts.render('visual.md', {
       url,
       dir,
-      task: h.taskText(run),
-      attachments: h.attachmentsBlock(run),
+      task: taskText(h, run),
+      attachments: attachmentsBlock(h, run),
       proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
       specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
       files:
@@ -106,17 +112,17 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
           .join('\n') || '(нет)',
       // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
       notes:
-        h.getProjectConfig(run.projectPath)?.visualNotes ||
+        getProjectConfig(h, run.projectPath)?.visualNotes ||
         run.visualNotes ||
         '(нет — если нужен вход или данные, которых нет, верни "unverified")',
     });
     const base = {
-      ...h.agentBase(run, tools[agent]),
+      ...agentBase(h, run, tools[agent]),
       env: prependPath(h.opts.env, dir),
       prompt,
       systemPrompt:
         h.prompts.raw('visual.system.md') +
-        h.modeRules('visual', run) +
+        modeRules(h, 'visual', run) +
         (live
           ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.`
           : ''),
@@ -236,7 +242,7 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
  * null — Chrome не найден или не поднялся: агент откроет свой браузер через `pw open`, без трансляции.
  */
 export async function startLiveBrowser(
-  h: Orchestrator,
+  h: Kernel,
   run: RunFile,
   dir: string,
   url: string,
@@ -282,7 +288,7 @@ export async function startLiveBrowser(
 }
 
 /** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
-export function getVisualShot(h: Orchestrator, id: string, file: string): string | null {
+export function getVisualShot(h: Kernel, id: string, file: string): string | null {
   if (!fs.existsSync(file)) return null;
   // Сравниваем реальные пути: каталог данных может быть ссылкой.
   const real = (p: string) => {

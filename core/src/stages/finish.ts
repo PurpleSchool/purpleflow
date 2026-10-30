@@ -1,14 +1,17 @@
+// Стадия «Завершение»: архив изменения OpenSpec и коммит в ветку прогона.
 import fs from 'node:fs';
 import path from 'node:path';
 import { c } from '../agents/common.js';
-import { pushBranch } from '../github.js';
 import { Git } from '../git.js';
-import { OpenSpec } from '../openspec.js';
-import { RunStore } from '../store.js';
+import { pushBranch } from '../github.js';
+import type { Kernel } from '../kernel.js';
 import { modeOf } from '../modes.js';
+import { OpenSpec } from '../openspec.js';
+import { learn } from '../services/projects.js';
+import { envFilesOf } from '../services/workspace.js';
+import { RunStore } from '../store.js';
 import type { RunFile } from '../types.js';
-import type { Orchestrator } from '../orchestrator.js';
-export async function stageFinish(h: Orchestrator, run: RunFile) {
+export async function stageFinish(h: Kernel, run: RunFile) {
   const tools = await h.tools(['git', 'openspec']);
   const attempt = h.begin(run, 'finish');
   const openspec = new OpenSpec(tools.openspec, h.opts.env);
@@ -36,7 +39,7 @@ export async function stageFinish(h: Orchestrator, run: RunFile) {
         ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')]
         : []),
       // Скопированные файлы окружения — секреты разработчика, в коммит не попадают даже без .gitignore.
-      ...h.envFilesOf(run),
+      ...envFilesOf(h, run),
     ];
     const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
     const message =
@@ -88,5 +91,5 @@ export async function stageFinish(h: Orchestrator, run: RunFile) {
   h.emit({ type: 'run.updated', run });
   h.emit({ type: 'run.finished', runId: run.id, status: 'finished' });
   // Уроки для следующих прогонов — в фоне, коммит уже сделан.
-  void h.learn(run).catch(() => undefined);
+  void learn(h, run).catch(() => undefined);
 }

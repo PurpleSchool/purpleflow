@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Orchestrator, type CoreSettings } from './orchestrator.js';
+import { Orchestrator } from './orchestrator.js';
+import type { CoreSettings } from './types.js';
 import { acceptTarget, afterChecks, availableActions, limitRow, plannedRoute, reviewInParallel, skippedStages } from './route.js';
 import { loadLoginShellEnv, prependPath } from './env.js';
 import type { AgentResult } from './agents/common.js';
-import { parseReply } from './pipeline/manager.js';
+import { parseReply } from './services/manager.js';
 import type { RunFile, StageAttempt } from './types.js';
 
 const at = (stage: StageAttempt['stage'], status: StageAttempt['status'] = 'done'): StageAttempt => ({
@@ -153,7 +154,7 @@ function fakeClaude(script: {
 async function untilGate(core: Orchestrator, runId: string, gate: string, timeoutMs = 60_000): Promise<RunFile> {
   const t0 = Date.now();
   for (;;) {
-    const r = core.getRun(runId)!;
+    const r = (await core.getRun(runId))!;
     if (r.status === 'waiting' && r.next === gate) return r;
     if (r.status === 'stopped' || r.status === 'finished' || r.status === 'cancelled')
       throw new Error(`прогон остановился: ${r.message ?? r.status} (next=${r.next})`);
@@ -257,7 +258,8 @@ test(
         await new Promise((r) => setTimeout(r, 50));
         return ok('{"questions": [{"q": "Какие числа поддерживать?"}]}');
       }
-      if (/планировщик/.test(o.systemPrompt ?? '')) planSawLint = Boolean(core.getRun(runId)?.baseChecks?.some((b) => b.kind === 'lint'));
+      if (/планировщик/.test(o.systemPrompt ?? ''))
+        planSawLint = Boolean((await core.getRun(runId))?.baseChecks?.some((b) => b.kind === 'lint'));
       return base(o);
     };
     core = makeCore(fake);
@@ -275,7 +277,7 @@ test(
     });
     const until = async (pred: (r: RunFile) => boolean) => {
       for (let i = 0; i < 150; i++) {
-        const r = core.getRun(runId)!;
+        const r = (await core.getRun(runId))!;
         if (pred(r)) return r;
         await new Promise((res) => setTimeout(res, 100));
       }
@@ -292,7 +294,7 @@ test(
       r.baseChecks?.map((x) => `${x.kind}:${x.command}`),
       [`lint:${lint}`],
     );
-    assert.match(core.getLog(runId), /Базовые проверки · в фоне[\s\S]*✓ линтер: ok/);
+    assert.match(await core.getLog(runId), /Базовые проверки · в фоне[\s\S]*✓ линтер: ok/);
 
     await core.dispatch({ type: 'gate.answer', runId, answers: [{ q: 'Какие числа поддерживать?', a: 'целые' }] } as never);
     await untilGate(core, runId, 'gate1');
@@ -311,7 +313,7 @@ test(
 
     await core.dispatch({ type: 'gate.approve', runId });
     const done = await untilGate(core, runId, 'gate2');
-    const log = core.getLog(runId);
+    const log = await core.getLog(runId);
     // На попытке — тесты задачи, полный набор — один раз, перед приёмкой.
     assert.equal(log.match(/полный набор перед приёмкой/g)?.length, 1);
     assert.deepEqual(
@@ -464,11 +466,11 @@ test(
     assert.match(seen, /`replan`/);
     const proposal = chat.at(-1)!;
     assert.equal(proposal.actionState, 'proposed');
-    assert.equal(core.getRun(runId)!.next, 'gate2'); // само ничего не применилось
+    assert.equal((await core.getRun(runId))!.next, 'gate2'); // само ничего не применилось
     await core.resolveManagerAction(runId, proposal.id, true);
     const r = await untilGate(core, runId, 'gate1'); // автопилот после возврата к плану ждёт человека
     assert.equal(r.interventions?.at(-1)?.kind, 'replan');
-    assert.equal(core.getManagerChat(runId).messages.at(-1)!.actionState, 'applied');
+    assert.equal((await core.getManagerChat(runId)).messages.at(-1)!.actionState, 'applied');
   },
 );
 
@@ -532,7 +534,7 @@ test(
       return fn(o);
     }) as typeof fn;
     const core = makeCore(fake);
-    core.saveProjectConfig(repo, {
+    await core.saveProjectConfig(repo, {
       setupCommand: '',
       lintCommand: '',
       testCommand: 'node --test',
@@ -616,7 +618,7 @@ test(
         appUrl: 'http://localhost:{port}',
       } as never,
     });
-    assert.equal(core.getRun(runId)!.visual, undefined, 'без claude визуальной проверки нет');
+    assert.equal((await core.getRun(runId))!.visual, undefined, 'без claude визуальной проверки нет');
     await untilGate(core, runId, 'gate1');
     await core.dispatch({ type: 'gate.approve', runId });
     await untilGate(core, runId, 'gate2');

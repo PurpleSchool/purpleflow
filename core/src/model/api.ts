@@ -1,0 +1,88 @@
+// API ядра, доступное окну: каждый метод выполняется в utilityProcess и вызывается через IPC.
+// Orchestrator реализует этот интерфейс; список методов для моста — CORE_METHODS в app/src/shared/ipc.ts.
+import type { ChatFile, ChatSummary } from './chat.js';
+import type { PrDetails, PrStatus } from './pr.js';
+import type {
+  AiCommands,
+  CommandIssue,
+  EnvCheck,
+  NextPartDraft,
+  ProjectBranches,
+  ProjectCommands,
+  ProjectConfig,
+  ProjectKnowledge,
+  ProjectListItem,
+  ProjectOverview,
+  ProjectStats,
+} from './project.js';
+import type { CoreCommand } from './protocol.js';
+import type { DiffFile, ManagerMessage, ModeSuggestion, PreviewState, RunFile, RunSummary } from './run.js';
+import type { AgentKind, ConnectionCheck, StorageItem, ToolInfo, ToolName } from './settings.js';
+
+export interface ChangeDocs {
+  proposal: string;
+  tasks: string;
+  design: string;
+  specs: { path: string; content: string }[];
+}
+
+export interface CoreApi {
+  dispatch(cmd: CoreCommand): Promise<{ runId: string }>;
+  listRuns(): Promise<RunSummary[]>;
+  getRun(id: string): Promise<RunFile | null>;
+  getLog(id: string): Promise<string>;
+  getDiff(id: string): Promise<DiffFile[]>;
+  /** Изменённые файлы без содержимого — счётчик на вкладке «Код». */
+  getChangedFiles(id: string): Promise<string[]>;
+  getChangeDocs(id: string): Promise<ChangeDocs>;
+  detectTools(): Promise<Record<ToolName, ToolInfo>>;
+  testConnection(): Promise<ConnectionCheck[]>;
+  detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
+  isDriving(id: string): Promise<boolean>;
+  listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }>;
+  getAttachment(id: string, index: number): Promise<string | null>;
+  detectCommandsAI(dir: string): Promise<AiCommands>;
+  getProjectConfig(dir: string): Promise<ProjectConfig | null>;
+  suggestMode(task: string): Promise<ModeSuggestion>;
+  getVisualShot(id: string, file: string): Promise<string | null>;
+  /** Проверка команд без запуска: скрипты npm/pnpm/yarn есть в package.json нужной папки. */
+  checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>>;
+  getKnowledge(dir: string): Promise<ProjectKnowledge>;
+  saveKnowledge(dir: string, k: ProjectKnowledge): Promise<ProjectKnowledge>;
+  refreshProfile(dir: string): Promise<ProjectKnowledge>;
+  prReady(id: string): Promise<string | null>;
+  getPrStatus(id: string): Promise<PrStatus | null>;
+  getPrDetails(id: string): Promise<PrDetails | null>;
+  getStorage(): Promise<StorageItem[]>;
+  cleanStorage(id: StorageItem['id']): Promise<number>;
+  startPreview(id: string): Promise<PreviewState>;
+  stopPreview(id: string): Promise<void>;
+  getPreview(id: string): Promise<PreviewState>;
+  saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
+  listProjects(): Promise<ProjectListItem[]>;
+  projectOverview(dir: string): Promise<ProjectOverview>;
+  forgetProject(dir: string): Promise<void>;
+  projectBranches(dir: string, fetch?: boolean): Promise<ProjectBranches>;
+  cleanWorkingCopy(dir: string, how: 'stash' | 'discard'): Promise<{ files: number }>;
+  checkEnvironment(dir: string): Promise<EnvCheck>;
+  nextPartDraft(runId: string): Promise<NextPartDraft | null>;
+  projectStats(dir: string): Promise<ProjectStats>;
+  /** Чат менеджера прогона; thinking — ответ ещё готовится. */
+  getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }>;
+  askManager(id: string, text: string): Promise<ManagerMessage[]>;
+  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]>;
+  /** Чаты: разговор с агентом вне конвейера. Ответ приходит событиями chat.updated. */
+  listChats(): Promise<ChatSummary[]>;
+  getChat(id: string): Promise<{ chat: ChatFile; busy: boolean } | null>;
+  createChat(o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean }): Promise<ChatFile>;
+  updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): Promise<ChatFile>;
+  deleteChat(id: string): Promise<void>;
+  sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void>;
+  stopChat(id: string): Promise<void>;
+  /** Убрать сообщение из очереди, пока агент его не получил. */
+  unqueueChat(id: string, messageId: string): Promise<ChatFile>;
+  chatToTask(id: string): Promise<NextPartDraft>;
+  /** Незакоммиченные изменения проекта чата относительно HEAD. */
+  getChatDiff(id: string): Promise<DiffFile[]>;
+  getChatChangedFiles(id: string): Promise<string[]>;
+}

@@ -1,13 +1,17 @@
+// Чат: разговор с агентом вне конвейера — потоковый ответ, очередь сообщений, правки проекта, «Сделать задачей».
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { emptyUsage, type AgentResult, type AgentStep } from '../agents/common.js';
-import { Git } from '../git.js';
-import { killGroup } from '../proc.js';
 import { isImageFile } from '../files.js';
+import { Git } from '../git.js';
+import type { Kernel } from '../kernel.js';
+import { killGroup } from '../proc.js';
 import { writeAtomic } from '../store.js';
 import type { AgentKind, ChatFile, ChatMessage, ChatPart, ChatSummary, DiffFile, NextPartDraft, PreviewState } from '../types.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { agentModel, service, serviceAgent } from './agents.js';
+import { getPreview, launchPreview, stopPreview } from './preview.js';
+import { getProjectConfig, knowledgeOf } from './projects.js';
 
 /**
  * Чат — обычный разговор с claude или codex вне конвейера: вопросы по проекту и небольшие правки,
@@ -19,21 +23,21 @@ const HISTORY = 12;
 /** Как часто отправлять в окно ответ, который ещё пишется. */
 const FLUSH_MS = 120;
 
-const chatsDir = (h: Orchestrator) => path.join(h.opts.dataDir, 'chats');
-const chatFile = (h: Orchestrator, id: string) => path.join(chatsDir(h), `${id}.json`);
+const chatsDir = (h: Kernel) => path.join(h.opts.dataDir, 'chats');
+const chatFile = (h: Kernel, id: string) => path.join(chatsDir(h), `${id}.json`);
 /** Вложения и рабочая папка чата без проекта. */
-const chatFilesDir = (h: Orchestrator, id: string) => path.join(chatsDir(h), id);
+const chatFilesDir = (h: Kernel, id: string) => path.join(chatsDir(h), id);
 const group = (id: string) => `chat:${id}`;
 
 /** Чат, по которому идёт ход: одна копия в памяти, чтобы сообщения в очередь и правки настроек не затирались сохранениями хода. */
-const live = new WeakMap<Orchestrator, Map<string, ChatFile>>();
-const liveOf = (h: Orchestrator) => {
+const live = new WeakMap<Kernel, Map<string, ChatFile>>();
+const liveOf = (h: Kernel) => {
   let m = live.get(h);
   if (!m) live.set(h, (m = new Map()));
   return m;
 };
 
-function read(h: Orchestrator, id: string): ChatFile | null {
+function read(h: Kernel, id: string): ChatFile | null {
   const cur = liveOf(h).get(id);
   if (cur) return cur;
   try {
@@ -46,7 +50,7 @@ function read(h: Orchestrator, id: string): ChatFile | null {
   }
 }
 
-function must(h: Orchestrator, id: string): ChatFile {
+function must(h: Kernel, id: string): ChatFile {
   const c = read(h, id);
   if (!c) throw new Error('Чат не найден');
   return c;
@@ -55,7 +59,7 @@ function must(h: Orchestrator, id: string): ChatFile {
 /** Удалённые чаты: ход, который ещё доигрывает, не должен воскресить файл. */
 const deleted = new Set<string>();
 
-function save(h: Orchestrator, chat: ChatFile) {
+function save(h: Kernel, chat: ChatFile) {
   if (deleted.has(chat.id)) return;
   chat.updatedAt = new Date().toISOString();
   writeAtomic(chatFile(h, chat.id), JSON.stringify(chat, null, 2));
@@ -69,7 +73,7 @@ export function chatSummary(c: ChatFile, busy: boolean): ChatSummary {
   return { id: c.id, title: c.title, projectPath: c.projectPath, agent: c.agent, updatedAt: c.updatedAt, busy, last };
 }
 
-export function listChats(h: Orchestrator): ChatSummary[] {
+export function listChats(h: Kernel): ChatSummary[] {
   let files: string[] = [];
   try {
     files = fs.readdirSync(chatsDir(h)).filter((f) => f.endsWith('.json'));
@@ -83,17 +87,17 @@ export function listChats(h: Orchestrator): ChatSummary[] {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export function getChat(h: Orchestrator, id: string): { chat: ChatFile; busy: boolean } | null {
+export function getChat(h: Kernel, id: string): { chat: ChatFile; busy: boolean } | null {
   const chat = read(h, id);
   return chat ? { chat, busy: h.chatBusy.has(id) } : null;
 }
 
 export async function createChat(
-  h: Orchestrator,
+  h: Kernel,
   o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean },
 ): Promise<ChatFile> {
   const now = new Date().toISOString();
-  const agent = o.agent ?? (await h.serviceAgent());
+  const agent = o.agent ?? (await serviceAgent(h));
   const projectPath = o.projectPath?.trim() || undefined;
   if (projectPath && !fs.existsSync(projectPath)) throw new Error('Папка проекта не найдена');
   const chat: ChatFile = {
@@ -113,7 +117,7 @@ export async function createChat(
 }
 
 /** Название, агент, модель и правки. Смена агента начинает новую сессию — история уйдёт пересказом. */
-export function updateChat(h: Orchestrator, id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): ChatFile {
+export function updateChat(h: Kernel, id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): ChatFile {
   const chat = must(h, id);
   if (patch.title !== undefined) chat.title = patch.title.trim().slice(0, 120) || chat.title;
   if (patch.agent && patch.agent !== chat.agent) chat.agent = patch.agent;
@@ -123,18 +127,18 @@ export function updateChat(h: Orchestrator, id: string, patch: Partial<Pick<Chat
   return chat;
 }
 
-export async function deleteChat(h: Orchestrator, id: string): Promise<void> {
+export async function deleteChat(h: Kernel, id: string): Promise<void> {
   deleted.add(id);
   liveOf(h).delete(id);
   await killGroup(group(id));
-  await h.stopPreview(id);
+  await stopPreview(h, id);
   h.chatBusy.delete(id);
   fs.rmSync(chatFile(h, id), { force: true });
   fs.rmSync(chatFilesDir(h, id), { recursive: true, force: true });
   h.emit({ type: 'chat.deleted', chatId: id });
 }
 
-export async function stopChat(h: Orchestrator, id: string): Promise<void> {
+export async function stopChat(h: Kernel, id: string): Promise<void> {
   await killGroup(group(id));
 }
 
@@ -155,7 +159,7 @@ async function snapshot(git: Git, dir: string): Promise<Map<string, number>> {
   return out;
 }
 
-function systemPrompt(h: Orchestrator, chat: ChatFile, cwd: string): string {
+function systemPrompt(h: Kernel, chat: ChatFile, cwd: string): string {
   const where = chat.projectPath
     ? `Ты работаешь в проекте ${chat.projectPath} — это рабочая папка.`
     : `Проекта нет: рабочая папка ${cwd} — временная папка этого чата.`;
@@ -164,7 +168,7 @@ function systemPrompt(h: Orchestrator, chat: ChatFile, cwd: string): string {
     : 'Режим только чтения: файлы не меняй, команды, которые что-то меняют, не запускай. Если нужна правка — предложи её текстом или посоветуй завести задачу в PurpleFlow.';
   let s = `Ты — ассистент в чате PurpleFlow. ${where} ${rules} Отвечай по-русски, по делу, в Markdown.`;
   if (chat.projectPath) {
-    const k = h.knowledgeOf(chat.projectPath);
+    const k = knowledgeOf(h, chat.projectPath);
     const lessons = k.lessons?.map((l) => `- ${l.text}`).join('\n');
     if (k.profile) s += `\n\n## Профиль проекта\n\n${k.profile.trim()}`;
     if (lessons) s += `\n\n## Уроки прошлых прогонов\n\n${lessons}`;
@@ -180,7 +184,7 @@ function historyBlock(messages: ChatMessage[]): string {
   return `Предыдущая переписка в этом чате:\n\n${lines.join('\n\n')}\n\n---\n\n`;
 }
 
-const saveAttachments = (h: Orchestrator, id: string, files: { name: string; data: Uint8Array }[]): string[] => {
+const saveAttachments = (h: Kernel, id: string, files: { name: string; data: Uint8Array }[]): string[] => {
   if (!files.length) return [];
   const dir = path.join(chatFilesDir(h, id), 'files');
   fs.mkdirSync(dir, { recursive: true });
@@ -204,7 +208,7 @@ const saveAttachments = (h: Orchestrator, id: string, files: { name: string; dat
  * Сообщение человека. Если агент свободен — сразу ход; если отвечает — сообщение встаёт в очередь
  * и уходит следующим ходом (все накопленные — одним). «Прервать и отправить» — это stopChat: ход обрывается, очередь уходит.
  */
-export async function sendChat(h: Orchestrator, id: string, text: string, files: { name: string; data: Uint8Array }[] = []): Promise<void> {
+export async function sendChat(h: Kernel, id: string, text: string, files: { name: string; data: Uint8Array }[] = []): Promise<void> {
   if (!text.trim() && !files.length) throw new Error('Пустое сообщение');
   const chat = must(h, id);
   const attachments = saveAttachments(h, id, files);
@@ -238,7 +242,7 @@ export async function sendChat(h: Orchestrator, id: string, text: string, files:
 }
 
 /** Убрать сообщение из очереди, пока оно не ушло агенту. */
-export function unqueueChat(h: Orchestrator, id: string, messageId: string): ChatFile {
+export function unqueueChat(h: Kernel, id: string, messageId: string): ChatFile {
   const chat = must(h, id);
   const m = chat.messages.find((x) => x.id === messageId);
   if (!m?.queued) throw new Error('Сообщение уже ушло агенту');
@@ -248,7 +252,7 @@ export function unqueueChat(h: Orchestrator, id: string, messageId: string): Cha
 }
 
 /** Один ход: сообщения человека из очереди и ответ агента. Ответ приходит событиями chat.updated по мере генерации. */
-async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Promise<void> {
+async function turn(h: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<void> {
   const id = chat.id;
   const first = chat.messages.indexOf(batch[0]);
   const prevMessages = chat.messages.slice(0, first).filter((m) => !m.queued);
@@ -305,7 +309,7 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
     const others = attachments.filter((f) => !isImageFile(f));
     let prompt = (session ? '' : historyBlock(prevMessages)) + (text.trim() || 'Посмотри вложения.');
     if (others.length) prompt += `\n\nПрикреплённые файлы (открой и прочитай):\n${others.map((f) => `- ${f}`).join('\n')}`;
-    const model = chat.model || h.agentModel(agent, s.agents, s.models) || undefined;
+    const model = chat.model || agentModel(h, agent, s.agents, s.models) || undefined;
     const common = {
       bin: tools[agent],
       cwd,
@@ -379,7 +383,7 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
 }
 
 /** Черновик задачи для конвейера по переписке: формулировку пишет модель, вложения переходят в задачу. */
-export async function chatToTask(h: Orchestrator, id: string): Promise<NextPartDraft> {
+export async function chatToTask(h: Kernel, id: string): Promise<NextPartDraft> {
   const chat = must(h, id);
   const talk = chat.messages
     .filter((m) => !m.pending && m.text.trim())
@@ -388,14 +392,14 @@ export async function chatToTask(h: Orchestrator, id: string): Promise<NextPartD
     .join('\n\n');
   if (!talk) throw new Error('В чате пока нечего превращать в задачу');
   const prompt = `Ниже переписка человека с ассистентом о проекте. Сформулируй по ней задачу для разработчика: что сделать и зачем, важные детали и решения из переписки, критерии готовности. Пиши по-русски, коротко и конкретно, в Markdown, без вступления и без обращения к человеку. Верни только текст задачи.\n\n---\n\n${talk}`;
-  const res = await h.service({ prompt, group: `${group(id)}:task`, timeoutMs: 3 * 60_000 });
+  const res = await service(h, { prompt, group: `${group(id)}:task`, timeoutMs: 3 * 60_000 });
   if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Не получилось сформулировать задачу');
   const attachments = chat.messages.flatMap((m) => m.attachments ?? []).filter((f) => fs.existsSync(f));
   return { projectPath: chat.projectPath ?? '', task: res.text.trim(), attachments, rest: [] };
 }
 
 /** Git-репозиторий проекта чата, если он есть. */
-async function chatRepo(h: Orchestrator, id: string): Promise<{ git: Git; repo: string } | null> {
+async function chatRepo(h: Kernel, id: string): Promise<{ git: Git; repo: string } | null> {
   const chat = must(h, id);
   if (!chat.projectPath || !(await h.hasTool('git'))) return null;
   const git = new Git((await h.tools(['git'])).git, h.opts.env);
@@ -403,24 +407,24 @@ async function chatRepo(h: Orchestrator, id: string): Promise<{ git: Git; repo: 
 }
 
 /** Незакоммиченные изменения проекта чата относительно HEAD — вкладка «Код» в чате. */
-export async function chatDiff(h: Orchestrator, id: string): Promise<DiffFile[]> {
+export async function chatDiff(h: Kernel, id: string): Promise<DiffFile[]> {
   const r = await chatRepo(h, id);
   return r ? r.git.diff(r.repo, 'HEAD') : [];
 }
 
-export async function chatChangedFiles(h: Orchestrator, id: string): Promise<string[]> {
+export async function chatChangedFiles(h: Kernel, id: string): Promise<string[]> {
   const r = await chatRepo(h, id);
   return r ? r.git.changedFiles(r.repo, 'HEAD') : [];
 }
 
 /** Приложение проекта чата во вкладке «Браузер»: команды «Запуск приложения» и «Адрес» из настроек проекта. */
-export async function startChatPreview(h: Orchestrator, id: string): Promise<PreviewState> {
+export async function startChatPreview(h: Kernel, id: string): Promise<PreviewState> {
   const chat = must(h, id);
-  const cur = h.getPreview(id);
+  const cur = getPreview(h, id);
   if (cur.status === 'starting' || cur.status === 'ready') return cur;
   if (!chat.projectPath) throw new Error('У чата нет проекта — откройте адрес вручную.');
-  const cfg = h.getProjectConfig(chat.projectPath);
+  const cfg = getProjectConfig(h, chat.projectPath);
   if (!cfg?.runCommand || !cfg.appUrl)
     throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
-  return h.launchPreview(id, { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl });
+  return launchPreview(h, id, { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl });
 }

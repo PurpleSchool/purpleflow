@@ -1,35 +1,7 @@
-import type {
-  AgentKind,
-  ChatFile,
-  ChatSummary,
-  ManagerMessage,
-  Models,
-  AiCommands,
-  EnvCheck,
-  NextPartDraft,
-  CommandIssue,
-  PrStatus,
-  ProjectKnowledge,
-  ProjectListItem,
-  ProjectOverview,
-  ProjectStats,
-  PrDetails,
-  ProjectBranches,
-  StorageItem,
-  ConnectionCheck,
-  ModeSuggestion,
-  PreviewState,
-  ProjectConfig,
-  CoreCommand,
-  CoreEvent,
-  DiffFile,
-  ProjectCommands,
-  Role,
-  RunFile,
-  RunSummary,
-  ToolInfo,
-  ToolName,
-} from '@purpleflow/core';
+// Контракт IPC: мост окна (preload), сообщения main ↔ utilityProcess ядра. Сам API ядра — CoreApi в @purpleflow/core.
+import type { CoreApi, AgentKind, Models, CoreEvent, Role, ToolName } from '@purpleflow/core';
+
+export type { ChangeDocs, CoreApi } from '@purpleflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
 export interface PublicSettings {
@@ -136,76 +108,68 @@ export interface AccountApi {
   usage(q: { from: string; to: string; bucket: UsageBucket; keyIds: number[] }): Promise<AccountResult<AccountUsage>>;
 }
 
-export interface ChangeDocs {
-  proposal: string;
-  tasks: string;
-  design: string;
-  specs: { path: string; content: string }[];
-}
-
-/** Методы ядра, доступные окну (выполняются в utilityProcess). */
-export interface CoreApi {
-  dispatch(cmd: CoreCommand): Promise<{ runId: string }>;
-  listRuns(): Promise<RunSummary[]>;
-  getRun(id: string): Promise<RunFile | null>;
-  getLog(id: string): Promise<string>;
-  getDiff(id: string): Promise<DiffFile[]>;
-  /** Изменённые файлы без содержимого — счётчик на вкладке «Код». */
-  getChangedFiles(id: string): Promise<string[]>;
-  getChangeDocs(id: string): Promise<ChangeDocs>;
-  detectTools(): Promise<Record<ToolName, ToolInfo>>;
-  testConnection(): Promise<ConnectionCheck[]>;
-  detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
-  isDriving(id: string): Promise<boolean>;
-  listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }>;
-  getAttachment(id: string, index: number): Promise<string | null>;
-  detectCommandsAI(dir: string): Promise<AiCommands>;
-  getProjectConfig(dir: string): Promise<ProjectConfig | null>;
-  suggestMode(task: string): Promise<ModeSuggestion>;
-  getVisualShot(id: string, file: string): Promise<string | null>;
-  /** Проверка команд без запуска: скрипты npm/pnpm/yarn есть в package.json нужной папки. */
-  checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>>;
-  getKnowledge(dir: string): Promise<ProjectKnowledge>;
-  saveKnowledge(dir: string, k: ProjectKnowledge): Promise<ProjectKnowledge>;
-  refreshProfile(dir: string): Promise<ProjectKnowledge>;
-  prReady(id: string): Promise<string | null>;
-  getPrStatus(id: string): Promise<PrStatus | null>;
-  getPrDetails(id: string): Promise<PrDetails | null>;
-  getStorage(): Promise<StorageItem[]>;
-  cleanStorage(id: StorageItem['id']): Promise<number>;
-  startPreview(id: string): Promise<PreviewState>;
-  stopPreview(id: string): Promise<void>;
-  getPreview(id: string): Promise<PreviewState>;
-  saveProjectConfig(dir: string, cfg: Omit<ProjectConfig, 'updatedAt'>): Promise<ProjectConfig>;
-  listProjects(): Promise<ProjectListItem[]>;
-  projectOverview(dir: string): Promise<ProjectOverview>;
-  forgetProject(dir: string): Promise<void>;
-  projectBranches(dir: string, fetch?: boolean): Promise<ProjectBranches>;
-  cleanWorkingCopy(dir: string, how: 'stash' | 'discard'): Promise<{ files: number }>;
-  checkEnvironment(dir: string): Promise<EnvCheck>;
-  nextPartDraft(runId: string): Promise<NextPartDraft | null>;
-  projectStats(dir: string): Promise<ProjectStats>;
-  /** Чат менеджера прогона; thinking — ответ ещё готовится. */
-  getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }>;
-  askManager(id: string, text: string): Promise<ManagerMessage[]>;
-  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]>;
-  /** Чаты: разговор с агентом вне конвейера. Ответ приходит событиями chat.updated. */
-  listChats(): Promise<ChatSummary[]>;
-  getChat(id: string): Promise<{ chat: ChatFile; busy: boolean } | null>;
-  createChat(o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean }): Promise<ChatFile>;
-  updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): Promise<ChatFile>;
-  deleteChat(id: string): Promise<void>;
-  sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void>;
-  stopChat(id: string): Promise<void>;
-  /** Убрать сообщение из очереди, пока агент его не получил. */
-  unqueueChat(id: string, messageId: string): Promise<ChatFile>;
-  chatToTask(id: string): Promise<NextPartDraft>;
-  /** Незакоммиченные изменения проекта чата относительно HEAD. */
-  getChatDiff(id: string): Promise<DiffFile[]>;
-  getChatChangedFiles(id: string): Promise<string[]>;
-}
-
 export type CoreMethod = keyof CoreApi;
+
+/**
+ * Методы ядра, которые окно может вызвать через мост. Record по всем ключам CoreApi: забытый или лишний метод —
+ * ошибка компиляции; preload строит из него window.purpleflow.core, core-host — проверку входящих вызовов.
+ */
+export const CORE_METHODS: Record<CoreMethod, true> = {
+  dispatch: true,
+  listRuns: true,
+  getRun: true,
+  getLog: true,
+  getDiff: true,
+  getChangedFiles: true,
+  getChangeDocs: true,
+  detectTools: true,
+  testConnection: true,
+  detectProject: true,
+  isDriving: true,
+  listBranches: true,
+  getAttachment: true,
+  detectCommandsAI: true,
+  getProjectConfig: true,
+  suggestMode: true,
+  getVisualShot: true,
+  checkCommands: true,
+  getKnowledge: true,
+  saveKnowledge: true,
+  refreshProfile: true,
+  prReady: true,
+  getPrStatus: true,
+  getPrDetails: true,
+  getStorage: true,
+  cleanStorage: true,
+  startPreview: true,
+  stopPreview: true,
+  getPreview: true,
+  saveProjectConfig: true,
+  listProjects: true,
+  projectOverview: true,
+  forgetProject: true,
+  projectBranches: true,
+  cleanWorkingCopy: true,
+  checkEnvironment: true,
+  nextPartDraft: true,
+  projectStats: true,
+  getManagerChat: true,
+  askManager: true,
+  resolveManagerAction: true,
+  listChats: true,
+  getChat: true,
+  createChat: true,
+  updateChat: true,
+  deleteChat: true,
+  sendChat: true,
+  stopChat: true,
+  unqueueChat: true,
+  chatToTask: true,
+  getChatDiff: true,
+  getChatChangedFiles: true,
+};
+
+export const coreMethodNames = Object.keys(CORE_METHODS) as CoreMethod[];
 
 export interface PurpleFlowBridge {
   core: CoreApi;

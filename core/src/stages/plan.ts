@@ -1,19 +1,26 @@
+// Стадии «Уточнение» и «План»: вопросы к человеку, proposal/tasks/specs от планировщика и валидация OpenSpec.
 import fs from 'node:fs';
 import path from 'node:path';
 import { c } from '../agents/common.js';
-import { OpenSpec } from '../openspec.js';
+import type { Kernel } from '../kernel.js';
 import { modeOf } from '../modes.js';
-import type { RunFile } from '../types.js';
+import { OpenSpec } from '../openspec.js';
 import { countPhases, firstLine, parseFocusTests, parseQuestions, planTitle } from '../parse.js';
 import { PLAN_RETRIES } from '../runtime.js';
-import type { Orchestrator } from '../orchestrator.js';
-export async function stageClarify(h: Orchestrator, run: RunFile) {
-  h.startBaseChecks(run);
+import { runRole } from '../services/agents.js';
+import { attachmentsBlock } from '../services/attachments.js';
+import { ensureProfile } from '../services/projects.js';
+import { feedbackBlock, modeRules, taskText } from '../services/prompting.js';
+import { getChangeDocs } from '../services/runs.js';
+import type { RunFile } from '../types.js';
+import { captureBaseChecks, flushBaseChecks, runChecks, settleBaseChecks, startBaseChecks } from './checks.js';
+export async function stageClarify(h: Kernel, run: RunFile) {
+  startBaseChecks(h, run);
   const attempt = h.begin(run, 'clarify', run.models.planner);
   // Профиль проекта собирается один раз — дальше его получают все агенты.
-  await h.ensureProfile(run, attempt);
-  const prompt = h.prompts.render('clarify.md', { task: run.task, attachments: h.attachmentsBlock(run) });
-  const res = await h.runRole(run, 'planner', { prompt, readOnly: true, outputSchema: h.prompts.json<object>('clarify.schema.json') });
+  await ensureProfile(h, run, attempt);
+  const prompt = h.prompts.render('clarify.md', { task: run.task, attachments: attachmentsBlock(h, run) });
+  const res = await runRole(h, run, 'planner', { prompt, readOnly: true, outputSchema: h.prompts.json<object>('clarify.schema.json') });
   h.afterAgent(run, attempt, res);
   const questions = parseQuestions(res.text);
   if (!questions.length) {
@@ -22,7 +29,7 @@ export async function stageClarify(h: Orchestrator, run: RunFile) {
     h.save(run);
     return;
   }
-  h.flushBaseChecks(run);
+  flushBaseChecks(h, run);
   run.clarify = { questions };
   h.log(
     run,
@@ -35,7 +42,7 @@ export async function stageClarify(h: Orchestrator, run: RunFile) {
   h.save(run);
 }
 
-export async function answer(h: Orchestrator, id: string, answers: { q: string; a: string }[]) {
+export async function answer(h: Kernel, id: string, answers: { q: string; a: string }[]) {
   const r = h.mustLoad(id);
   if (r.next !== 'gate0' || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт ответов на вопросы');
   const clean = answers.map((x) => ({ q: x.q.trim(), a: x.a.trim() })).filter((x) => x.a);
@@ -58,10 +65,10 @@ export async function answer(h: Orchestrator, id: string, answers: { q: string; 
   r.next = 'plan';
   r.status = 'running';
   h.save(r);
-  void h.drive(r);
+  void h.engine.drive(r);
 }
 
-export async function stagePlan(h: Orchestrator, run: RunFile) {
+export async function stagePlan(h: Kernel, run: RunFile) {
   // Новый план — новая постановка: прошлая сессия исполнителя к нему не относится.
   run.executorSession = undefined;
   const tools = await h.tools(['openspec']);
@@ -69,19 +76,19 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
 
   // Подготовка и линтер до правок шли в фоне с уточнения — здесь их дожидаемся (или делаем, если фона не было).
   // Тесты в эталон — после плана: план выберет, какие из них касаются задачи.
-  await h.settleBaseChecks(run);
-  await h.captureBaseChecks(run, false);
+  await settleBaseChecks(h, run);
+  await captureBaseChecks(h, run, false);
 
   const prompt = h.prompts.render('plan.md', {
     changeId: run.changeId,
-    task: h.taskText(run),
-    attachments: h.attachmentsBlock(run),
+    task: taskText(h, run),
+    attachments: attachmentsBlock(h, run),
     testCommand: run.testCommand || 'не задана',
-    feedback: h.feedbackBlock(run.feedback),
+    feedback: feedbackBlock(h, run.feedback),
   });
-  const res = await h.runRole(run, 'planner', {
+  const res = await runRole(h, run, 'planner', {
     prompt,
-    systemPrompt: h.prompts.raw('planner.system.md') + h.modeRules('planner', run),
+    systemPrompt: h.prompts.raw('planner.system.md') + modeRules(h, 'planner', run),
     openspec: true,
   });
   h.afterAgent(run, attempt, res);
@@ -103,10 +110,10 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
     });
   }
   if (v.valid && mode === 'epic') {
-    run.phases = Math.max(1, Math.min(8, countPhases((await h.getChangeDocs(run.id)).tasks)));
+    run.phases = Math.max(1, Math.min(8, countPhases((await getChangeDocs(h, run.id)).tasks)));
   }
   if (v.valid) {
-    const focus = parseFocusTests((await h.getChangeDocs(run.id)).proposal);
+    const focus = parseFocusTests((await getChangeDocs(h, run.id)).proposal);
     run.focusTestCommand = focus && run.testCommand && focus !== run.testCommand ? focus : undefined;
     if (run.focusTestCommand)
       h.log(run, c.dim(`Тесты задачи: \`${run.focusTestCommand}\` — на каждой попытке; полный набор — перед приёмкой.`) + '\n');
@@ -114,7 +121,7 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   if (v.valid && mode === 'bug') {
     // Воспроизведение засчитано, только если проверки на текущем коде красные.
     h.log(run, c.dim('Проверяем, что баг воспроизведён: проверки должны упасть…') + '\n');
-    const { result } = await h.runChecks(run, run.focusTestCommand || run.testCommand);
+    const { result } = await runChecks(h, run, run.focusTestCommand || run.testCommand);
     run.repro = result;
     if (!result.checks?.length) {
       v.valid = false;
@@ -134,7 +141,7 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   }
   if (v.valid) {
     h.log(run, c.mint('✓ openspec validate: изменение валидно') + '\n');
-    const proposal = (await h.getChangeDocs(run.id)).proposal;
+    const proposal = (await getChangeDocs(h, run.id)).proposal;
     const title = planTitle(proposal);
     // Планировщик разбил большую задачу: этот план — первая часть, остальное — в «Next Parts».
     run.nextParts = /^##\s+Next Parts/m.test(proposal) || undefined;
@@ -148,7 +155,7 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
     run.next = 'gate1';
     h.save(run);
     // Пока человек читает план, тесты задачи снимаются на коде до правок.
-    h.startBaseChecks(run, 'plan');
+    startBaseChecks(h, run, 'plan');
     return;
   }
   const issues = v.issues.map((i) => `- [${i.level}] ${i.path ? i.path + ': ' : ''}${i.message}`).join('\n');
@@ -172,9 +179,9 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
  * С чего начать исполнителю: файлы, которые план называет в proposal и tasks.md, — чтобы не изучать проект заново.
  * Профиль проекта у него и так в системном промпте.
  */
-export async function startFilesBlock(h: Orchestrator, run: RunFile): Promise<string> {
+export async function startFilesBlock(h: Kernel, run: RunFile): Promise<string> {
   if (modeOf(run) === 'quick') return '';
-  const docs = await h.getChangeDocs(run.id).catch(() => null);
+  const docs = await getChangeDocs(h, run.id).catch(() => null);
   if (!docs) return '';
   const text = `${docs.proposal}\n${docs.tasks}`;
   const paths = new Set<string>();

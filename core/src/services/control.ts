@@ -1,10 +1,13 @@
+// Управление прогоном на ходу: заметка исполнителю, пауза, перезапуск реализации, возврат к плану.
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
+import type { Kernel } from '../kernel.js';
 import { MODE_LIMIT, modeOf } from '../modes.js';
 import { availableActions, replansLeft } from '../route.js';
-import { isGate, STAGE_TITLES } from '../stages.js';
+import { isGate, STAGE_TITLES } from '../stage-info.js';
 import type { ControlAction, RunFile } from '../types.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { stopPreview } from './preview.js';
+import { diffBase, envFilesOf } from './workspace.js';
 
 const ACTION_TITLE: Record<ControlAction['kind'], string> = {
   note: 'заметка агенту',
@@ -17,7 +20,7 @@ const ACTION_TITLE: Record<ControlAction['kind'], string> = {
  * Управление прогоном на ходу. Заметка и пауза ждут ближайшей контрольной точки (перед стадией),
  * «переделать» и «к плану» прерывают текущую стадию сразу — как «Пропустить проверки».
  */
-export async function control(h: Orchestrator, id: string, action: ControlAction) {
+export async function control(h: Kernel, id: string, action: ControlAction) {
   const before = h.mustLoad(id);
   if (!availableActions(before).includes(action.kind)) {
     if (action.kind === 'replan' && replansLeft(before) <= 0)
@@ -44,9 +47,9 @@ export async function control(h: Orchestrator, id: string, action: ControlAction
     return;
   }
 
-  await h.halt(id);
+  await h.engine.halt(id);
   const r = h.mustLoad(id);
-  await h.stopPreview(id);
+  await stopPreview(h, id);
   const label = action.kind === 'replan' ? 'Возврат к плану' : 'Переделать попытку';
   for (const a of r.attempts) {
     if (a.status !== 'running') continue;
@@ -69,15 +72,15 @@ export async function control(h: Orchestrator, id: string, action: ControlAction
   }
   r.status = 'running';
   h.save(r);
-  void h.drive(r);
+  void h.engine.drive(r);
 }
 
 /** Вернуться к плану: снимок работы, по желанию — откат кода, планировщику — что сделано и почему вернули. */
-async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boolean) {
+async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) {
   const now = new Date().toISOString();
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
-  const base = h.diffBase(r);
+  const base = diffBase(h, r);
   const n = (r.interventions ?? []).filter((i) => i.kind === 'replan').length + 1;
   const ref = `refs/purpleflow/${r.id}/replan-${n}`;
   let snapshot: string | undefined;
@@ -89,7 +92,7 @@ async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boo
   }
   // Файлы плана (openspec/) правит планировщик — их не откатываем.
   const code = (await git.changedFiles(r.worktreePath, base).catch(() => [] as string[])).filter(
-    (f) => !f.startsWith('openspec/') && !h.envFilesOf(r).includes(f),
+    (f) => !f.startsWith('openspec/') && !envFilesOf(h, r).includes(f),
   );
   if (!keepCode && code.length) {
     if (!snapshot)
@@ -133,7 +136,7 @@ async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boo
  * планировщика или исполнителя: проверки и ревью перезаписывают обратную связь, и заметка бы потерялась.
  * true — прогон поставлен на паузу.
  */
-export function applyPending(h: Orchestrator, run: RunFile): boolean {
+export function applyPending(h: Kernel, run: RunFile): boolean {
   const list = run.pending ?? [];
   if (!list.length) return false;
   const now = new Date().toISOString();

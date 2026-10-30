@@ -2,7 +2,7 @@
 
 import type { runClaude } from './agents/claude.js';
 import type { runCodex } from './agents/codex.js';
-import type { CoreEvent, CoreSettings } from './types.js';
+import type { CheckResult, CoreEvent, CoreSettings } from './types.js';
 
 export interface CoreOptions {
   dataDir: string;
@@ -37,3 +37,12 @@ export const INLINE_DIFF = 60_000;
 export const RUN_JSON_GLOB = 'openspec/changes/**/run.json';
 
 export const CHECK_NAME = { lint: 'линтер', test: 'тесты' } as const;
+
+/** Подготовка и исходные проверки прогона, идущие в фоне параллельно с уточнением и планом. */
+export interface BasePrep {
+  promise: Promise<void>;
+  /** undefined — ещё идёт. */
+  result?: { at: string; checks: CheckResult[]; prepared?: boolean; error?: string; stopped?: boolean };
+  log: string[];
+  applied?: boolean;
+}

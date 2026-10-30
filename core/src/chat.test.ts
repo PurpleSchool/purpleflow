@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { Orchestrator, type CoreSettings } from './orchestrator.js';
+import { Orchestrator } from './orchestrator.js';
+import type { CoreSettings } from './types.js';
 import { claudeArgs } from './agents/claude.js';
 import { codexArgs } from './agents/codex.js';
 import { emptyUsage, type AgentRunOptions } from './agents/common.js';
@@ -39,7 +40,7 @@ function makeCore(runners: { claude?: unknown; codex?: unknown }) {
 /** Ждём, пока ход чата закончится. */
 async function untilIdle(core: Orchestrator, id: string): Promise<ChatFile> {
   for (let i = 0; i < 200; i++) {
-    const c = core.getChat(id)!;
+    const c = (await core.getChat(id))!;
     if (!c.busy && !c.chat.messages.some((m) => m.pending)) return c.chat;
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -89,7 +90,7 @@ test('чат на claude: ответ кусками, шаги инструмен
   assert.doesNotMatch(calls[1].prompt, /Предыдущая переписка/);
 
   assert.deepEqual(
-    core.listChats().map((c) => c.id),
+    (await core.listChats()).map((c) => c.id),
     [chat.id],
   );
 });
@@ -115,7 +116,7 @@ test('чат: только чтение, смена агента переска�
   await untilIdle(core, chat.id);
   assert.deepEqual(claudeCalls[0].tools, ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch']);
 
-  core.updateChat(chat.id, { agent: 'codex' });
+  await core.updateChat(chat.id, { agent: 'codex' });
   await core.sendChat(chat.id, 'Второй вопрос');
   await untilIdle(core, chat.id);
   assert.equal(codexCalls[0].sandbox, 'read-only');
@@ -130,7 +131,7 @@ test('чат: только чтение, смена агента переска�
 
   await assert.rejects(core.sendChat(chat.id, '   '), /Пустое сообщение/);
   await core.deleteChat(chat.id);
-  assert.equal(core.getChat(chat.id), null);
+  assert.equal(await core.getChat(chat.id), null);
 });
 
 test('чат с правками в git-репозитории: ответ перечисляет изменённые за ход файлы', async () => {
@@ -204,21 +205,21 @@ test('чат: сообщение во время ответа встаёт в о
   await core.sendChat(chat.id, 'Только один тест');
   await core.sendChat(chat.id, 'math.test.js');
   await core.sendChat(chat.id, 'лишнее');
-  let c = core.getChat(chat.id)!;
+  let c = (await core.getChat(chat.id))!;
   assert.equal(c.busy, true);
   assert.deepEqual(
     c.chat.messages.filter((m) => m.queued).map((m) => m.text),
     ['Только один тест', 'math.test.js', 'лишнее'],
   );
-  core.unqueueChat(chat.id, c.chat.messages.at(-1)!.id);
-  assert.throws(() => core.unqueueChat(chat.id, c.chat.messages[0].id), /уже ушло/);
+  await core.unqueueChat(chat.id, c.chat.messages.at(-1)!.id);
+  await assert.rejects(core.unqueueChat(chat.id, c.chat.messages[0].id), /уже ушло/);
 
   // Ответ прерван — очередь уходит одним ходом, агент знает, что его прервали.
   gates[0]({ stopped: true });
   await until(() => gates.length === 2);
   assert.equal(calls[1].resume, calls[0].sessionId);
   assert.equal(calls[1].prompt, 'Я прервал твой предыдущий ответ.\n\nТолько один тест\n\nmath.test.js');
-  c = core.getChat(chat.id)!;
+  c = (await core.getChat(chat.id))!;
   assert.deepEqual(
     c.chat.messages.map((m) => (m.pending ? `${m.role}:…` : `${m.role}:${m.text}${m.queued ? ':q' : ''}${m.stopped ? ':stopped' : ''}`)),
     ['user:Прогони тесты', 'assistant:ответ 1:stopped', 'user:Только один тест', 'user:math.test.js', 'assistant:…'],
@@ -227,7 +228,7 @@ test('чат: сообщение во время ответа встаёт в о
   gates[1]({});
   await untilIdle(core, chat.id);
   assert.equal(calls.length, 2);
-  c = core.getChat(chat.id)!;
+  c = (await core.getChat(chat.id))!;
   assert.equal(c.busy, false);
   assert.equal(c.chat.messages.at(-1)!.text, 'ответ 2');
 });

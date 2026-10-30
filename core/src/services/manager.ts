@@ -1,13 +1,19 @@
+// Менеджер прогона: отвечает на вопросы человека по фактам прогона и предлагает действия, которые применяются кнопкой.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { Git } from '../git.js';
-import { run as runProc } from '../proc.js';
+import type { Kernel } from '../kernel.js';
 import { modeOf } from '../modes.js';
+import { run as runProc } from '../proc.js';
 import { availableActions, replansLeft } from '../route.js';
-import { isGate, STAGE_TITLES } from '../stages.js';
+import { isGate, STAGE_TITLES } from '../stage-info.js';
 import type { CommandAction, ManagerAction, ManagerMessage, RunFile } from '../types.js';
+import { service } from './agents.js';
+import { control } from './control.js';
 import { relatedBlock, relatedRepos } from './projects.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { taskText } from './prompting.js';
+import { getChangeDocs } from './runs.js';
+import { diffBase } from './workspace.js';
 
 /** Сколько последних сообщений переписки менеджер видит. */
 const HISTORY = 20;
@@ -30,17 +36,17 @@ const ACTIONS: Record<ManagerAction['kind'], string> = {
   replan: '`replan` — прервать и вернуться к плану; keepCode: true — сделанный код остаётся (по умолчанию), false — откатить',
 };
 
-export function getManagerChat(h: Orchestrator, id: string): ManagerMessage[] {
+export function getManagerChat(h: Kernel, id: string): ManagerMessage[] {
   return h.store.readChat(id);
 }
 
-function publish(h: Orchestrator, id: string, messages: ManagerMessage[]) {
+function publish(h: Kernel, id: string, messages: ManagerMessage[]) {
   h.store.writeChat(id, messages);
   h.emit({ type: 'manager.updated', runId: id, messages, thinking: h.managerBusy.has(id) });
 }
 
 /** Вопрос или просьба человека: менеджер отвечает по фактам прогона и, если нужно, предлагает действие. */
-export async function askManager(h: Orchestrator, id: string, text: string): Promise<ManagerMessage[]> {
+export async function askManager(h: Kernel, id: string, text: string): Promise<ManagerMessage[]> {
   const run = h.mustLoad(id);
   if (!text.trim()) throw new Error('Пустое сообщение');
   if (h.managerBusy.has(id)) throw new Error('Менеджер ещё отвечает на прошлое сообщение');
@@ -74,7 +80,7 @@ export async function askManager(h: Orchestrator, id: string, text: string): Pro
     });
     // Только чтение: файлы проекта и прогона. Всё, что меняет состояние, — через предложенное действие и кнопку человека.
     const cwd = hasWorktree(run) ? run.worktreePath : run.projectPath;
-    const res = await h.service({
+    const res = await service(h, {
       prompt,
       group: `${id}:manager`,
       timeoutMs: 5 * 60_000,
@@ -104,13 +110,13 @@ export async function askManager(h: Orchestrator, id: string, text: string): Pro
 }
 
 /** Человек принял или отклонил предложение менеджера. */
-export async function resolveManagerAction(h: Orchestrator, id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> {
+export async function resolveManagerAction(h: Kernel, id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> {
   const messages = h.store.readChat(id);
   const m = messages.find((x) => x.id === messageId);
   if (!m?.action || m.actionState !== 'proposed') throw new Error('Это предложение уже неактуально');
   const action = m.action;
   if (apply && action.kind === 'command') return runCommand(h, id, messages, m, action);
-  if (apply && action.kind !== 'command') await h.control(id, action);
+  if (apply && action.kind !== 'command') await control(h, id, action);
   m.actionState = apply ? 'applied' : 'dismissed';
   publish(h, id, messages);
   return messages;
@@ -120,7 +126,7 @@ const hasWorktree = (r: RunFile) => !r.workspacePending && !r.worktreeRemoved &&
 
 /** Команда, подтверждённая человеком: выполняется в папке проекта или прогона, вывод — отдельным сообщением. */
 async function runCommand(
-  h: Orchestrator,
+  h: Kernel,
   id: string,
   messages: ManagerMessage[],
   m: ManagerMessage,
@@ -219,9 +225,9 @@ const mins = (from: string, to?: string) => {
 };
 
 /** Факты о прогоне для менеджера: структурированно, с ограничением объёма — не пересказ сырого лога. */
-export async function managerSnapshot(h: Orchestrator, run: RunFile): Promise<string> {
+export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> {
   const out: string[] = [];
-  out.push(`Задача: ${clip(h.taskText(run), 3000)}`);
+  out.push(`Задача: ${clip(taskText(h, run), 3000)}`);
   out.push(
     `Режим: ${modeOf(run)}${run.autopilot ? ', автопилот' : ''}. Статус: ${STATUS[run.status]}. Сейчас: ${STAGE_TITLES[run.next]}.${run.message ? ` Сообщение: ${run.message}` : ''}`,
   );
@@ -232,7 +238,7 @@ export async function managerSnapshot(h: Orchestrator, run: RunFile): Promise<st
     `\n## Ход прогона (старые — выше)\n${stages.map((a) => `- ${STAGE_TITLES[a.stage]} №${a.attempt}: ${a.status}, ${mins(a.startedAt, a.endedAt)}${a.summary ? ` — ${a.summary}` : ''}${a.error ? ` (ошибка: ${clip(a.error, 300)})` : ''}`).join('\n')}`,
   );
 
-  const docs = modeOf(run) === 'quick' ? null : await h.getChangeDocs(run.id).catch(() => null);
+  const docs = modeOf(run) === 'quick' ? null : await getChangeDocs(h, run.id).catch(() => null);
   if (docs?.tasks.trim()) out.push(`\n## План (tasks.md, [x] — сделано)\n${clip(docs.tasks, 6000)}`);
 
   const test = run.tests.at(-1);
@@ -257,7 +263,7 @@ export async function managerSnapshot(h: Orchestrator, run: RunFile): Promise<st
 
   const tools = await h.tools(['git']).catch(() => null);
   if (tools && !run.workspacePending && !run.worktreeRemoved) {
-    const files = await new Git(tools.git, h.opts.env).changedFiles(run.worktreePath, h.diffBase(run)).catch(() => [] as string[]);
+    const files = await new Git(tools.git, h.opts.env).changedFiles(run.worktreePath, diffBase(h, run)).catch(() => [] as string[]);
     const code = files.filter((f) => !f.startsWith('openspec/'));
     out.push(
       `\n## Изменённые файлы (${code.length})\n${
@@ -297,7 +303,7 @@ export async function managerSnapshot(h: Orchestrator, run: RunFile): Promise<st
 }
 
 /** Git проекта для вопросов о ветках, тегах и релизах — менеджер сам git не запускает. */
-async function gitFacts(h: Orchestrator, run: RunFile, bin: string): Promise<string> {
+async function gitFacts(h: Kernel, run: RunFile, bin: string): Promise<string> {
   const g = (args: string[]) =>
     runProc(bin, args, { cwd: run.projectPath, env: h.opts.env, timeoutMs: 15_000 })
       .then((r) => (r.code === 0 ? r.stdout.trim() : ''))

@@ -1,19 +1,21 @@
+// Рабочая копия прогона: worktree или ветка в проекте, файлы окружения, зависимости, подготовка приложения.
 import fs from 'node:fs';
 import path from 'node:path';
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
+import type { Kernel } from '../kernel.js';
+import { modeOf } from '../modes.js';
 import { OpenSpec } from '../openspec.js';
 import { run as runProc } from '../proc.js';
-import { modeOf } from '../modes.js';
 import type { RunFile } from '../types.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { getProjectConfig } from './projects.js';
 /** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
-export function diffBase(h: Orchestrator, run: RunFile): string {
+export function diffBase(h: Kernel, run: RunFile): string {
   return run.prRound && run.roundBase ? run.roundBase : run.baseCommit;
 }
 
 /** Рабочая копия прогона: worktree или новая ветка в проекте, OpenSpec, файлы окружения. Для очереди — в момент старта. */
-export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
+export async function prepareWorkspace(h: Kernel, run: RunFile) {
   const tools = await h.tools(['git', 'openspec']);
   const git = new Git(tools.git, h.opts.env);
   if (run.workspace === 'branch') {
@@ -32,10 +34,10 @@ export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
   if (modeOf(run) !== 'quick') await new OpenSpec(tools.openspec, h.opts.env).ensureInit(run.worktreePath, 'init');
   run.workspacePending = undefined;
   h.save(run);
-  h.copyEnvFiles(run);
-  await h
-    .cloneDeps(run)
-    .catch((e) => h.warn(run, `Не удалось скопировать зависимости — команда подготовки поставит их заново: ${(e as Error).message}`));
+  copyEnvFiles(h, run);
+  await cloneDeps(h, run).catch((e) =>
+    h.warn(run, `Не удалось скопировать зависимости — команда подготовки поставит их заново: ${(e as Error).message}`),
+  );
   h.save(run);
   h.log(
     run,
@@ -46,14 +48,14 @@ export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
 }
 
 /** Файлы окружения прогона: явный список или найденные в проекте (у прогонов без списка — из команд проекта). */
-export function envFilesOf(h: Orchestrator, run: RunFile): string[] {
+export function envFilesOf(h: Kernel, run: RunFile): string[] {
   if (run.workspace === 'branch') return [];
-  return run.envFiles ?? h.getProjectConfig(run.projectPath)?.envFiles ?? [];
+  return run.envFiles ?? getProjectConfig(h, run.projectPath)?.envFiles ?? [];
 }
 
 /** Скопировать .env-файлы проекта в worktree прогона (только недостающие; в режиме «ветка» они и так на месте). */
-export function copyEnvFiles(h: Orchestrator, run: RunFile) {
-  const files = h.envFilesOf(run);
+export function copyEnvFiles(h: Kernel, run: RunFile) {
+  const files = envFilesOf(h, run);
   const copied: string[] = [];
   for (const rel of files) {
     const from = path.join(run.projectPath, rel);
@@ -75,7 +77,7 @@ export function copyEnvFiles(h: Orchestrator, run: RunFile) {
  * почти мгновенно, места не занимает, и копия независимая — установка пакетов в worktree не трогает проект.
  * Lock-файлы совпадают — установка пропускается; нет — команда подготовки доустановит поверх копии.
  */
-export async function cloneDeps(h: Orchestrator, run: RunFile) {
+export async function cloneDeps(h: Kernel, run: RunFile) {
   if (run.workspace === 'branch' || process.platform === 'win32') return;
   const found: string[] = [];
   const walk = (rel: string, depth: number) => {
@@ -138,10 +140,10 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
  * Упала — ошибка с хвостом вывода: без миграций приложение всё равно не заработает.
  */
 export async function prepareApp(
-  h: Orchestrator,
+  h: Kernel,
   o: { repo: string; cwd: string; group: string; onOutput?: (t: string) => void },
 ): Promise<void> {
-  const cmd = h.getProjectConfig(o.repo)?.prepareCommand?.trim();
+  const cmd = getProjectConfig(h, o.repo)?.prepareCommand?.trim();
   if (!cmd) return;
   let out = '';
   const take = (t: string) => {
@@ -167,4 +169,15 @@ export async function prepareApp(
         .slice(-1500)}`,
     );
   }
+}
+
+/** Режим «ветка»: продолжать можно, только если проект всё ещё на ветке прогона. */
+export async function ensureOnBranch(h: Kernel, r: RunFile) {
+  if (r.workspace !== 'branch') return;
+  const tools = await h.tools(['git']);
+  const cur = await new Git(tools.git, h.opts.env).currentBranch(r.projectPath);
+  if (cur !== r.branch)
+    throw new Error(
+      `Проект сейчас на ветке ${cur ?? 'detached HEAD'}. Переключитесь на ${r.branch} (git checkout ${r.branch}) и продолжите.`,
+    );
 }

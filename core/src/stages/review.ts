@@ -1,19 +1,25 @@
+// Стадия «Ревью»: независимый ревьюер, перепроверка блокирующих замечаний, сводка изменений и карта плана.
 import { addUsage, c, emptyUsage, type AgentResult } from '../agents/common.js';
+import { isImageFile } from '../files.js';
 import { Git } from '../git.js';
-import { afterReview } from '../route.js';
 import { formatItem, originTag } from '../items.js';
 import { parseJsonReply } from '../json.js';
-import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from '../reviewdiff.js';
+import type { Kernel } from '../kernel.js';
 import { modeOf } from '../modes.js';
-import type { ReviewItem, ReviewResult, RunFile, StageAttempt } from '../types.js';
-import { isImageFile } from '../files.js';
 import { parseReview, parseVerdicts } from '../parse.js';
+import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from '../reviewdiff.js';
+import { afterReview } from '../route.js';
 import { INLINE_DIFF, RUN_JSON_GLOB } from '../runtime.js';
-import { STAGE_TITLES } from '../stages.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { runRole, service } from '../services/agents.js';
+import { filesBlock } from '../services/attachments.js';
+import { taskText } from '../services/prompting.js';
+import { getChangeDocs } from '../services/runs.js';
+import { diffBase, envFilesOf } from '../services/workspace.js';
+import { STAGE_TITLES } from '../stage-info.js';
+import type { ReviewItem, ReviewResult, RunFile, StageAttempt } from '../types.js';
 /** После прогона: уроки из правок человека, ревью, визуальной проверки и сбоев проверок. В фоне, не задерживает коммит. */
 /** Что за круг принимает человек: от этого зависит, как читать дифф. */
-export function summaryContext(h: Orchestrator, run: RunFile): string {
+export function summaryContext(h: Kernel, run: RunFile): string {
   const round = run.prRound ? run.prRounds?.at(-1) : undefined;
   if (round?.kind === 'update') {
     return `\nВажно: это не новая работа по задаче. В ветку задачи влита свежая ${run.pr?.base ?? 'базовая ветка'}, в файлах были конфликты, и агент их разрешил. Дифф — изменения этих файлов от состояния ветки до слияния: код, пришедший из ${run.pr?.base ?? 'базовой ветки'}, — это не отклонение от задачи. Опиши, что пришло из базовой ветки и как разрешены конфликты; проверь, что сохранены обе стороны и не осталось маркеров конфликта.\n`;
@@ -25,7 +31,7 @@ export function summaryContext(h: Orchestrator, run: RunFile): string {
 }
 
 /** «Что изменилось»: короткая сводка диффа для приёмки — в фоне, приёмку не задерживает. */
-export async function summarizeChanges(h: Orchestrator, id: string) {
+export async function summarizeChanges(h: Kernel, id: string) {
   const run = h.store.load(id);
   if (!run || run.next !== 'gate2') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
@@ -33,9 +39,9 @@ export async function summarizeChanges(h: Orchestrator, id: string) {
   const tools = await h.tools(['git']).catch(() => null);
   if (!tools) return;
   const files = run.roundFiles;
-  let diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, h.diffBase(run), [
+  let diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, diffBase(h, run), [
     RUN_JSON_GLOB,
-    ...h.envFilesOf(run),
+    ...envFilesOf(h, run),
     ...GENERATED_GLOBS,
   ]);
   if (files?.length)
@@ -47,13 +53,11 @@ export async function summarizeChanges(h: Orchestrator, id: string) {
   // Сводке хватает одной части: код — первым, большие тексты урезаны, остальное — списком.
   const packed = packReview(diff, 60_000, 1);
   diff = (packed.parts[0] ?? '') + (packed.omitted.length ? `\n… ещё файлы, не вошедшие в дифф: ${packed.omitted.join(', ')}\n` : '');
-  const res = await h
-    .service({
-      prompt: h.prompts.render('summary.md', { task: h.taskText(run), context: h.summaryContext(run), diff }),
-      group: `${run.id}:summary`,
-      timeoutMs: 3 * 60_000,
-    })
-    .catch(() => null);
+  const res = await service(h, {
+    prompt: h.prompts.render('summary.md', { task: taskText(h, run), context: summaryContext(h, run), diff }),
+    group: `${run.id}:summary`,
+    timeoutMs: 3 * 60_000,
+  }).catch(() => null);
   if (!res?.ok || !res.text.trim()) return;
   // Пока сводка писалась, человек мог уже принять решение — пишем только в ту же приёмку.
   const fresh = h.store.load(id);
@@ -64,34 +68,32 @@ export async function summarizeChanges(h: Orchestrator, id: string) {
 }
 
 /** Группы файлов диффа по пунктам плана — считаются к каждой приёмке, если есть tasks.md. */
-export async function mapFilesToPlan(h: Orchestrator, id: string) {
+export async function mapFilesToPlan(h: Kernel, id: string) {
   const run = h.store.load(id);
   if (!run || modeOf(run) === 'quick') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
   if (run.taskMap?.attempt === attempt) return;
-  const docs = await h.getChangeDocs(id).catch(() => null);
+  const docs = await getChangeDocs(h, id).catch(() => null);
   if (!docs?.tasks.trim()) return;
   const tools = await h.tools(['git']).catch(() => null);
   if (!tools) return;
-  const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, h.diffBase(run), [
+  const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, diffBase(h, run), [
     RUN_JSON_GLOB,
-    ...h.envFilesOf(run),
+    ...envFilesOf(h, run),
     ...GENERATED_GLOBS,
   ]);
   const files = splitDiff(diff)
     .map((f) => ({ path: f.path, ...lineStats(f.text) }))
     .filter((f) => !f.path.startsWith('openspec/'));
   if (files.length < 4) return;
-  const res = await h
-    .service({
-      prompt: h.prompts.render('plan-map.md', {
-        tasks: docs.tasks.slice(0, 20_000),
-        files: files.map((f) => `- ${f.path} (+${f.add} −${f.del})`).join('\n'),
-      }),
-      group: `${run.id}:map`,
-      timeoutMs: 3 * 60_000,
-    })
-    .catch(() => null);
+  const res = await service(h, {
+    prompt: h.prompts.render('plan-map.md', {
+      tasks: docs.tasks.slice(0, 20_000),
+      files: files.map((f) => `- ${f.path} (+${f.add} −${f.del})`).join('\n'),
+    }),
+    group: `${run.id}:map`,
+    timeoutMs: 3 * 60_000,
+  }).catch(() => null);
   if (!res?.ok) return;
   let groups: { title: string; files: string[] }[];
   try {
@@ -121,7 +123,7 @@ export async function mapFilesToPlan(h: Orchestrator, id: string) {
  * Повторное ревью — продолжение прошлого: ревьюер видит свои блокирующие замечания и ответ исполнителя,
  * чтобы проверить исправления, а не читать большой дифф каждый раз заново и находить новое.
  */
-export function previousReviewBlock(h: Orchestrator, run: RunFile): string {
+export function previousReviewBlock(h: Kernel, run: RunFile): string {
   const prev = run.reviews.at(-1);
   if (!prev?.blocking.length) return '';
   const reviewAt = Date.parse(prev.at);
@@ -140,8 +142,8 @@ export function previousReviewBlock(h: Orchestrator, run: RunFile): string {
   });
 }
 
-export async function stageReview(h: Orchestrator, run: RunFile) {
-  const { review } = await h.reviewPass(run);
+export async function stageReview(h: Kernel, run: RunFile) {
+  const { review } = await reviewPass(h, run);
   if (!review.blocking.length) {
     // Порядок: ревью диффа (дёшево, без окружения) → визуальная проверка → приёмка со свежими скриншотами.
     run.next = afterReview(run);
@@ -149,7 +151,7 @@ export async function stageReview(h: Orchestrator, run: RunFile) {
     h.save(run);
     return;
   }
-  run.feedback = { source: 'review', text: h.reviewFeedback(review) };
+  run.feedback = { source: 'review', text: reviewFeedback(h, review) };
   h.nextImplementOrLimit(run, `Ревьюер оставил блокирующие замечания, а ${run.implAttemptsUsed} попытки реализации исчерпаны.`);
 }
 
@@ -157,7 +159,7 @@ export async function stageReview(h: Orchestrator, run: RunFile) {
  * Ревью диффа: попытка стадии, агент, разбор ответа, запись в run.reviews. Куда дальше — решает вызывающий.
  * quiet — вывод ревьюера копится и пишется в лог одним куском в конце (ревью идёт параллельно с проверками).
  */
-export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): Promise<{ review: ReviewResult; log: string }> {
+export async function reviewPass(h: Kernel, run: RunFile, quiet = false): Promise<{ review: ReviewResult; log: string }> {
   const tools = await h.tools(['git']);
   let buffered = '';
   // Параллельно с проверками весь лог ревью копится и пишется одним куском: иначе строки двух стадий перемешаются.
@@ -168,7 +170,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
   const attempt = h.begin(run, 'review', run.models.reviewer, quiet);
   const git = new Git(tools.git, h.opts.env);
   // Генерируемое (tsbuildinfo, lock-файлы, сборки) не ревьюим; код — первым; крупный дифф — нескольким ревьюерам.
-  const diff = await git.diffText(run.worktreePath, h.diffBase(run), [RUN_JSON_GLOB, ...h.envFilesOf(run), ...GENERATED_GLOBS]);
+  const diff = await git.diffText(run.worktreePath, diffBase(h, run), [RUN_JSON_GLOB, ...envFilesOf(h, run), ...GENERATED_GLOBS]);
   // Один ревьюер на весь дифф: он видит стыки модулей, где чаще всего ошибки. Небольшой дифф — в промпт,
   // большой — списком файлов по важности, ревьюер читает их сам (packReview умеет делить на части — пока не делим).
   const packed = packReview(diff, Number.MAX_SAFE_INTEGER, 1);
@@ -187,7 +189,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
       .join('\n');
     return `Изменённые файлы — по важности: сначала код, потом тесты, миграции, тексты. Прочитай дифф **каждого** файла из списка (\`git diff ${base8} -- <файл>\`, можно сразу несколько файлов одной командой), а где нужно — и файл целиком. Не пропускай файлы и не ограничивайся первыми — замечания по непрочитанному коду ничего не стоят.\n\n${list}`;
   };
-  const docs = await h.getChangeDocs(run.id);
+  const docs = await getChangeDocs(h, run.id);
   const lastTest = run.tests[run.tests.length - 1];
   const n = Math.max(1, packed.parts.length);
   const extraFiles = [
@@ -202,7 +204,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
     .join('\n');
   if (n > 1) out(c.dim(`Дифф большой — ревью на ${n} ревьюеров параллельно, по модулям.`) + '\n');
 
-  const previous = h.previousReviewBlock(run);
+  const previous = previousReviewBlock(h, run);
   const promptFor = (i: number) =>
     h.prompts.render('review.md', {
       changeId: run.changeId,
@@ -229,7 +231,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
         run.attachments?.some(isImageFile)
           ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.'
           : '',
-        h.filesBlock(run),
+        filesBlock(h, run),
         run.visuals?.length
           ? 'Также прикреплены скриншоты приложения после изменений (визуальная проверка). Учитывай видимый результат.'
           : '',
@@ -242,7 +244,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
   const parallel = n > 1 || quiet;
   const results = await Promise.all(
     Array.from({ length: n }, (_, i) =>
-      h.runRole(run, 'reviewer', {
+      runRole(h, run, 'reviewer', {
         prompt: promptFor(i),
         ...(parallel
           ? {
@@ -301,7 +303,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
   const parsed = { blocking: uniq(parsedAll.flatMap((x) => x!.blocking)), notes: uniq(parsedAll.flatMap((x) => x!.notes)) };
   // Первое ревью — с проверкой найденного: второй ревьюер подтверждает каждое блокирующее по коду.
   if (!previous && parsed.blocking.length) {
-    const verified = await h.verifyBlocking(run, attempt, parsed.blocking, docs.proposal, out);
+    const verified = await verifyBlocking(h, run, attempt, parsed.blocking, docs.proposal, out);
     parsed.blocking = verified.blocking;
     parsed.notes = [...parsed.notes, ...verified.demoted];
   }
@@ -328,7 +330,7 @@ export async function reviewPass(h: Orchestrator, run: RunFile, quiet = false): 
 
 /** Второй проход ревью: подтвердить каждое блокирующее замечание по коду, ложные — убрать, мелкие — в заметки. */
 export async function verifyBlocking(
-  h: Orchestrator,
+  h: Kernel,
   run: RunFile,
   attempt: StageAttempt,
   items: ReviewItem[],
@@ -337,11 +339,11 @@ export async function verifyBlocking(
 ): Promise<{ blocking: ReviewItem[]; demoted: ReviewItem[] }> {
   const fmt = (i: ReviewItem) => formatItem(i, true);
   let buf = '';
-  const res = await h.runRole(run, 'reviewer', {
+  const res = await runRole(h, run, 'reviewer', {
     prompt: h.prompts.render('review-verify.md', {
       changeId: run.changeId,
       base: run.baseCommit.slice(0, 8),
-      proposal: `${h.taskText(run)}\n\n${proposal || ''}`.slice(0, 20_000),
+      proposal: `${taskText(h, run)}\n\n${proposal || ''}`.slice(0, 20_000),
       items: items.map((x, k) => `${k + 1}. ${fmt(x)}`).join('\n'),
     }),
     readOnly: true,
@@ -367,7 +369,7 @@ export async function verifyBlocking(
   return { blocking, demoted };
 }
 
-export function reviewFeedback(h: Orchestrator, review: ReviewResult): string {
+export function reviewFeedback(h: Kernel, review: ReviewResult): string {
   return (
     'Ревьюер (другая модель) нашёл блокирующие проблемы. Исправь каждую по существу — не выключай проверку, не прячи поведение за флагом и не ослабляй требование спецификации; если по существу исправить нельзя, так и напиши в отчёте, почему:\n' +
     review.blocking.map((i) => `- ${originTag(i)}${formatItem(i)}`).join('\n') +

@@ -1,15 +1,19 @@
+// Стадии «Проверки» и «Базовые проверки»: линтер и тесты, сравнение с исходным кодом, фоновый эталон.
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
-import { afterChecks, afterReview, reviewInParallel } from '../route.js';
+import type { Kernel } from '../kernel.js';
 import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from '../modes.js';
-import type { CheckResult, ReviewResult, RunFile, TestResult } from '../types.js';
 import { errorCount, failedTestNames } from '../parse.js';
-import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB } from '../runtime.js';
-import { StopSignal } from '../runtime.js';
-import type { Orchestrator } from '../orchestrator.js';
+import { afterChecks, afterReview, reviewInParallel } from '../route.js';
+import type { BasePrep } from '../runtime.js';
+import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB, StopSignal } from '../runtime.js';
+import { getProjectConfig } from '../services/projects.js';
+import { diffBase, envFilesOf } from '../services/workspace.js';
+import type { CheckResult, ReviewResult, RunFile, TestResult } from '../types.js';
+import { reviewFeedback, reviewPass } from './review.js';
 /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
 export async function runChecks(
-  h: Orchestrator,
+  h: Kernel,
   run: RunFile,
   testCommand = run.testCommand,
 ): Promise<{ result: TestResult; failed: CheckResult[] }> {
@@ -18,7 +22,7 @@ export async function runChecks(
   if (run.lintCommand) plan.push({ kind: 'lint', command: run.lintCommand });
   if (testCommand) plan.push({ kind: 'test', command: testCommand });
   const checks: CheckResult[] = [];
-  for (const p of plan) checks.push(await h.runCheck(run, p.kind, p.command, s.testTimeoutMin));
+  for (const p of plan) checks.push(await runCheck(h, run, p.kind, p.command, s.testTimeoutMin));
   const failed = checks.filter((x) => !x.passed);
   const result: TestResult = checks.length
     ? {
@@ -45,7 +49,7 @@ export async function runChecks(
 }
 
 export async function runCheck(
-  h: Orchestrator,
+  h: Kernel,
   run: RunFile,
   kind: CheckResult['kind'],
   command: string,
@@ -83,16 +87,11 @@ export async function runCheck(
  * запускаем на исходном коде (изменения прогона на это время в stash). Не из‑за задачи — пометка unstable,
  * иначе — результат повтора (он свежее) для исполнителя.
  */
-export async function probeTests(
-  h: Orchestrator,
-  run: RunFile,
-  check: CheckResult,
-  beforeStash?: Promise<unknown> | null,
-): Promise<CheckResult> {
+export async function probeTests(h: Kernel, run: RunFile, check: CheckResult, beforeStash?: Promise<unknown> | null): Promise<CheckResult> {
   const s = h.opts.getSettings();
   const first = failedTestNames(check.output);
   h.log(run, c.amber('↻ тесты красные — повторяю один раз, чтобы отличить нестабильный тест от настоящей ошибки') + '\n');
-  const retry = await h.runCheck(run, 'test', check.command, s.testTimeoutMin, 'повтор');
+  const retry = await runCheck(h, run, 'test', check.command, s.testTimeoutMin, 'повтор');
   if (retry.passed) {
     h.log(
       run,
@@ -124,7 +123,7 @@ export async function probeTests(
     h.checkStop(run);
   }
   const git = new Git((await h.tools(['git'])).git, h.opts.env);
-  const keep = [RUN_JSON_GLOB, ...h.envFilesOf(run)];
+  const keep = [RUN_JSON_GLOB, ...envFilesOf(h, run)];
   const stash = await git.stashExcept(run.worktreePath, `PurpleFlow ${run.id}: проверка тестов на исходном коде`, keep).catch((e) => {
     h.warn(run, `Не удалось проверить тесты на исходном коде (git stash): ${(e as Error).message}`);
     return undefined;
@@ -134,7 +133,7 @@ export async function probeTests(
   h.save(run);
   let base: CheckResult;
   try {
-    base = await h.runCheck(run, 'test', check.command, s.testTimeoutMin, 'на исходном коде, без изменений задачи');
+    base = await runCheck(h, run, 'test', check.command, s.testTimeoutMin, 'на исходном коде, без изменений задачи');
   } finally {
     if (stash) await git.restoreStash(run.worktreePath, stash);
     run.baseProbeStash = undefined;
@@ -150,7 +149,7 @@ export async function probeTests(
   return retry;
 }
 
-export function checksFeedback(h: Orchestrator, failed: CheckResult[], base?: CheckResult[]): string {
+export function checksFeedback(h: Kernel, failed: CheckResult[], base?: CheckResult[]): string {
   return failed
     .map((x) => {
       const before = base?.find((b) => b.kind === x.kind && !b.passed);
@@ -165,8 +164,8 @@ export function checksFeedback(h: Orchestrator, failed: CheckResult[], base?: Ch
 }
 
 /** Команда тестов на каждой попытке: выбранные планом, иначе быстрые из настроек проекта, иначе полный набор. */
-export function iterationTestCommand(h: Orchestrator, run: RunFile): string {
-  return run.focusTestCommand?.trim() || h.getProjectConfig(run.projectPath)?.quickTestCommand?.trim() || run.testCommand;
+export function iterationTestCommand(h: Kernel, run: RunFile): string {
+  return run.focusTestCommand?.trim() || getProjectConfig(h, run.projectPath)?.quickTestCommand?.trim() || run.testCommand;
 }
 
 const hasBase = (run: RunFile, kind: CheckResult['kind'], command: string) =>
@@ -178,7 +177,7 @@ function mergeBase(run: RunFile, checks: CheckResult[]) {
 }
 
 /** Что из эталона ещё не снято: линтер и (если можно) тесты той команды, что пойдёт на попытках. */
-function missingBase(h: Orchestrator, run: RunFile, withTests: boolean): { lint: boolean; test: string } {
+function missingBase(h: Kernel, run: RunFile, withTests: boolean): { lint: boolean; test: string } {
   const lint = Boolean(run.lintCommand) && !hasBase(run, 'lint', run.lintCommand!);
   // В баге планировщик уже написал падающий тест: тесты после плана — не «код до задачи».
   const afterBugPlan = modeOf(run) === 'bug' && run.attempts.some((a) => a.stage === 'plan');
@@ -186,15 +185,15 @@ function missingBase(h: Orchestrator, run: RunFile, withTests: boolean): { lint:
   return { lint, test: cmd && !hasBase(run, 'test', cmd) ? cmd : '' };
 }
 
-async function runBase(h: Orchestrator, run: RunFile, need: { lint: boolean; test: string }): Promise<CheckResult[]> {
+async function runBase(h: Kernel, run: RunFile, need: { lint: boolean; test: string }): Promise<CheckResult[]> {
   const s = h.opts.getSettings();
   const out: CheckResult[] = [];
-  if (need.lint) out.push(await h.runCheck(run, 'lint', run.lintCommand!, s.testTimeoutMin, 'до правок'));
-  if (need.test) out.push(await h.runCheck(run, 'test', need.test, s.testTimeoutMin, 'до правок'));
+  if (need.lint) out.push(await runCheck(h, run, 'lint', run.lintCommand!, s.testTimeoutMin, 'до правок'));
+  if (need.test) out.push(await runCheck(h, run, 'test', need.test, s.testTimeoutMin, 'до правок'));
   return out;
 }
 
-function logRed(h: Orchestrator, run: RunFile, checks: CheckResult[]) {
+function logRed(h: Kernel, run: RunFile, checks: CheckResult[]) {
   const red = checks.filter((x) => !x.passed);
   if (red.length)
     h.log(
@@ -206,7 +205,7 @@ function logRed(h: Orchestrator, run: RunFile, checks: CheckResult[]) {
 }
 
 /** Линтер и тесты на коде до правок — то, чего ещё нет в эталоне. Синхронно: когда фона не было. */
-export async function captureBaseChecks(h: Orchestrator, run: RunFile, withTests = true) {
+export async function captureBaseChecks(h: Kernel, run: RunFile, withTests = true) {
   const need = missingBase(h, run, withTests);
   if (!need.lint && !need.test) return;
   h.log(run, c.dim('Исходное состояние проверок (до правок агента):') + '\n');
@@ -217,19 +216,11 @@ export async function captureBaseChecks(h: Orchestrator, run: RunFile, withTests
 }
 
 /** Фоновая подготовка: чем закончилась и что написала в лог. */
-export interface BasePrep {
-  promise: Promise<void>;
-  /** undefined — ещё идёт. */
-  result?: { at: string; checks: CheckResult[]; prepared?: boolean; error?: string; stopped?: boolean };
-  log: string[];
-  applied?: boolean;
-}
-
 /**
  * Эталон в фоне, пока агент или человек заняты другим. 'clarify' — команда подготовки и линтер, параллельно с уточнением
  * (оно только читает код). 'plan' — выбранные планом тесты, пока человек смотрит план: код ещё не тронут.
  */
-export function startBaseChecks(h: Orchestrator, run: RunFile, phase: 'clarify' | 'plan' = 'clarify') {
+export function startBaseChecks(h: Kernel, run: RunFile, phase: 'clarify' | 'plan' = 'clarify') {
   const mode = modeOf(run);
   if (mode === 'quick' || mode === 'refactor' || h.basePrep.has(run.id)) return;
   const setup = phase === 'clarify' && !run.prepared && run.setupCommand ? run.setupCommand : '';
@@ -280,7 +271,7 @@ export function startBaseChecks(h: Orchestrator, run: RunFile, phase: 'clarify' 
 }
 
 /** Итог фоновой подготовки — в прогон: эталон, отметка подготовки, строка «Базовые проверки» и вывод в лог. */
-function applyBase(h: Orchestrator, run: RunFile, prep: BasePrep) {
+function applyBase(h: Kernel, run: RunFile, prep: BasePrep) {
   const res = prep.result;
   if (!res || prep.applied || h.basePrep.get(run.id) !== prep) return;
   prep.applied = true;
@@ -318,7 +309,7 @@ function applyBase(h: Orchestrator, run: RunFile, prep: BasePrep) {
 }
 
 /** Фон уже закончил — записать итог сразу, не дожидаясь следующей стадии (например, перед вопросами человеку). */
-export function flushBaseChecks(h: Orchestrator, run: RunFile) {
+export function flushBaseChecks(h: Kernel, run: RunFile) {
   const prep = h.basePrep.get(run.id);
   if (prep?.result) applyBase(h, run, prep);
 }
@@ -327,7 +318,7 @@ export function flushBaseChecks(h: Orchestrator, run: RunFile) {
  * Дождаться фоновой подготовки (перед планом и перед первой реализацией). Если фон оборвался вместе с приложением,
  * его строку закрываем — недостающее снимут синхронно captureBaseChecks.
  */
-export async function settleBaseChecks(h: Orchestrator, run: RunFile) {
+export async function settleBaseChecks(h: Kernel, run: RunFile) {
   const prep = h.basePrep.get(run.id);
   if (prep) {
     if (!prep.result) h.log(run, c.dim('Жду проверки до правок…') + '\n');
@@ -354,7 +345,7 @@ export async function settleBaseChecks(h: Orchestrator, run: RunFile) {
 }
 
 /** Красная проверка, которая была красной и до задачи и ошибок в ней не прибавилось, не блокирует. */
-export function compareWithBase(h: Orchestrator, run: RunFile, result: TestResult): { result: TestResult; failed: CheckResult[] } {
+export function compareWithBase(h: Kernel, run: RunFile, result: TestResult): { result: TestResult; failed: CheckResult[] } {
   const checks = (result.checks ?? []).map((x) => {
     if (x.passed || x.timedOut) return x;
     const before = run.baseChecks?.find((b) => b.kind === x.kind && b.command === x.command && !b.passed);
@@ -371,7 +362,7 @@ export function compareWithBase(h: Orchestrator, run: RunFile, result: TestResul
   return { result: { ...result, checks, passed: failed.length === 0, exitCode: failed[0]?.exitCode ?? 0 }, failed };
 }
 
-export async function stageTests(h: Orchestrator, run: RunFile) {
+export async function stageTests(h: Kernel, run: RunFile) {
   const attempt = h.begin(run, 'tests');
 
   // Рефакторинг: тесты — эталон поведения, менять их нельзя.
@@ -393,12 +384,12 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
 
   // Ревью не нужен результат тестов — запускаем его одновременно с проверками: один круг вместо двух,
   // исполнитель получит и упавшие тесты, и замечания ревью одним возвратом.
-  const review = await h.needsReview(run);
+  const review = await needsReview(h, run);
   const parallel = reviewInParallel(run, review);
   let reviewed: { review: ReviewResult; log: string } | null = null;
   let reviewErr: unknown = null;
   const reviewTask = parallel
-    ? h.reviewPass(run, true).then(
+    ? reviewPass(h, run, true).then(
         (r) => {
           reviewed = r;
         },
@@ -417,7 +408,7 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
   const probe = async (r: TestResult, f: CheckResult[]) => {
     const red = f.find((x) => x.kind === 'test' && !x.timedOut);
     if (!red) return { result: r, failed: f };
-    const probed = await h.probeTests(run, red, reviewTask);
+    const probed = await probeTests(h, run, red, reviewTask);
     const checks = (r.checks ?? []).map((x) => (x === red ? probed : x));
     const failedNow = checks.filter((x) => !x.passed && !x.preexisting && !x.unstable);
     return {
@@ -442,8 +433,8 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
           `${run.focusTestCommand ? 'Тесты задачи' : 'Быстрые проверки'}: \`${quick}\` — полный набор \`${run.testCommand}\` пойдёт перед приёмкой, когда остальное будет зелёным.`,
         ) + '\n',
       );
-    const raw = await h.runChecks(run, useQuick ? quick : run.testCommand);
-    ({ result, failed } = await probe(...(Object.values(h.compareWithBase(run, raw.result)) as [TestResult, CheckResult[]])));
+    const raw = await runChecks(h, run, useQuick ? quick : run.testCommand);
+    ({ result, failed } = await probe(...(Object.values(compareWithBase(h, run, raw.result)) as [TestResult, CheckResult[]])));
     if (useQuick && result.passed && lastPhase) {
       // Полный набор — после ревью: если ревьюер вернёт задачу, гонять его сейчас незачем.
       if (reviewTask && !reviewed && !reviewErr) {
@@ -453,7 +444,7 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
       const reviewBlocks = Boolean((reviewed as { review: ReviewResult } | null)?.review.blocking.length);
       if (!reviewErr && !reviewBlocks) {
         const s = h.opts.getSettings();
-        const full = await h.runCheck(run, 'test', run.testCommand, s.testTimeoutMin, 'полный набор перед приёмкой');
+        const full = await runCheck(h, run, 'test', run.testCommand, s.testTimeoutMin, 'полный набор перед приёмкой');
         const checks = [...(result.checks ?? []).filter((x) => x.kind !== 'test'), full];
         const merged: TestResult = {
           ...result,
@@ -464,7 +455,7 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
           durationMs: checks.reduce((n, x) => n + x.durationMs, 0),
           output: checks.map((x) => `$ ${x.command}\n${x.output}`).join('\n\n'),
         };
-        ({ result, failed } = await probe(...(Object.values(h.compareWithBase(run, merged)) as [TestResult, CheckResult[]])));
+        ({ result, failed } = await probe(...(Object.values(compareWithBase(h, run, merged)) as [TestResult, CheckResult[]])));
       }
     }
     run.tests.push(result);
@@ -502,8 +493,8 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
       return;
     }
     const parts = [
-      result.passed ? '' : h.checksFeedback(failed, run.baseChecks),
-      review.blocking.length ? h.reviewFeedback(review) : '',
+      result.passed ? '' : checksFeedback(h, failed, run.baseChecks),
+      review.blocking.length ? reviewFeedback(h, review) : '',
     ].filter(Boolean);
     run.feedback = { source: result.passed ? 'review' : 'tests', text: parts.join('\n\n---\n\n') };
     const why =
@@ -536,7 +527,7 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
     h.save(run);
     return;
   }
-  run.feedback = { source: 'tests', text: h.checksFeedback(failed, run.baseChecks) };
+  run.feedback = { source: 'tests', text: checksFeedback(h, failed, run.baseChecks) };
   if (run.mergeOnly) {
     // После слияния базовой ветки проверки покраснели — чинит исполнитель, результат — на приёмку.
     run.mergeOnly = undefined;
@@ -548,7 +539,7 @@ export async function stageTests(h: Orchestrator, run: RunFile) {
 }
 
 /** Рефакторинг начинается с зелёных проверок: иначе нечем доказать, что поведение не изменилось. */
-export async function stageBaseline(h: Orchestrator, run: RunFile) {
+export async function stageBaseline(h: Kernel, run: RunFile) {
   const s = h.opts.getSettings();
   const attempt = h.begin(run, 'baseline');
   if (!run.prepared && run.setupCommand) {
@@ -559,7 +550,7 @@ export async function stageBaseline(h: Orchestrator, run: RunFile) {
       throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
     run.prepared = true;
   }
-  const { result } = await h.runChecks(run);
+  const { result } = await runChecks(h, run);
   run.repro = result;
   run.baseChecks = result.checks ?? [];
   if (!result.checks?.length) {
@@ -582,10 +573,10 @@ export async function stageBaseline(h: Orchestrator, run: RunFile) {
 
 /** После проверок — ревью; быстрая правка с маленьким диффом идёт без него (сразу к визуальной проверке или приёмке). */
 /** Нужно ли ревью: у быстрой правки с маленьким диффом — нет (размер диффа знает только ядро). */
-export async function needsReview(h: Orchestrator, run: RunFile): Promise<boolean> {
+export async function needsReview(h: Kernel, run: RunFile): Promise<boolean> {
   if (modeOf(run) !== 'quick') return true;
   const tools = await h.tools(['git']);
-  const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, h.diffBase(run), [RUN_JSON_GLOB, ...h.envFilesOf(run)]);
+  const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, diffBase(h, run), [RUN_JSON_GLOB, ...envFilesOf(h, run)]);
   const lines = diff.split('\n').filter((l) => /^[+-][^+-]/.test(l)).length;
   if (lines > QUICK_REVIEW_LINES) return true;
   h.log(run, c.dim(`Дифф ${lines} строк — ревью пропущено (быстрая правка).`) + '\n');

@@ -94,7 +94,7 @@ const done = new Promise<void>((resolve) => {
 let runId: string;
 if (resumeRun) {
   await core.recover();
-  const before = core.getRun(resumeRun)!;
+  const before = (await core.getRun(resumeRun))!;
   console.log(t(), 'recovered', before.status, before.next, '|', before.message ?? '');
   runId = resumeRun;
   if (before.status === 'waiting') await core.dispatch({ type: 'gate.approve', runId });
@@ -128,7 +128,7 @@ if (stopAfter) {
 }
 await done;
 await new Promise((r) => setTimeout(r, 500));
-const run = core.getRun(runId)!;
+const run = (await core.getRun(runId))!;
 console.log(t(), 'status', run.status, '| attempts', run.attempts.map((a) => `${a.stage}#${a.attempt}:${a.status}`).join(' '));
 console.log(t(), 'title', JSON.stringify(run.title), 'fromPlan', run.titleFromPlan, 'attachments', run.attachments);
 console.log(

@@ -5,3 +5,4 @@ export * from './model/protocol.js';
 export * from './model/project.js';
 export * from './model/pr.js';
 export * from './model/chat.js';
+export * from './model/api.js';
