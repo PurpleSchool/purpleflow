@@ -1,35 +1,23 @@
+// Настройки: аккаунт PurpleSchool, расход, инструменты, модели и агенты по ролям, окно и место на диске.
+import type { AgentKind, ConnectionCheck, Models, Role, ToolName } from '@purpleflow/core';
+import { Check, CheckCircle2, FolderSearch, KeyRound, LogOut, PlugZap, RefreshCw, Wand2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, LogOut, Wand2, XCircle } from 'lucide-react';
-import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@purpleflow/core';
-import { Button, Field, Input, Topbar } from '../components/ui';
-import { PillTabs } from '../components/PillTabs';
+import { PillTabs } from '../../components/PillTabs';
+import { Button, Field, Input, Topbar } from '../../components/ui';
+import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../../components/Account';
+import { AccountStats } from '../../components/AccountStats';
+import { ComboInput } from '../../components/Dropdown';
+import { QuickSetup } from '../../components/QuickSetup';
+import { Mark } from '../../components/Sidebar';
+import { shortPath } from '../../lib/format';
+import { MODEL_OPTIONS } from '../../lib/models';
+import { useStore } from '../../lib/store';
+import { toolNeeded } from '../../lib/tools';
+import { StoragePanel } from './StoragePanel';
+import { AgentSwitch, MODEL_PLACEHOLDER, ROLES, TOOL_INFO } from './parts';
+import { bridge } from '../../lib/api';
 
 type SettingsTab = 'account' | 'stats' | 'tools' | 'models' | 'window';
-import { useStore } from '../lib/store';
-import { Mark } from '../components/Sidebar';
-import { shortPath } from '../lib/format';
-import { toolNeeded } from '../lib/tools';
-import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../components/Account';
-import { QuickSetup } from '../components/QuickSetup';
-import { ComboInput } from '../components/Dropdown';
-import { MODEL_OPTIONS } from '../lib/models';
-import { AccountStats } from '../components/AccountStats';
-
-const TOOL_INFO: Record<ToolName, { title: string; install: string }> = {
-  git: { title: 'Git', install: 'git-scm.com' },
-  claude: { title: 'Claude Code', install: 'npm i -g @anthropic-ai/claude-code' },
-  codex: { title: 'Codex CLI', install: 'npm i -g @openai/codex' },
-  openspec: { title: 'OpenSpec', install: 'npm i -g @fission-ai/openspec' },
-};
-
-const ROLES: { id: Role; title: string; text: string }[] = [
-  { id: 'planner', title: 'Планировщик', text: 'Пишет proposal, tasks и дельты спецификаций' },
-  { id: 'executor', title: 'Исполнитель', text: 'Реализует tasks.md и пишет тесты' },
-  { id: 'reviewer', title: 'Ревьюер', text: 'Сверяет дифф с планом — лучше другая модель, чем у исполнителя' },
-];
-
-const MODEL_PLACEHOLDER: Record<AgentKind, string> = { claude: 'opus, sonnet, haiku или полное имя', codex: 'по умолчанию codex' };
-
 export function SettingsScreen() {
   const { state, saveSettings, reloadSettings, refreshTools, go } = useStore();
   const s = state.settings;
@@ -66,7 +54,7 @@ export function SettingsScreen() {
   const accountEmail = s?.account?.email;
   useEffect(() => {
     if (tab !== 'account' || !accountEmail) return;
-    void window.purpleflow.account.profile().then((r) => {
+    void bridge.account.profile().then((r) => {
       if (r.ok || r.code === 'unauthorized') void reloadSettings();
     });
   }, [tab, accountEmail]);
@@ -98,7 +86,7 @@ export function SettingsScreen() {
 
   /** Выход удаляет токен аккаунта; ключ прокси остаётся — его можно удалить отдельно. */
   const logout = async () => {
-    await window.purpleflow.account.logout();
+    await bridge.account.logout();
     await reloadSettings();
     setChecks(null);
   };
@@ -108,7 +96,7 @@ export function SettingsScreen() {
     setChecking(true);
     setChecks(null);
     try {
-      setChecks(await window.purpleflow.core.testConnection());
+      setChecks(await bridge.core.testConnection());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -369,7 +357,7 @@ export function SettingsScreen() {
                           title="Выбрать файл"
                           icon={<FolderSearch size={15} />}
                           onClick={async () => {
-                            const p = await window.purpleflow.pickFile();
+                            const p = await bridge.pickFile();
                             if (p) setPaths({ ...paths, [t]: p });
                           }}
                         />
@@ -549,7 +537,7 @@ export function SettingsScreen() {
                     ждущих решения, — на значке в доке.
                   </p>
                 </div>
-                <Button tone="quiet" onClick={() => void window.purpleflow.testNotification()}>
+                <Button tone="quiet" onClick={() => void bridge.testNotification()}>
                   Проверить
                 </Button>
               </header>
@@ -595,139 +583,6 @@ export function SettingsScreen() {
           )}
         </footer>
       )}
-    </div>
-  );
-}
-
-const bytes = (n: number) =>
-  n >= 1024 ** 3
-    ? `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} ГБ`
-    : n >= 1024 ** 2
-      ? `${Math.round(n / 1024 ** 2)} МБ`
-      : n >= 1024
-        ? `${Math.round(n / 1024)} КБ`
-        : n > 0
-          ? `${n} Б`
-          : '—';
-
-type Row = StorageItem;
-
-/** Что PurpleFlow хранит в профиле пользователя и что из этого можно удалить. */
-function StoragePanel() {
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<string | null>(null);
-  const [freed, setFreed] = useState<{ id: string; bytes: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [items, cache] = await Promise.all([window.purpleflow.core.getStorage(), window.purpleflow.appCache.size()]);
-      setRows([
-        ...items,
-        {
-          id: 'app-cache',
-          title: 'Кэш приложения',
-          hint: 'Кэш Chromium: загруженные ресурсы, скомпилированный код, данные сайтов во вкладке «Браузер». Восстановится сам.',
-          bytes: cache,
-          count: 0,
-          clean: 'Очистить',
-        },
-      ]);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const clean = async (id: Row['id']) => {
-    if (confirm !== id) return setConfirm(id);
-    setConfirm(null);
-    setBusy(id);
-    setError(null);
-    try {
-      const before = rows?.find((r) => r.id === id)?.bytes ?? 0;
-      let n: number;
-      if (id === 'app-cache') {
-        await window.purpleflow.appCache.clear();
-        n = Math.max(0, before - (await window.purpleflow.appCache.size()));
-      } else n = await window.purpleflow.core.cleanStorage(id);
-      setFreed({ id, bytes: n });
-      await load();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const total = rows?.reduce((n, r) => n + r.bytes, 0) ?? 0;
-  return (
-    <section className="panel">
-      <header className="panel-head">
-        <div>
-          <h2>Хранилище{rows ? ` · ${bytes(total)}` : ''}</h2>
-          <p>Что PurpleFlow хранит в профиле пользователя. Ваши проекты и ветки с результатами здесь не учитываются и не удаляются.</p>
-        </div>
-        <Button tone="quiet" icon={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>
-          Пересчитать
-        </Button>
-      </header>
-      {error && <p className="inline-error">{error}</p>}
-      {!rows ? (
-        <div className="center storage-loading">
-          <span className="spinner big" />
-        </div>
-      ) : (
-        <div className="storage">
-          {rows.map((r) => (
-            <div key={r.id} className={`storage-row ${r.bytes ? '' : 'is-empty'}`}>
-              <div className="storage-text">
-                <strong>
-                  {r.title}
-                  {r.count ? <span className="muted"> · {r.count}</span> : null}
-                </strong>
-                <span>{r.hint}</span>
-              </div>
-              <span className="storage-size">{bytes(r.bytes)}</span>
-              <div className="storage-action">
-                {freed?.id === r.id && <span className="storage-freed">−{bytes(freed.bytes)}</span>}
-                {r.clean && (
-                  <Button
-                    tone={confirm === r.id ? 'danger' : 'quiet'}
-                    busy={busy === r.id}
-                    disabled={!r.bytes || (busy !== null && busy !== r.id)}
-                    onClick={() => void clean(r.id)}
-                    onBlur={() => confirm === r.id && setTimeout(() => setConfirm(null), 150)}
-                  >
-                    {confirm === r.id ? 'Точно удалить?' : r.clean}
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** Выбор CLI-агента для роли. */
-function AgentSwitch({ label, value, onChange }: { label: string; value: AgentKind; onChange: (a: AgentKind) => void }) {
-  return (
-    <div className="segmented small" role="radiogroup" aria-label={`Агент: ${label}`}>
-      {(['claude', 'codex'] as AgentKind[]).map((a) => (
-        <button key={a} role="radio" aria-checked={value === a} className={value === a ? 'is-on' : ''} onClick={() => onChange(a)}>
-          {a}
-        </button>
-      ))}
     </div>
   );
 }

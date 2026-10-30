@@ -11,8 +11,6 @@ export function currentStage(run: RunFile): StageId {
   return run.next;
 }
 
-export const cleanErr = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-
 export function unstableText(u: NonNullable<CheckResult['unstable']>): string {
   const list = u.tests.length ? ` (${u.tests.slice(0, 4).join('; ')}${u.tests.length > 4 ? '…' : ''})` : '';
   const why =

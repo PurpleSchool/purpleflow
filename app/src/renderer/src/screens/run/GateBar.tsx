@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Globe, Wrench, CircleCheck, ClipboardCheck, RotateCcw, UserRoundCheck } from 'lucide-react';
 import type { StageId } from '@purpleflow/core';
 import { Button, TextArea } from '../../components/ui';
+import { bridge } from '../../lib/api';
 
 export function GateBar(props: {
   gate: StageId;
@@ -52,7 +53,7 @@ export function GateBar(props: {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
-  const mod = window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl+';
+  const mod = bridge.platform === 'darwin' ? '⌘' : 'Ctrl+';
   const title = gate === 'gate1' ? 'Утверждение плана' : gate === 'gate2' ? 'Приёмка' : 'Попытки исчерпаны';
   const needsComment = gate !== 'limit';
   return (

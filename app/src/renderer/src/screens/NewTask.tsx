@@ -7,7 +7,8 @@ import { useStore } from '../lib/store';
 import { FileDrop, type PickedFile } from '../components/FileDrop';
 import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
-import { ProjectPicker, WORKSPACES, cleanErr, loadProject, saveLoaded, type LoadedProject } from './Projects';
+import { ProjectPicker, WORKSPACES, loadProject, saveLoaded, type LoadedProject } from './projects/common';
+import { bridge, cleanErr } from '../lib/api';
 
 const LAST_PROJECT = 'purpleflow.lastProject';
 const AUTOPILOT_KEY = 'purpleflow.autopilot';
@@ -81,7 +82,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
   const loadBranches = async (dir: string, fetch: boolean) => {
     setFetching(fetch);
     try {
-      const b = await window.purpleflow.core.projectBranches(dir, fetch);
+      const b = await bridge.core.projectBranches(dir, fetch);
       setBranches(b);
       const preferred = draft?.baseBranch && b.branches.some((x) => x.name === draft.baseBranch) ? draft.baseBranch : null;
       setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : (preferred ?? b.current ?? b.branches[0]?.name ?? '')));
@@ -104,7 +105,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     try {
       // Команды, найденные по файлам проекта, запоминаются при первом запуске.
       if (!p.cfg) await saveLoaded({ ...p, path: p.info.path });
-      const { runId } = await window.purpleflow.core.dispatch({
+      const { runId } = await bridge.core.dispatch({
         type: 'run.start',
         input: {
           projectPath: p.info.path,
@@ -145,7 +146,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     if (how === 'discard' && !confirmDiscard) return setConfirmDiscard(true);
     setCleaning(how);
     try {
-      await window.purpleflow.core.cleanWorkingCopy(p.info.path, how);
+      await bridge.core.cleanWorkingCopy(p.info.path, how);
     } catch (e) {
       setError(cleanErr(e));
       setCleaning(null);
@@ -175,7 +176,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     setSuggesting(true);
     setError(null);
     try {
-      const r = await window.purpleflow.core.suggestMode(task);
+      const r = await bridge.core.suggestMode(task);
       setSuggest({ mode: r.mode as Mode, reason: r.reason });
       setMode(r.mode as Mode);
     } catch (e) {
@@ -257,7 +258,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                   {task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}
                 </span>
                 <span className="kbd-hint">
-                  <kbd>{window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd>
+                  <kbd>{bridge.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd>
                   <kbd>Enter</kbd>
                 </span>
               </div>

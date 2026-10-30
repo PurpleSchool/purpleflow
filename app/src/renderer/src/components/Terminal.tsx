@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { onCoreEvent } from '../lib/store';
+import { bridge } from '../lib/api';
 
 const THEME = {
   background: 'rgba(0,0,0,0)',
@@ -119,7 +120,7 @@ export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
       else queue.push(e.text);
     });
 
-    void window.purpleflow.core.getLog(runId).then((full) => {
+    void bridge.core.getLog(runId).then((full) => {
       if (!alive) return;
       const text = slice ? cut(full, slice) : full;
       term.write(text);

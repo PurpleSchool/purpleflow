@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileText, Paperclip, X } from 'lucide-react';
+import { bridge } from '../lib/api';
 
 export interface PickedFile {
   id: string;
@@ -103,8 +104,7 @@ export function FileDrop({ files, onChange }: { files: PickedFile[]; onChange: (
         <span>
           <strong>{files.length ? 'Ещё файл' : 'Файлы к задаче'}</strong>
           <small>
-            Макеты, скриншоты, документы, логи — перетащите, вставьте {window.purpleflow.platform === 'darwin' ? '⌘V' : 'Ctrl+V'} или
-            выберите
+            Макеты, скриншоты, документы, логи — перетащите, вставьте {bridge.platform === 'darwin' ? '⌘V' : 'Ctrl+V'} или выберите
           </small>
         </span>
       </button>

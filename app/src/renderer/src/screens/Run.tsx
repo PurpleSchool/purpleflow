@@ -34,8 +34,9 @@ import { Attachments, Banner, DeleteRun, LongRunBanner, MergeControl, MetricsInl
 import { ManagerChat, useManagerLayout } from './run/ManagerChat';
 import { CodePane, useChangedFiles } from './run/CodePane';
 import { AgentOutput, ClarifyView, InProgress, PlanView, ReproView, ReviewView, TestsView, VisualView } from './run/StageViews';
-import { LOG_TITLE, cleanErr, currentStage, unstableText, withPicked } from './run/util';
+import { LOG_TITLE, currentStage, unstableText, withPicked } from './run/util';
 import { useRunGate } from './run/useRunGate';
+import { bridge, cleanErr } from '../lib/api';
 
 type View = 'timeline' | 'log' | 'browser' | 'code' | 'pr';
 
@@ -63,7 +64,7 @@ export function RunScreen({ runId }: { runId: string }) {
   useEffect(() => {
     if (!projectPath) return;
     let alive = true;
-    void window.purpleflow.core
+    void bridge.core
       .getProjectConfig(projectPath)
       .then((c) => alive && setProjectRun(Boolean(c?.runCommand && c.appUrl)))
       .catch(() => {});
@@ -116,7 +117,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const showPlan = drawer === 'plan' || drawer === 'gate1';
 
   const refreshDocs = () =>
-    window.purpleflow.core
+    bridge.core
       .getChangeDocs(runId)
       .then(setDocs)
       .catch(() => setDocs(null));
@@ -218,7 +219,7 @@ export function RunScreen({ runId }: { runId: string }) {
       setBusy(null);
     }
   };
-  const dispatch = window.purpleflow.core.dispatch;
+  const dispatch = bridge.core.dispatch;
   const agentLive = Boolean(agentScreen.frame) || (run.status === 'running' && run.next === 'visual');
   const canRunApp = projectRun || Boolean(run.runCommand && run.appUrl) || preview.state.status !== 'idle';
   const openApp = () => {
@@ -361,7 +362,7 @@ export function RunScreen({ runId }: { runId: string }) {
             tone="quiet"
             icon={<FolderOpen size={16} />}
             title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'}
-            onClick={() => void window.purpleflow.openPath(run.worktreePath)}
+            onClick={() => void bridge.openPath(run.worktreePath)}
           />
           <DeleteRun run={run} runId={runId} />
           {(resumable || run.status === 'queued') && !gate && (
@@ -382,7 +383,7 @@ export function RunScreen({ runId }: { runId: string }) {
               title="Новая задача со следующей частью из раздела «Next Parts» плана — с исходным ТЗ и вложениями"
               onClick={() =>
                 act('next', async () => {
-                  const d = await window.purpleflow.core.nextPartDraft(runId);
+                  const d = await bridge.core.nextPartDraft(runId);
                   if (d) go({ name: 'new', project: d.projectPath, draft: d });
                 })
               }

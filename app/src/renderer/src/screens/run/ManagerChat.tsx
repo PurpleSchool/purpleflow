@@ -11,7 +11,7 @@ import { ArrowUp, Check, PanelLeftClose, Pause, RotateCcw, SquareTerminal, Stick
 import type { ManagerAction, ManagerMessage, RunFile } from '@purpleflow/core';
 import { Markdown } from '../../components/Markdown';
 import { onCoreEvent } from '../../lib/store';
-import { cleanErr } from './util';
+import { bridge, cleanErr } from '../../lib/api';
 
 const ACTION: Record<ManagerAction['kind'], { title: string; icon: ReactNode; hint: string }> = {
   command: { title: 'Выполнить команду', icon: <SquareTerminal size={14} />, hint: '' },
@@ -95,7 +95,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setMessages([]);
     setThinking(false);
     setError(null);
-    void window.purpleflow.core
+    void bridge.core
       .getManagerChat(runId)
       .then((c) => {
         if (!alive) return;
@@ -134,7 +134,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setError(null);
     setThinking(true);
     try {
-      setMessages(await window.purpleflow.core.askManager(runId, q));
+      setMessages(await bridge.core.askManager(runId, q));
     } catch (e) {
       setText(q);
       setError(cleanErr(e));
@@ -147,7 +147,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setBusy(`${m.id}:${apply}`);
     setError(null);
     try {
-      setMessages(await window.purpleflow.core.resolveManagerAction(runId, m.id, apply));
+      setMessages(await bridge.core.resolveManagerAction(runId, m.id, apply));
     } catch (e) {
       setError(cleanErr(e));
     } finally {

@@ -4,6 +4,7 @@ import type { AccountKey, AccountOverview, AccountUsage, UsageBucket } from '../
 import { Button } from './ui';
 import { Select } from './Dropdown';
 import { useStore } from '../lib/store';
+import { bridge } from '../lib/api';
 
 const PLANS_URL = 'https://purpleschool.ru/ai-for-code';
 
@@ -87,7 +88,7 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
   };
 
   const loadOverview = async () => {
-    const [o, k] = await Promise.all([window.purpleflow.account.overview(), window.purpleflow.account.keys()]);
+    const [o, k] = await Promise.all([bridge.account.overview(), bridge.account.keys()]);
     if (!o.ok) return fail(o);
     setOverview(o.data);
     if (k.ok) setKeys(k.data.items);
@@ -98,7 +99,7 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
     setError(null);
     try {
       const p = PERIODS.find((x) => x.id === period)!;
-      const r = await window.purpleflow.account.usage({ ...periodRange(period), bucket: p.bucket, keyIds: keyId ? [keyId] : [] });
+      const r = await bridge.account.usage({ ...periodRange(period), bucket: p.bucket, keyIds: keyId ? [keyId] : [] });
       if (!r.ok) return fail(r);
       setUsage(r.data);
     } finally {

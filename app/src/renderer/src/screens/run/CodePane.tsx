@@ -5,7 +5,7 @@ import type { DiffFile, LineComment, ReviewItem, RunFile } from '@purpleflow/cor
 import { DiffReview } from '../../components/DiffReview';
 import { PillTabs } from '../../components/PillTabs';
 import { Button, Empty } from '../../components/ui';
-import { cleanErr } from './util';
+import { bridge, cleanErr } from '../../lib/api';
 
 /** Изменённые файлы прогона для счётчика на вкладке: пока прогон идёт — раз в несколько секунд, иначе на смене стадии. */
 export function useChangedFiles(run: RunFile | undefined): string[] | null {
@@ -20,7 +20,7 @@ export function useChangedFiles(run: RunFile | undefined): string[] | null {
     setFiles((f) => (f && id !== loadedFor.current ? null : f));
     loadedFor.current = id;
     const load = () =>
-      window.purpleflow.core
+      bridge.core
         .getChangedFiles(id)
         .then((f) => alive && setFiles(f))
         .catch(() => {});
@@ -74,7 +74,7 @@ export function CodePane({
     setBusy(true);
     setError(null);
     try {
-      setDiff(await window.purpleflow.core.getDiff(run.id));
+      setDiff(await bridge.core.getDiff(run.id));
       setAt(new Date());
     } catch (e) {
       setError(cleanErr(e));

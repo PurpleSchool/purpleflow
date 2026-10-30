@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { useStore } from './lib/store';
 import { NewTaskScreen } from './screens/NewTask';
-import { ProjectScreen, ProjectsScreen } from './screens/Projects';
+import { ProjectScreen } from './screens/projects/ProjectScreen';
+import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { RunScreen } from './screens/Run';
-import { SettingsScreen } from './screens/Settings';
+import { SettingsScreen } from './screens/settings/SettingsScreen';
 import { WelcomeScreen } from './screens/Welcome';
 import { ChatScreen } from './screens/Chat';
+import { bridge } from './lib/api';
 
 const SIDEBAR_KEY = 'purpleflow.sidebarCollapsed';
 
@@ -42,8 +44,8 @@ export function App() {
   const { go } = useStore();
   // Звук внимания (прогон ждёт решения, готов или упал) и переход к прогону по клику на уведомление.
   useEffect(() => {
-    const offChime = window.purpleflow.onChime(chime);
-    const offGo = window.purpleflow.onGo((runId) => go({ name: 'run', runId }));
+    const offChime = bridge.onChime(chime);
+    const offGo = bridge.onGo((runId) => go({ name: 'run', runId }));
     return () => {
       offChime();
       offGo();
@@ -64,14 +66,14 @@ export function App() {
   // Экран входа при первом запуске — на всё окно, без боковой панели.
   if (v.name === 'welcome') {
     return (
-      <div className={`app app-onboard os-${window.purpleflow.platform}`}>
+      <div className={`app app-onboard os-${bridge.platform}`}>
         <WelcomeScreen />
       </div>
     );
   }
 
   return (
-    <div className={`app os-${window.purpleflow.platform} ${collapsed ? 'is-collapsed' : ''}`}>
+    <div className={`app os-${bridge.platform} ${collapsed ? 'is-collapsed' : ''}`}>
       <Sidebar collapsed={collapsed} onToggle={toggle} />
       <main className="main">
         {/* Полоса сверху вместо заголовка окна: за неё окно перетаскивается. */}

@@ -15,8 +15,7 @@ import type { PrComment, PrDetails, PrFollowupItem, PrStatus, RunFile } from '@p
 import { Button, TextArea } from './ui';
 import { Markdown } from './Markdown';
 import { when } from '../lib/format';
-
-const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+import { bridge, cleanErr } from '../lib/api';
 
 /** Обновили PR на вкладке — статус в строке прогона подхватывает его без отдельного запроса. */
 const refreshed = new Set<(runId: string, st: PrStatus) => void>();
@@ -60,7 +59,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setLoading(true);
     setError(null);
     try {
-      const x = await window.purpleflow.core.getPrDetails(runId);
+      const x = await bridge.core.getPrDetails(runId);
       setD(x);
       if (x) {
         refreshed.forEach((fn) => fn(runId, x.status));
@@ -120,7 +119,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setBusy('followup');
     setError(null);
     try {
-      await window.purpleflow.core.dispatch({ type: 'run.prFollowup', runId, items, note: note.trim() || undefined });
+      await bridge.core.dispatch({ type: 'run.prFollowup', runId, items, note: note.trim() || undefined });
       setNote('');
       onStarted();
     } catch (e) {
@@ -134,7 +133,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setBusy('update');
     setError(null);
     try {
-      await window.purpleflow.core.dispatch({ type: 'run.updateBranch', runId });
+      await bridge.core.dispatch({ type: 'run.updateBranch', runId });
       onStarted();
     } catch (e) {
       setError(cleanErr(e));

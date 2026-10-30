@@ -5,7 +5,7 @@ import { BrowserPane, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/DiffReview';
 import { PillTabs } from '../components/PillTabs';
 import { Button, Empty } from '../components/ui';
-import { cleanErr } from './run/util';
+import { bridge, cleanErr } from '../lib/api';
 
 export type ChatPane = 'code' | 'browser';
 
@@ -18,7 +18,7 @@ export function useChatChanged(chat: ChatFile | null, busy: boolean): string[] |
   useEffect(() => {
     if (!id || !project) return setFiles(null);
     let alive = true;
-    window.purpleflow.core
+    bridge.core
       .getChatChangedFiles(id)
       .then((f) => alive && setFiles(f))
       .catch(() => {});
@@ -105,7 +105,7 @@ export function ChatSide({
   const preview = usePreview(chat.id);
   useEffect(() => {
     if (chat.projectPath)
-      window.purpleflow.core
+      bridge.core
         .getProjectConfig(chat.projectPath)
         .then(setCfg)
         .catch(() => {});
@@ -199,7 +199,7 @@ function ChatCode({ chat, busy }: { chat: ChatFile; busy: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      setDiff(await window.purpleflow.core.getChatDiff(chat.id));
+      setDiff(await bridge.core.getChatDiff(chat.id));
       setAt(new Date());
     } catch (e) {
       setError(cleanErr(e));

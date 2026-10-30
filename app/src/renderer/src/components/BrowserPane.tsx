@@ -4,8 +4,7 @@ import { ArrowLeft, ArrowRight, ExternalLink, Globe, Monitor, RotateCw, Smartpho
 import type { PreviewState } from '@purpleflow/core';
 import { Button } from './ui';
 import { onCoreEvent } from '../lib/store';
-
-const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+import { bridge, cleanErr } from '../lib/api';
 
 /** Состояние приложения прогона для ручной проверки (общее для вкладки и строки приёмки). */
 export function usePreview(runId: string) {
@@ -13,7 +12,7 @@ export function usePreview(runId: string) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.purpleflow.core.getPreview(runId).then((s) => alive && setState(s));
+    void bridge.core.getPreview(runId).then((s) => alive && setState(s));
     const off = onCoreEvent((e) => {
       if (e.type === 'preview.state' && e.runId === runId) setState(e.state);
     });
@@ -25,12 +24,12 @@ export function usePreview(runId: string) {
   const start = async () => {
     setError(null);
     try {
-      setState(await window.purpleflow.core.startPreview(runId));
+      setState(await bridge.core.startPreview(runId));
     } catch (e) {
       setError(cleanErr(e));
     }
   };
-  const stop = () => window.purpleflow.core.stopPreview(runId);
+  const stop = () => bridge.core.stopPreview(runId);
   return { state, error, start, stop };
 }
 
@@ -175,7 +174,7 @@ export function BrowserPane({
   const toggleMobile = (m: boolean) => {
     setMobile(m);
     const w = view.current;
-    if (w) void window.purpleflow.previewEmulate(w.getWebContentsId(), m);
+    if (w) void bridge.previewEmulate(w.getWebContentsId(), m);
   };
 
   if (!ready) {

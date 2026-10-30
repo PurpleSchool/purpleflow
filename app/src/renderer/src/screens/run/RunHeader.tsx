@@ -9,7 +9,7 @@ import { Select } from '../../components/Dropdown';
 import { Button } from '../../components/ui';
 import { tokens, usageTotal, when } from '../../lib/format';
 import { Lightbox } from './StageViews';
-import { cleanErr } from './util';
+import { bridge, cleanErr } from '../../lib/api';
 
 /** Удаление прогона с подтверждением: worktree и данные приложения, ветка — по выбору. */
 export function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
@@ -21,7 +21,7 @@ export function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await window.purpleflow.core.dispatch({ type: 'run.delete', runId, deleteBranch: withBranch });
+      await bridge.core.dispatch({ type: 'run.delete', runId, deleteBranch: withBranch });
     } catch (e) {
       setError(cleanErr(e));
       setBusy(false);
@@ -167,14 +167,14 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
 
   useEffect(() => {
     if (run.merged || run.pr) return;
-    void window.purpleflow.core
+    void bridge.core
       .listBranches(runId)
       .then((b) => {
         setBranches(b.branches);
         setTarget((t) => t || b.suggested || b.current || b.branches[0] || '');
       })
       .catch((e) => setError(cleanErr(e)));
-    void window.purpleflow.core
+    void bridge.core
       .prReady(runId)
       .then(setPrWhy)
       .catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
@@ -185,7 +185,7 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
     if (!run.pr) return;
     let alive = true;
     const load = () =>
-      void window.purpleflow.core
+      void bridge.core
         .getPrStatus(runId)
         .then((x) => alive && setPr(x))
         .catch((e) => alive && setError(cleanErr(e)));
@@ -201,11 +201,11 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
     setBusy(kind);
     setError(null);
     try {
-      if (kind === 'merge') await window.purpleflow.core.dispatch({ type: 'run.merge', runId, target });
-      else if (kind === 'pr') await window.purpleflow.core.dispatch({ type: 'run.pr', runId, base: target });
+      if (kind === 'merge') await bridge.core.dispatch({ type: 'run.merge', runId, target });
+      else if (kind === 'pr') await bridge.core.dispatch({ type: 'run.pr', runId, base: target });
       else {
-        await window.purpleflow.core.dispatch({ type: 'run.prMerge', runId });
-        setPr(await window.purpleflow.core.getPrStatus(runId));
+        await bridge.core.dispatch({ type: 'run.prMerge', runId });
+        setPr(await bridge.core.getPrStatus(runId));
       }
     } catch (e) {
       setError(cleanErr(e));
@@ -331,7 +331,7 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
   const [big, setBig] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void Promise.all(files.map((_, i) => window.purpleflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
+    void Promise.all(files.map((_, i) => bridge.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
     return () => {
       alive = false;
     };
@@ -345,7 +345,7 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
               <img src={urls[i]!} alt={`Изображение ${i + 1}`} />
             </button>
           ) : (
-            <button key={i} className="file-chip" onClick={() => void window.purpleflow.openPath(f)} title={f}>
+            <button key={i} className="file-chip" onClick={() => void bridge.openPath(f)} title={f}>
               <FileText size={16} />
               <span className="file-chip-text">
                 <strong>{f.split(/[\\/]/).pop()!.replace(/^\d+-/, '')}</strong>

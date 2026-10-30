@@ -6,6 +6,7 @@ import './styles/tokens.css';
 import './styles/app.css';
 import { App } from './App';
 import { StoreProvider } from './lib/store';
+import { bridge } from './lib/api';
 
 // До переименования ключи окна в localStorage начинались с psflow. — переносим один раз.
 try {
@@ -20,8 +21,8 @@ try {
 }
 
 // Нативное стекло окна: CSS убирает непрозрачный фон и кладёт тонировку поверх обоев.
-document.documentElement.dataset.material = window.purpleflow.material;
-window.purpleflow.onMaterial((m) => (document.documentElement.dataset.material = m));
+document.documentElement.dataset.material = bridge.material;
+bridge.onMaterial((m) => (document.documentElement.dataset.material = m));
 
 createRoot(document.getElementById('root')!).render(
   <StoreProvider>

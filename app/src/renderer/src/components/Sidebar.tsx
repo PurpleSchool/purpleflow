@@ -5,6 +5,7 @@ import { useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { MODES } from '../lib/stages';
 import { toolNeeded } from '../lib/tools';
+import { bridge } from '../lib/api';
 
 const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
 
@@ -58,7 +59,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const v = state.view;
   const groups = useMemo(() => groupItems(state.runs, state.chats), [state.runs, state.chats]);
   const waiting = state.runs.filter((r) => r.status === 'waiting').length;
-  const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
+  const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${bridge.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
   const [menu, setMenu] = useState(false);
   const create = (kind: 'task' | 'chat') => {
     setMenu(false);

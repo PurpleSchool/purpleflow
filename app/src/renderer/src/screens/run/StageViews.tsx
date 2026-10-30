@@ -9,7 +9,8 @@ import { CommentableMarkdown } from '../../components/CommentableMarkdown';
 import { OriginTag, PickBox } from '../../components/DiffReview';
 import { Button, Empty, Input } from '../../components/ui';
 import type { ChangeDocs } from '../../../../shared/ipc';
-import { cleanErr, originSummary, stripAnsi, unstableText } from './util';
+import { originSummary, stripAnsi, unstableText } from './util';
+import { bridge, cleanErr } from '../../lib/api';
 
 /** Вопросы планировщика до плана: варианты ответа кнопками или свой текст. */
 export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; runId: string; waiting: boolean; onDone: () => void }) {
@@ -22,7 +23,7 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
     setBusy(true);
     setError(null);
     try {
-      await window.purpleflow.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
+      await bridge.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
       onDone();
     } catch (e) {
       setError(cleanErr(e));
@@ -159,12 +160,10 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
   useEffect(() => {
     let alive = true;
     if (!v) return;
-    void Promise.all(v.shots.map(async (s) => [s.file, await window.purpleflow.core.getVisualShot(runId, s.file)] as const)).then(
-      (pairs) => {
-        // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
-        if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
-      },
-    );
+    void Promise.all(v.shots.map(async (s) => [s.file, await bridge.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
+      // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
+      if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
+    });
     return () => {
       alive = false;
     };
@@ -180,7 +179,7 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
     setRerunning(true);
     setRerunErr(null);
     try {
-      await window.purpleflow.core.dispatch({ type: 'run.rerunVisual', runId });
+      await bridge.core.dispatch({ type: 'run.rerunVisual', runId });
     } catch (e) {
       setRerunErr(cleanErr(e));
     } finally {
@@ -647,7 +646,7 @@ export function AgentOutput({ runId, slice, attempt }: { runId: string; slice: L
   useEffect(() => {
     if (running || attempt.output) return;
     let alive = true;
-    void window.purpleflow.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
+    void bridge.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
     return () => {
       alive = false;
     };

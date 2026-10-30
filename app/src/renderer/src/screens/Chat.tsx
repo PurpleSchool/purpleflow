@@ -7,8 +7,8 @@ import { ComboInput, Select } from '../components/Dropdown';
 import { MODEL_OPTIONS } from '../lib/models';
 import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
-import { cleanErr } from './run/util';
 import { ChatSide, ChatSideRail, useChatChanged, useSideWidth, type ChatPane } from './ChatSide';
+import { bridge, cleanErr } from '../lib/api';
 
 const SUGGEST_PROJECT = ['Как устроен этот проект?', 'Где обрабатываются ошибки API?', 'Найди и поправь опечатки в README'];
 const SUGGEST_FREE = ['Объясни разницу между rebase и merge', 'Напиши регулярку для email', 'Набросай SQL-миграцию для таблицы заказов'];
@@ -68,7 +68,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   };
 
   useEffect(() => {
-    window.purpleflow.core
+    bridge.core
       .listProjects()
       .then((p) => setProjects(p.filter((x) => x.exists)))
       .catch(() => {});
@@ -77,7 +77,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   useEffect(() => {
     if (!chatId) return;
     let alive = true;
-    window.purpleflow.core
+    bridge.core
       .getChat(chatId)
       .then((r) => {
         if (!alive) return;
@@ -146,7 +146,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     setError(null);
     if (!chat) return setDraft((d) => ({ ...d, ...patch, ...(patch.agent ? { model: '' } : {}) }));
     try {
-      setChat(await window.purpleflow.core.updateChat(chat.id, { ...patch, ...(patch.agent ? { model: '' } : {}) }));
+      setChat(await bridge.core.updateChat(chat.id, { ...patch, ...(patch.agent ? { model: '' } : {}) }));
     } catch (e) {
       setError(cleanErr(e));
     }
@@ -165,10 +165,10 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
       );
       let id = chat?.id;
       if (!id) {
-        const created = await window.purpleflow.core.createChat(draft);
+        const created = await bridge.core.createChat(draft);
         id = created.id;
       }
-      await window.purpleflow.core.sendChat(id, t, attachments);
+      await bridge.core.sendChat(id, t, attachments);
       setText('');
       for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
       setFiles([]);
@@ -190,7 +190,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     setToTask(true);
     setError(null);
     try {
-      const d = await window.purpleflow.core.chatToTask(chat.id);
+      const d = await bridge.core.chatToTask(chat.id);
       go({ name: 'new', project: d.projectPath || undefined, draft: d });
     } catch (e) {
       setError(cleanErr(e));
@@ -202,13 +202,13 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const remove = async () => {
     if (!chat) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    await window.purpleflow.core.deleteChat(chat.id);
+    await bridge.core.deleteChat(chat.id);
     go({ name: 'chat' });
   };
 
   const pickProject = async (value: string) => {
     if (value === '__pick') {
-      const dir = await window.purpleflow.pickFolder('Папка проекта для чата');
+      const dir = await bridge.pickFolder('Папка проекта для чата');
       if (dir) setDraft((d) => ({ ...d, projectPath: dir }));
       return;
     }
@@ -239,7 +239,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               value={chat.title}
               aria-label="Название чата"
               onChange={(e) => setChat({ ...chat, title: e.target.value })}
-              onBlur={(e) => void window.purpleflow.core.updateChat(chat.id, { title: e.target.value }).catch(() => {})}
+              onBlur={(e) => void bridge.core.updateChat(chat.id, { title: e.target.value }).catch(() => {})}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
           ) : (
@@ -429,7 +429,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                     type="button"
                     className="chat-send is-stop"
                     title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'}
-                    onClick={() => chat && void window.purpleflow.core.stopChat(chat.id)}
+                    onClick={() => chat && void bridge.core.stopChat(chat.id)}
                   >
                     <Square size={13} />
                   </button>
@@ -473,7 +473,7 @@ function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
       {m.attachments?.length ? (
         <div className="chat-msg-files">
           {m.attachments.map((f) => (
-            <button key={f} className="chat-file" title={f} onClick={() => void window.purpleflow.openPath(f)}>
+            <button key={f} className="chat-file" title={f} onClick={() => void bridge.openPath(f)}>
               <FileText size={13} />
               <span>{shownName(f)}</span>
             </button>
@@ -487,12 +487,12 @@ function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
           <span>Уйдёт после ответа</span>
           <button
             type="button"
-            onClick={() => void window.purpleflow.core.stopChat(chatId)}
+            onClick={() => void bridge.core.stopChat(chatId)}
             title="Остановить текущий ответ и сразу отправить это сообщение"
           >
             Прервать и отправить
           </button>
-          <button type="button" onClick={() => void window.purpleflow.core.unqueueChat(chatId, m.id)}>
+          <button type="button" onClick={() => void bridge.core.unqueueChat(chatId, m.id)}>
             Убрать
           </button>
         </div>
