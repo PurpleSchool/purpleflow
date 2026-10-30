@@ -19,6 +19,8 @@ export interface PublicSettings {
   sound: boolean;
   claudeAuth: 'login' | 'env';
   userConfig: boolean;
+  /** Сборка с аккаунтом PurpleSchool; false — PURPLEFLOW_ACCOUNT=off, вход и расход скрыты. */
+  accountEnabled: boolean;
   /** Вход в PurpleSchool: null — не вошли. Токен в окно не передаётся. */
   account: { email: string; name: string; /** Аватар data URL; пусто — фото в профиле нет. */ photo: string } | null;
   authPrompted: boolean;

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { app, safeStorage } from 'electron';
 import type { AgentKind, CoreSettings, Role } from '@purpleflow/core';
 import type { PublicSettings, SettingsPatch } from '../shared/ipc';
+import { ACCOUNT_ENABLED, DEFAULT_PROXY } from './provider';
 
 interface StoredSettings {
   toolPaths: CoreSettings['toolPaths'];
@@ -46,14 +47,6 @@ const DEFAULTS: StoredSettings = {
   account: { tokenEnc: '', email: '', name: '', photo: '' },
   authPrompted: false,
 };
-
-/**
- * Адреса AI-прокси PurpleSchool — как в официальной инструкции подключения (GET /public/ai-proxy/setup-instructions):
- * claude — Anthropic API, codex — OpenAI Responses API. Переопределяются переменными PURPLEFLOW_PROXY_URL и
- * PURPLEFLOW_CODEX_PROXY_URL или полями baseUrl и codexBaseUrl в settings.json.
- */
-const PURPLESCHOOL_PROXY = process.env.PURPLEFLOW_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic';
-const PURPLESCHOOL_CODEX_PROXY = process.env.PURPLEFLOW_CODEX_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1';
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
 
@@ -149,7 +142,8 @@ export function publicSettings(): PublicSettings {
     sound: s.sound,
     claudeAuth: s.claudeAuth,
     userConfig: s.userConfig,
-    account: s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
+    accountEnabled: ACCOUNT_ENABLED,
+    account: ACCOUNT_ENABLED && s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
   };
 }
@@ -159,10 +153,10 @@ export function coreSettings(): CoreSettings {
   const apiKey = s.proxy.enabled ? decryptKey(s.proxy.apiKeyEnc) : '';
   return {
     toolPaths: s.toolPaths,
-    // Есть включённый ключ — агенты идут через прокси PurpleSchool; нет или выключен — через собственный вход claude и codex.
+    // Есть включённый ключ — агенты идут через AI-прокси; нет или выключен — через собственный вход claude и codex.
     proxy: {
-      baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '',
-      codexBaseUrl: s.proxy.codexBaseUrl.trim() || PURPLESCHOOL_CODEX_PROXY,
+      baseUrl: apiKey ? s.proxy.baseUrl.trim() || DEFAULT_PROXY.claude : '',
+      codexBaseUrl: s.proxy.codexBaseUrl.trim() || DEFAULT_PROXY.codex,
       apiKey,
     },
     models: s.models,

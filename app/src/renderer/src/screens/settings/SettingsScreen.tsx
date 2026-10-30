@@ -38,7 +38,7 @@ export function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [quick, setQuick] = useState(false);
   // Первый запуск идёт после экрана входа — начинаем с инструментов; дальше первой открывается вкладка аккаунта.
-  const [tab, setTab] = useState<SettingsTab>(() => (s && !s.onboarded ? 'tools' : 'account'));
+  const [tab, setTab] = useState<SettingsTab>(() => (s && (!s.onboarded || !s.accountEnabled) ? 'tools' : 'account'));
 
   useEffect(() => {
     if (!s) return;
@@ -173,8 +173,12 @@ export function SettingsScreen() {
           value={tab}
           onChange={setTab}
           items={[
-            { id: 'account', label: 'Аккаунт' },
-            { id: 'stats', label: 'Статистика' },
+            ...(s.accountEnabled
+              ? [
+                  { id: 'account' as const, label: 'Аккаунт' },
+                  { id: 'stats' as const, label: 'Статистика' },
+                ]
+              : []),
             { id: 'tools', label: 'Инструменты', extra: tools && !allFound ? <span className="tab-badge b-coral">!</span> : undefined },
             { id: 'models', label: 'Модели' },
             { id: 'window', label: 'Приложение' },
@@ -310,7 +314,13 @@ export function SettingsScreen() {
                   <h2>Инструменты</h2>
                   <p>
                     Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную. «Проверить подключение» отправит агентам
-                    короткий запрос — {proxyOn ? 'через AI-прокси PurpleSchool' : 'по вашим подпискам claude и codex'}.
+                    короткий запрос —{' '}
+                    {proxyOn
+                      ? s.accountEnabled
+                        ? 'через AI-прокси PurpleSchool'
+                        : 'через AI-прокси'
+                      : 'по вашим подпискам claude и codex'}
+                    .
                   </p>
                 </div>
                 <div className="panel-actions">

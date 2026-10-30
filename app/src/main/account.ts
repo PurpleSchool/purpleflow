@@ -1,4 +1,5 @@
 import type { AccountKey, AccountOverview, AccountResult, AccountUsage, UsageBucket } from '../shared/ipc';
+import { ACCOUNT_API, ACCOUNT_ENABLED } from './provider';
 import { accountToken, proxyKey, setAccount, setAccountProfile, setProxyKey } from './settings';
 
 /**
@@ -6,7 +7,7 @@ import { accountToken, proxyKey, setAccount, setAccountProfile, setProxyKey } fr
  * Запросы идут из main-процесса на машине пользователя — лимит частоты /auth/* считается по его IP,
  * а токен аккаунта не попадает в окно. Токен бессрочный и даёт полный доступ: не логируем и не кладём в URL.
  */
-const API = (process.env.PURPLEFLOW_API_URL || 'https://app.purpleschool.ru/api-v2').replace(/\/+$/, '');
+const API = ACCOUNT_API;
 const KEY_NAME = 'PurpleFlow';
 const TIMEOUT_MS = 20_000;
 
@@ -29,6 +30,7 @@ async function request<T>(
   body?: unknown,
   token?: string,
 ): Promise<{ ok: true; data: T } | (Fail & { status?: number })> {
+  if (!ACCOUNT_ENABLED) return { ok: false, error: 'Аккаунт PurpleSchool отключён в этой сборке' };
   let res: Response;
   try {
     res = await fetch(`${API}${route}`, {

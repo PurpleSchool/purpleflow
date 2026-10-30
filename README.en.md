@@ -41,7 +41,7 @@ npm run dev
 
 On first launch the app finds `git`, `claude`, `codex` and `openspec` in your login shell's PATH. You can also point to each tool manually.
 
-The optional PurpleSchool account provides an AI proxy for `claude` and `codex`. Without an account, the agents run on your own subscriptions.
+The optional PurpleSchool account provides an AI proxy for `claude` and `codex`. Without an account, the agents run on your own subscriptions. To remove the account entirely (sign-in screen, Account and Usage tabs, default proxy URLs), run or build with `PURPLEFLOW_ACCOUNT=off`. Everything provider-specific lives in `app/src/main/provider.ts`.
 
 ## Building
 

@@ -10,6 +10,8 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: ['@purpleflow/core'] })],
     resolve: { alias: coreAlias },
+    // Сборка без аккаунта PurpleSchool: PURPLEFLOW_ACCOUNT=off npm run build (см. src/main/provider.ts).
+    define: { 'process.env.PURPLEFLOW_ACCOUNT_BUILD': JSON.stringify(process.env.PURPLEFLOW_ACCOUNT ?? '') },
     build: {
       rollupOptions: {
         input: {

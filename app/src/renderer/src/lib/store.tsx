@@ -182,8 +182,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const s = await bridge.settings.get();
       dispatch({ t: 'settings', settings: s });
-      // Первый запуск: сначала вход в PurpleSchool (можно пропустить), затем настройка инструментов.
-      if (!s.onboarded) dispatch({ t: 'view', view: { name: !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
+      // Первый запуск: сначала вход в PurpleSchool (можно пропустить; в сборке без аккаунта его нет), затем настройка инструментов.
+      if (!s.onboarded) dispatch({ t: 'view', view: { name: s.accountEnabled && !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
       await refreshRuns();
       bridge.core
         .listChats()
