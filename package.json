@@ -31,5 +31,6 @@
   "type": "module",
   "engines": {
     "node": ">=22.18"
-  }
+  },
+  "license": "MIT"
 }
