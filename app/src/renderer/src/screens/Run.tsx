@@ -129,8 +129,8 @@ export function RunScreen({ runId }: { runId: string }) {
     () =>
       onCoreEvent((e) => {
         if (e.type === 'stage.started' && e.runId === runId && showPlan) void refreshDocs();
-         
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [runId, showPlan],
   );
 
