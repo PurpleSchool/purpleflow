@@ -10,8 +10,8 @@ core/        ядро на чистом TypeScript, без Electron: стади�
   prompts/   промпты стадий (*.md) и JSON-схема ответа ревьюера
   scripts/   e2e.ts — headless-прогон флоу на настоящих агентах
 app/         Electron + electron-vite + React; ядро работает в utilityProcess
-test-repo/   шаблон тестового TypeScript-проекта для критерия приёмки 2
-scripts/     make-test-repo.mjs — развернуть test-repo как git-репозиторий
+examples/    шаблоны тестовых проектов: sample-ts (TypeScript) и sample-web (веб-приложение с багом)
+scripts/     make-sample.mjs — развернуть шаблон из examples/ как git-репозиторий
 ```
 
 ## Установка и запуск
@@ -204,7 +204,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @purpleflow/app -- -c.mac.
 
 CLI выбран вместо Playwright MCP ради экономии токенов: нет схем инструментов в контексте, снимок страницы компактный.
 
-Второй тестовый проект — веб-приложение с заложенным багом: `npm run make-test-repo -- --web ~/purpleflow-sample-web` (команда запуска `PORT={port} npm start`).
+Второй тестовый проект — веб-приложение с заложенным багом: `npm run make-sample -- --web ~/purpleflow-sample-web` (команда запуска `PORT={port} npm start`).
 
 ## Ядро: события и команды
 
@@ -302,7 +302,7 @@ npm test
 Тестовый репозиторий для критерия 2 (небольшой TypeScript-проект с тестами на `node:test`, без зависимостей):
 
 ```bash
-npm run make-test-repo -- ~/purpleflow-sample
+npm run make-sample -- ~/purpleflow-sample
 ```
 
 Задача для проверки: «Добавь функцию slugify(s: string): string в src/strings.ts: переводит строку в kebab-case латиницей (кириллицу транслитерирует), убирает всё кроме букв, цифр и дефисов. Добавь тест.»
@@ -318,7 +318,7 @@ cd core && npx tsx scripts/e2e.ts --repo ~/purpleflow-sample --reject-plan "До
 | Критерий | Как проверено | Итог |
 |---|---|---|
 | Приложение запускается «из Finder» и находит claude и codex | `open` упакованного `PurpleFlow.app` (LaunchServices, урезанный PATH) | git, claude 2.1.286, codex 0.160.1 найдены через login-шелл |
-| Задача проходит все стадии до архива и коммита | headless e2e и живой прогон через окно на `test-repo` | коммит в `purpleflow/<id>`, изменение в `openspec/changes/archive/`, тесты зелёные |
+| Задача проходит все стадии до архива и коммита | headless e2e и живой прогон через окно на `examples/sample-ts` | коммит в `purpleflow/<id>`, изменение в `openspec/changes/archive/`, тесты зелёные |
 | Красные тесты → повтор с выводом → стоп после 3 попыток | e2e с заведомо красной командой тестов | 3 реализации, исполнитель цитирует вывод тестов, затем вопрос человеку |
 | «Вернуть с комментарием» доходит до агента | возврат на G1 и на G2 с замечанием на строке | планировщик добавил пункт, исполнитель выполнил замечание на строке |
 | «Стоп» не оставляет живых процессов | стоп посреди плана + юнит-тест дерева процессов | 0 живых процессов |

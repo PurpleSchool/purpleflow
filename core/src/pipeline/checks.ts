@@ -88,7 +88,7 @@ export async function probeTests(h: Orchestrator, run: RunFile, check: CheckResu
   if (stash === undefined) return retry;
   run.baseProbeStash = stash ?? undefined;
   h.save(run);
-  let base: CheckResult | null = null;
+  let base: CheckResult;
   try {
     base = await h.runCheck(run, 'test', check.command, s.testTimeoutMin, 'на исходном коде, без изменений задачи');
   } finally {

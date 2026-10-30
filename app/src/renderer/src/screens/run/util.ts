@@ -35,6 +35,6 @@ export function withPicked(comment: string, picked: ReviewItem[]): string {
 }
 
 export function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
+   
   return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
 }

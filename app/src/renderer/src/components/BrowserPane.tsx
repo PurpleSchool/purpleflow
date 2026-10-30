@@ -48,7 +48,7 @@ export function useAgentScreen(runId: string) {
         if (!e.frame) setAction(null);
       } else if (e.type === 'agent.output' && e.runId === runId && e.stage === 'visual') {
         // Вывод приходит кусками — склеиваем и берём последнюю завершённую строку с командой pw.
-        // eslint-disable-next-line no-control-regex
+         
         buf = (buf + e.text.replace(/\x1b\[[0-9;]*m/g, '')).slice(-4000);
         const lines = buf.split(/\r?\n/).slice(0, -1);
         for (let i = lines.length - 1; i >= 0; i--) {

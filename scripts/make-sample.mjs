@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Создаёт git-репозиторий из шаблона в указанной папке (по умолчанию ~/purpleflow-sample).
-// --web — веб-приложение для визуальной проверки (шаблон test-repo-web/).
+// --web — веб-приложение для визуальной проверки (шаблон examples/sample-web/).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +15,7 @@ if (fs.existsSync(target) && fs.readdirSync(target).length) {
   console.error(`Папка ${target} не пуста`);
   process.exit(1);
 }
-fs.cpSync(path.join(root, web ? 'test-repo-web' : 'test-repo'), target, { recursive: true });
+fs.cpSync(path.join(root, 'examples', web ? 'sample-web' : 'sample-ts'), target, { recursive: true });
 fs.renameSync(path.join(target, 'gitignore.txt'), path.join(target, '.gitignore'));
 const git = (...args) => execFileSync('git', args, { cwd: target, stdio: 'inherit' });
 git('init', '-q', '-b', 'main');

@@ -61,7 +61,7 @@ export async function mapFilesToPlan(h: Orchestrator, id: string) {
   if (files.length < 4) return;
   const res = await h.service({ prompt: h.prompts.render('plan-map.md', { tasks: docs.tasks.slice(0, 20_000), files: files.map((f) => `- ${f.path} (+${f.add} −${f.del})`).join('\n') }), group: `${run.id}:map`, timeoutMs: 3 * 60_000 }).catch(() => null);
   if (!res?.ok) return;
-  let groups: { title: string; files: string[] }[] = [];
+  let groups: { title: string; files: string[] }[];
   try {
     const j = parseJsonReply<{ groups?: { title?: unknown; files?: unknown }[] }>(res.text);
     if (!j) return;

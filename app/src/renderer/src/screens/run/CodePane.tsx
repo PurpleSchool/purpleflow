@@ -70,7 +70,7 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
   };
   useEffect(() => {
     setDiff(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [run.id]);
   // Стадия сменилась (реализация закончилась, пришли на приёмку) — код уже другой, перезагружаем сами.
   useEffect(() => {

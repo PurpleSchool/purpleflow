@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Archive, ChevronDown, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
+import { Archive, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
 import type { ProjectBranches, Workspace, NextPartDraft } from '@purpleflow/core';
 import { Button, Topbar } from '../components/ui';
 import { Select } from '../components/Dropdown';

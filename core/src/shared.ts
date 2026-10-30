@@ -110,7 +110,7 @@ export function parseVerdicts(text: string): { index: number; verdict: 'confirme
 
 /** Имена упавших тестов из вывода раннера (Jest, Vitest, pytest, go test, node:test); null — не распознали. */
 export function failedTestNames(output: string): string[] | null {
-  // eslint-disable-next-line no-control-regex
+   
   const text = output.replace(/\x1b\[[0-9;]*m/g, '');
   const names = new Set<string>();
   for (const l of text.split('\n')) {
@@ -125,7 +125,7 @@ export function failedTestNames(output: string): string[] | null {
 }
 
 export function errorCount(output: string): number | null {
-  // eslint-disable-next-line no-control-regex
+   
   const text = output.replace(/\x1b\[[0-9;]*m/g, '');
   const patterns = [
     /✖\s*\d+\s+problems?\s*\((\d+)\s+errors?/g, // ESLint
@@ -235,7 +235,7 @@ export function parseQuestions(text: string): ClarifyQuestion[] {
 
 export function parseShots(text: string): { file: string; caption: string }[] {
   try {
-    const j = parseJsonReply<Record<string, any>>(text);
+    const j = parseJsonReply<Record<string, unknown>>(text);
     if (!j) return [];
     return Array.isArray(j.shots)
       ? j.shots.filter((x: { file?: unknown }) => typeof x?.file === 'string').map((x: { file: string; caption?: unknown }) => ({ file: x.file, caption: String(x.caption ?? '') }))

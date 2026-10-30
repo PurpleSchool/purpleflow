@@ -48,7 +48,6 @@ export async function answer(h: Orchestrator, id: string, answers: { q: string; 
 export async function stagePlan(h: Orchestrator, run: RunFile) {
   // Новый план — новая постановка: прошлая сессия исполнителя к нему не относится.
   run.executorSession = undefined;
-  const s = h.opts.getSettings();
   const tools = await h.tools(['openspec']);
   const attempt = h.begin(run, 'plan', run.models.planner);
 

@@ -253,7 +253,7 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
     if (!timer) timer = setTimeout(flush, FLUSH_MS);
   };
 
-  let res: AgentResult = { ok: false, text: '', usage: emptyUsage(), error: 'Агент не запустился' };
+  let res: AgentResult;
   let changed: string[] | undefined;
   try {
     const s = h.opts.getSettings();

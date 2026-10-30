@@ -68,7 +68,7 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
   if (run.workspace === 'branch' || process.platform === 'win32') return;
   const found: string[] = [];
   const walk = (rel: string, depth: number) => {
-    let entries: fs.Dirent[] = [];
+    let entries: fs.Dirent[];
     try { entries = fs.readdirSync(path.join(run.projectPath, rel), { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (!e.isDirectory() || e.name === '.git' || e.name.startsWith('.next') || e.name === 'dist' || e.name === 'build') continue;

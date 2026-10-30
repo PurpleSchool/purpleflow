@@ -165,6 +165,7 @@ test('эталон в фоне: линтер — с уточнения, тест
   });
   const base = fake.fn;
   let planSawLint: boolean | undefined;
+  // eslint-disable-next-line prefer-const -- присваивается ниже, а читается в замыкании выше
   let core: Orchestrator;
   fake.fn = async (o) => {
     if (/Перед планом проверь/.test(o.prompt)) {

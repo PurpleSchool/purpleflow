@@ -124,11 +124,8 @@ export async function learn(h: Orchestrator, run: RunFile) {
   const known = h.knowledgeOf(run.projectPath).lessons ?? [];
     const res = await h.service({ prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }), group: `${run.id}:learn`, timeoutMs: 3 * 60_000 }).catch(() => null);
   if (!res?.ok) return;
-  let lessons: string[] = [];
-  {
-    const j = parseJsonReply<{ lessons?: unknown }>(res.text) ?? {};
-    lessons = Array.isArray(j.lessons) ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5) : [];
-  }
+  const j = parseJsonReply<{ lessons?: unknown }>(res.text) ?? {};
+  const lessons: string[] = Array.isArray(j.lessons) ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5) : [];
   const seen = new Set(known.map((l) => l.text.toLowerCase()));
   const fresh = lessons.map((t) => t.trim()).filter((t) => !seen.has(t.toLowerCase()));
   if (!fresh.length) return;
@@ -339,9 +336,10 @@ export async function detectCommandsAI(h: Orchestrator, dir: string) : Promise<A
   const res = await h.service({ prompt: h.prompts.raw('detect-commands.md'), cwd: dir, group: `detect-${Date.now()}`, timeoutMs: 3 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить команды');
   try {
-    const j = parseJsonReply<Record<string, any>>(res.text);
+    const j = parseJsonReply<Record<string, unknown>>(res.text);
     if (!j) throw new Error('не JSON');
     const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    const notes = (j.notes ?? {}) as Record<string, unknown>;
     return {
       setupCommand: str(j.setup),
       lintCommand: str(j.lint),
@@ -349,7 +347,7 @@ export async function detectCommandsAI(h: Orchestrator, dir: string) : Promise<A
       runCommand: str(j.run),
       appUrl: str(j.url),
       visualNotes: str(j.visual),
-      notes: { setup: str(j.notes?.setup), lint: str(j.notes?.lint), test: str(j.notes?.test), run: str(j.notes?.run) },
+      notes: { setup: str(notes.setup), lint: str(notes.lint), test: str(notes.test), run: str(notes.run) },
     };
   } catch {
     throw new Error(`Нейросеть ответила не в формате JSON: ${res.text.slice(0, 300)}`);
@@ -361,10 +359,10 @@ export async function suggestMode(h: Orchestrator, task: string) : Promise<ModeS
   const res = await h.service({ prompt: h.prompts.render('suggest-mode.md', { task }), group: `mode-${Date.now()}`, timeoutMs: 90_000 });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить режим');
   try {
-    const j = parseJsonReply<Record<string, any>>(res.text);
+    const j = parseJsonReply<Record<string, unknown>>(res.text);
     if (!j) throw new Error('не JSON');
     const modes: RunMode[] = ['quick', 'bug', 'task', 'epic', 'refactor'];
-    return { mode: modes.includes(j.mode) ? j.mode : 'task', reason: String(j.reason ?? '').trim() };
+    return { mode: modes.includes(j.mode as RunMode) ? (j.mode as RunMode) : 'task', reason: String(j.reason ?? '').trim() };
   } catch {
     throw new Error(`Нейросеть ответила не в формате JSON: ${res.text.slice(0, 200)}`);
   }

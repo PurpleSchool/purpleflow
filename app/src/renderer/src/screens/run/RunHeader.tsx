@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock3, GitPullRequest, Trash2, ArrowRight, ChevronDown, FileText, GitMerge, Hand, ShieldAlert, X, TriangleAlert } from 'lucide-react';
+import { Clock3, GitPullRequest, Trash2, ArrowRight, FileText, GitMerge, Hand, ShieldAlert, X, TriangleAlert } from 'lucide-react';
 import type { PrStatus, RunFile, StageId } from '@purpleflow/core';
 import { useNow } from '../../components/Timeline';
 import { isGate } from '../../lib/bars';
@@ -55,7 +55,7 @@ export function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
   );
 }
 
-export function Banner({ run, runId }: { run: RunFile; runId: string }) {
+export function Banner({ run }: { run: RunFile }) {
   if (run.status === 'finished') return null;
   if (run.status === 'queued') {
     return (

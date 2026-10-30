@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircleQuestion, ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleStop, FolderOpen, MousePointerClick, GitBranch, Play, SkipForward, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { MessageCircleQuestion, ArrowRight, ChevronDown, FileText, Paperclip, CircleStop, FolderOpen, MousePointerClick, GitBranch, Play, SkipForward, Sparkles, TriangleAlert, X } from 'lucide-react';
 import type { StageId } from '@purpleflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
@@ -337,7 +337,7 @@ export function RunScreen({ runId }: { runId: string }) {
           )}
         </div>
 
-        <Banner run={run} runId={runId} />
+        <Banner run={run} />
         <LongRunBanner run={run} limitMin={state.settings?.agentTimeoutMin ?? 30} />
         <Warnings run={run} />
 
