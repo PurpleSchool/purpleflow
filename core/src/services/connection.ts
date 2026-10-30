@@ -8,9 +8,9 @@ import type { ConnectionCheck, Role } from '../types.js';
 import { DEFAULT_AGENTS } from '../types.js';
 
 /** Тестовый запрос каждым агентом с текущими настройками прокси и моделей. */
-export async function testConnection(h: Kernel): Promise<ConnectionCheck[]> {
-  const s = h.opts.getSettings();
-  const found = await detectTools(h.opts.env, s.toolPaths);
+export async function testConnection(k: Kernel): Promise<ConnectionCheck[]> {
+  const s = k.opts.getSettings();
+  const found = await detectTools(k.opts.env, s.toolPaths);
   const present = (['claude', 'codex'] as const).filter((a) => found[a].path && !found[a].error);
   if (!present.length) throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
   const tools = { claude: found.claude.path!, codex: found.codex.path! };
@@ -26,7 +26,7 @@ export async function testConnection(h: Kernel): Promise<ConnectionCheck[]> {
     const base = {
       bin: tools[agent],
       cwd: dir,
-      env: h.opts.env,
+      env: k.opts.env,
       prompt,
       model,
       timeoutMs: 120_000,
@@ -35,7 +35,7 @@ export async function testConnection(h: Kernel): Promise<ConnectionCheck[]> {
       proxy,
       claudeAuth: s.claudeAuth,
     };
-    const r = agent === 'claude' ? await h.claude(base) : await h.codex({ ...base, sandbox: 'read-only' });
+    const r = agent === 'claude' ? await k.claude(base) : await k.codex({ ...base, sandbox: 'read-only' });
     return {
       agent,
       ok: r.ok,

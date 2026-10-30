@@ -17,8 +17,8 @@ import { modeRules, taskText } from '../services/prompting.js';
 import { getChangeDocs } from '../services/runs.js';
 import { diffBase, prepareApp } from '../services/workspace.js';
 import type { RunFile, VisualResult } from '../types.js';
-export function visualDir(h: Kernel, run: RunFile, attempt: number): string {
-  return path.join(h.opts.dataDir, 'visual', run.id, String(attempt));
+export function visualDir(k: Kernel, run: RunFile, attempt: number): string {
+  return path.join(k.opts.dataDir, 'visual', run.id, String(attempt));
 }
 
 /**
@@ -26,14 +26,14 @@ export function visualDir(h: Kernel, run: RunFile, attempt: number): string {
  * браузер (Playwright CLI через обёртку pw — служебные файлы остаются вне репозитория),
  * собрать скриншоты и вердикт { blocking, notes, shots }.
  */
-export async function stageVisual(h: Kernel, run: RunFile) {
+export async function stageVisual(k: Kernel, run: RunFile) {
   const agent = run.agents.visual ?? 'claude';
-  const tools = await h.tools([agent]);
+  const tools = await k.tools([agent]);
   // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
   const model =
-    run.models.visual || (agent === 'claude' ? claudeModel(h, run.agents, run.models) : agentModel(h, 'codex', run.agents, run.models));
-  const attempt = h.begin(run, 'visual', model || agent);
-  const dir = visualDir(h, run, attempt.attempt);
+    run.models.visual || (agent === 'claude' ? claudeModel(k, run.agents, run.models) : agentModel(k, 'codex', run.agents, run.models));
+  const attempt = k.begin(run, 'visual', model || agent);
+  const dir = visualDir(k, run, attempt.attempt);
   fs.mkdirSync(dir, { recursive: true });
   const { port, url, command } = await expandPorts(run.appUrl!, run.runCommand!);
   const serverGroup = `${run.id}:server`;
@@ -42,27 +42,27 @@ export async function stageVisual(h: Kernel, run: RunFile) {
   let serverOut = '';
 
   // Миграции и сиды ветки — до запуска: иначе приложение поднимется на старой схеме базы.
-  await prepareApp(h, {
+  await prepareApp(k, {
     repo: run.projectPath,
     cwd: run.worktreePath,
     group: serverGroup,
-    onOutput: (t) => h.log(run, c.dim(crlf(t)), false),
+    onOutput: (t) => k.log(run, c.dim(crlf(t)), false),
   });
-  h.checkStop(run);
-  h.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
+  k.checkStop(run);
+  k.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
   let exited: number | null | undefined;
   const server = runProc(command, [], {
     cwd: run.worktreePath,
-    env: { ...h.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
+    env: { ...k.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
     shell: true,
     group: serverGroup,
     onStdout: (t) => {
       serverOut = (serverOut + t).slice(-6000);
-      h.log(run, c.dim(crlf(t)), false);
+      k.log(run, c.dim(crlf(t)), false);
     },
     onStderr: (t) => {
       serverOut = (serverOut + t).slice(-6000);
-      h.log(run, c.dim(crlf(t)), false);
+      k.log(run, c.dim(crlf(t)), false);
     },
   });
   void server.then((r) => {
@@ -70,8 +70,8 @@ export async function stageVisual(h: Kernel, run: RunFile) {
   });
 
   try {
-    const ready = await waitForUrl(url, 120_000, () => exited !== undefined || h.stopping.has(run.id));
-    h.checkStop(run);
+    const ready = await waitForUrl(url, 120_000, () => exited !== undefined || k.stopping.has(run.id));
+    k.checkStop(run);
     if (!ready) {
       throw new Error(
         exited !== undefined
@@ -79,7 +79,7 @@ export async function stageVisual(h: Kernel, run: RunFile) {
           : `За 2 минуты приложение не ответило на ${url}. Проверьте команду запуска и адрес ({port} подставляется автоматически).`,
       );
     }
-    h.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
+    k.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
 
     // pw: обёртка над Playwright CLI с отдельной сессией и рабочей папкой для скриншотов.
     const session = `purpleflow-${run.id.slice(0, 8)}`;
@@ -93,16 +93,16 @@ export async function stageVisual(h: Kernel, run: RunFile) {
     }
 
     // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
-    const live = await startLiveBrowser(h, run, dir, url, serverGroup, session);
+    const live = await startLiveBrowser(k, run, dir, url, serverGroup, session);
     cast = live?.cast ?? null;
-    const docs = await getChangeDocs(h, run.id);
-    const tg = await h.tools(['git']);
-    const changed = await new Git(tg.git, h.opts.env).changedFiles(run.worktreePath, diffBase(h, run));
-    const prompt = h.prompts.render('visual.md', {
+    const docs = await getChangeDocs(k, run.id);
+    const tg = await k.tools(['git']);
+    const changed = await new Git(tg.git, k.opts.env).changedFiles(run.worktreePath, diffBase(k, run));
+    const prompt = k.prompts.render('visual.md', {
       url,
       dir,
-      task: taskText(h, run),
-      attachments: attachmentsBlock(h, run),
+      task: taskText(k, run),
+      attachments: attachmentsBlock(k, run),
       proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
       specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
       files:
@@ -112,17 +112,17 @@ export async function stageVisual(h: Kernel, run: RunFile) {
           .join('\n') || '(нет)',
       // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
       notes:
-        getProjectConfig(h, run.projectPath)?.visualNotes ||
+        getProjectConfig(k, run.projectPath)?.visualNotes ||
         run.visualNotes ||
         '(нет — если нужен вход или данные, которых нет, верни "unverified")',
     });
     const base = {
-      ...agentBase(h, run, tools[agent]),
-      env: prependPath(h.opts.env, dir),
+      ...agentBase(k, run, tools[agent]),
+      env: prependPath(k.opts.env, dir),
       prompt,
       systemPrompt:
-        h.prompts.raw('visual.system.md') +
-        modeRules(h, 'visual', run) +
+        k.prompts.raw('visual.system.md') +
+        modeRules(k, 'visual', run) +
         (live
           ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.`
           : ''),
@@ -132,14 +132,14 @@ export async function stageVisual(h: Kernel, run: RunFile) {
       agent === 'codex'
         ? // pw пишет скриншоты и сессию вне рабочей копии, npx — в свой кэш, браузеру нужна сеть: в песочнице codex это не работает.
           // Код не меняет — это требование промпта, как и у claude.
-          await h.codex({ ...base, sandbox: 'danger-full-access' })
-        : await h.claude({
+          await k.codex({ ...base, sandbox: 'danger-full-access' })
+        : await k.claude({
             ...base,
             addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
             // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
             tools: ['Bash', 'Read', 'Glob', 'Grep'],
           });
-    h.afterAgent(run, attempt, res);
+    k.afterAgent(run, attempt, res);
 
     const parsed = parseReview(res.text);
     if (!parsed) throw new Error(`Визуальная проверка вернула ответ не в формате JSON:\n${res.text.slice(0, 400)}`);
@@ -169,7 +169,7 @@ export async function stageVisual(h: Kernel, run: RunFile) {
         serverOutput: serverOut.trim() || undefined,
       };
       run.visuals = [...(run.visuals ?? []), result];
-      h.log(
+      k.log(
         run,
         c.amber(`! визуально проверить не удалось: ${unverified}`) +
           '\n' +
@@ -178,9 +178,9 @@ export async function stageVisual(h: Kernel, run: RunFile) {
           ) +
           '\n',
       );
-      h.end(run, attempt, 'done', `Не удалось проверить: ${unverified}`);
+      k.end(run, attempt, 'done', `Не удалось проверить: ${unverified}`);
       run.next = 'gate2';
-      h.save(run);
+      k.save(run);
       return;
     }
     const result: VisualResult = {
@@ -194,14 +194,14 @@ export async function stageVisual(h: Kernel, run: RunFile) {
     };
     run.visuals = [...(run.visuals ?? []), result];
     if (result.blocking.length)
-      h.log(
+      k.log(
         run,
         c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) +
           result.blocking.map((i) => `  • ${formatItem(i)}`).join('\n') +
           '\n',
       );
-    h.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
-    h.end(
+    k.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
+    k.end(
       run,
       attempt,
       result.blocking.length ? 'failed' : 'done',
@@ -212,7 +212,7 @@ export async function stageVisual(h: Kernel, run: RunFile) {
 
     if (!result.blocking.length) {
       run.next = 'gate2';
-      h.save(run);
+      k.save(run);
       return;
     }
     run.feedback = {
@@ -222,13 +222,13 @@ export async function stageVisual(h: Kernel, run: RunFile) {
         result.blocking.map((i) => `- ${formatItem(i)}`).join('\n') +
         (shots.length ? '\n\nСкриншоты:\n' + shots.map((x) => `- ${x.file} — ${x.caption}`).join('\n') : ''),
     };
-    h.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
+    k.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
   } finally {
     cast?.stop();
-    h.emit({ type: 'visual.frame', runId: run.id, frame: null });
+    k.emit({ type: 'visual.frame', runId: run.id, frame: null });
     await runProc('npx', ['-y', '@playwright/cli@latest', `-s=purpleflow-${run.id.slice(0, 8)}`, 'close'], {
       cwd: dir,
-      env: h.opts.env,
+      env: k.opts.env,
       timeoutMs: 20_000,
     }).catch(() => undefined);
     await killGroup(serverGroup);
@@ -242,14 +242,14 @@ export async function stageVisual(h: Kernel, run: RunFile) {
  * null — Chrome не найден или не поднялся: агент откроет свой браузер через `pw open`, без трансляции.
  */
 export async function startLiveBrowser(
-  h: Kernel,
+  k: Kernel,
   run: RunFile,
   dir: string,
   url: string,
   group: string,
   session: string,
 ): Promise<{ cast: Screencast } | null> {
-  const chrome = findChrome(h.opts.env);
+  const chrome = findChrome(k.opts.env);
   if (!chrome) return null;
   const port = await freePort();
   void runProc(
@@ -266,29 +266,29 @@ export async function startLiveBrowser(
       '--force-device-scale-factor=2',
       url,
     ],
-    { cwd: dir, env: h.opts.env, group },
+    { cwd: dir, env: k.opts.env, group },
   ).catch(() => undefined);
   if (!(await waitForCdp(port))) {
-    h.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
+    k.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
     return null;
   }
   const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], {
     cwd: dir,
-    env: h.opts.env,
+    env: k.opts.env,
     timeoutMs: 120_000,
   });
   if (att.code !== 0) {
-    h.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
+    k.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
     return null;
   }
-  const cast = new Screencast(port, (frame) => h.emit({ type: 'visual.frame', runId: run.id, frame }));
+  const cast = new Screencast(port, (frame) => k.emit({ type: 'visual.frame', runId: run.id, frame }));
   cast.start();
-  h.log(run, c.dim('Браузер агента транслируется во вкладку «Браузер».') + '\n');
+  k.log(run, c.dim('Браузер агента транслируется во вкладку «Браузер».') + '\n');
   return { cast };
 }
 
 /** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
-export function getVisualShot(h: Kernel, id: string, file: string): string | null {
+export function getVisualShot(k: Kernel, id: string, file: string): string | null {
   if (!fs.existsSync(file)) return null;
   // Сравниваем реальные пути: каталог данных может быть ссылкой.
   const real = (p: string) => {
@@ -298,7 +298,7 @@ export function getVisualShot(h: Kernel, id: string, file: string): string | nul
       return path.resolve(p);
     }
   };
-  const root = real(path.join(h.opts.dataDir, 'visual', id));
+  const root = real(path.join(k.opts.dataDir, 'visual', id));
   const full = real(file);
   if (!full.startsWith(root + path.sep)) return null;
   const ext = path.extname(full).slice(1).toLowerCase();

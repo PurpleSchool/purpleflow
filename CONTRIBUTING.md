@@ -32,7 +32,7 @@ npm run check
 Сначала прочитайте [ARCHITECTURE.md](ARCHITECTURE.md). Коротко:
 
 - новая стадия — модуль в `core/src/stages/`, вызов из `drive` в `engine.ts`, маршрут — в `route.ts`;
-- новая возможность вокруг стадий — функция `fn(h: Kernel, …)` в `core/src/services/`;
+- новая возможность вокруг стадий — функция `fn(k: Kernel, …)` в `core/src/services/`;
 - новый метод для окна — объявление в `CoreApi` (`core/src/model/api.ts`), реализация в `Orchestrator`, ключ в `CORE_METHODS` (`app/src/shared/ipc.ts`). Компилятор подскажет, если что-то забыто;
 - окно обращается к main только через `app/src/renderer/src/lib/api.ts`.
 

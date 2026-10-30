@@ -36,20 +36,20 @@ const ACTIONS: Record<ManagerAction['kind'], string> = {
   replan: '`replan` — прервать и вернуться к плану; keepCode: true — сделанный код остаётся (по умолчанию), false — откатить',
 };
 
-export function getManagerChat(h: Kernel, id: string): ManagerMessage[] {
-  return h.store.readChat(id);
+export function getManagerChat(k: Kernel, id: string): ManagerMessage[] {
+  return k.store.readChat(id);
 }
 
-function publish(h: Kernel, id: string, messages: ManagerMessage[]) {
-  h.store.writeChat(id, messages);
-  h.emit({ type: 'manager.updated', runId: id, messages, thinking: h.managerBusy.has(id) });
+function publish(k: Kernel, id: string, messages: ManagerMessage[]) {
+  k.store.writeChat(id, messages);
+  k.emit({ type: 'manager.updated', runId: id, messages, thinking: k.managerBusy.has(id) });
 }
 
 /** Вопрос или просьба человека: менеджер отвечает по фактам прогона и, если нужно, предлагает действие. */
-export async function askManager(h: Kernel, id: string, text: string): Promise<ManagerMessage[]> {
-  const run = h.mustLoad(id);
+export async function askManager(k: Kernel, id: string, text: string): Promise<ManagerMessage[]> {
+  const run = k.mustLoad(id);
   if (!text.trim()) throw new Error('Пустое сообщение');
-  if (h.managerBusy.has(id)) throw new Error('Менеджер ещё отвечает на прошлое сообщение');
+  if (k.managerBusy.has(id)) throw new Error('Менеджер ещё отвечает на прошлое сообщение');
   const msg = (role: ManagerMessage['role'], t: string, extra: Partial<ManagerMessage> = {}): ManagerMessage => ({
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
@@ -57,17 +57,17 @@ export async function askManager(h: Kernel, id: string, text: string): Promise<M
     text: t,
     ...extra,
   });
-  const history = h.store.readChat(id);
+  const history = k.store.readChat(id);
   // Новое сообщение отменяет непринятые предложения: менеджер предложит заново, если нужно.
   for (const m of history) if (m.actionState === 'proposed') m.actionState = 'dismissed';
   const messages = [...history, msg('user', text.trim())];
-  h.managerBusy.add(id);
-  publish(h, id, messages);
+  k.managerBusy.add(id);
+  publish(k, id, messages);
   try {
-    const s = h.opts.getSettings();
-    const prompt = h.prompts.render('manager.md', {
-      state: (await managerSnapshot(h, run)) + relatedBlock(h, run.projectPath),
-      actions: [...availableActions(run), 'command' as const].map((k) => `- ${ACTIONS[k]}`).join('\n'),
+    const s = k.opts.getSettings();
+    const prompt = k.prompts.render('manager.md', {
+      state: (await managerSnapshot(k, run)) + relatedBlock(k, run.projectPath),
+      actions: [...availableActions(run), 'command' as const].map((a) => `- ${ACTIONS[a]}`).join('\n'),
       project: run.projectPath,
       worktree: hasWorktree(run) ? run.worktreePath : '(нет — удалена или ещё не создана)',
       chat: messages
@@ -80,20 +80,20 @@ export async function askManager(h: Kernel, id: string, text: string): Promise<M
     });
     // Только чтение: файлы проекта и прогона. Всё, что меняет состояние, — через предложенное действие и кнопку человека.
     const cwd = hasWorktree(run) ? run.worktreePath : run.projectPath;
-    const res = await service(h, {
+    const res = await service(k, {
       prompt,
       group: `${id}:manager`,
       timeoutMs: 5 * 60_000,
       model: s.models.manager || undefined,
       agent: s.agents?.manager,
       cwd,
-      addDirs: [run.projectPath, ...relatedRepos(h, run.projectPath).map((r) => r.path)],
+      addDirs: [run.projectPath, ...relatedRepos(k, run.projectPath).map((r) => r.path)],
       tools: ['Read', 'Grep', 'Glob'],
     });
     if (!res.ok) throw new Error(res.error ?? 'Менеджер не ответил');
     const parsed = parseReply(res.text);
     // Ход прогона мог уйти вперёд, пока менеджер думал: предлагаем только то, что доступно сейчас.
-    const fresh = h.mustLoad(id);
+    const fresh = k.mustLoad(id);
     const allowed = availableActions(fresh);
     let action = parsed.action && (parsed.action.kind === 'command' || allowed.includes(parsed.action.kind)) ? parsed.action : undefined;
     if (action?.kind === 'command' && action.cwd === 'worktree' && !hasWorktree(fresh)) action = { ...action, cwd: 'project' };
@@ -103,22 +103,22 @@ export async function askManager(h: Kernel, id: string, text: string): Promise<M
   } catch (e) {
     messages.push(msg('manager', `Не получилось ответить: ${(e as Error).message}`, { error: true }));
   } finally {
-    h.managerBusy.delete(id);
+    k.managerBusy.delete(id);
   }
-  publish(h, id, messages);
+  publish(k, id, messages);
   return messages;
 }
 
 /** Человек принял или отклонил предложение менеджера. */
-export async function resolveManagerAction(h: Kernel, id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> {
-  const messages = h.store.readChat(id);
+export async function resolveManagerAction(k: Kernel, id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> {
+  const messages = k.store.readChat(id);
   const m = messages.find((x) => x.id === messageId);
   if (!m?.action || m.actionState !== 'proposed') throw new Error('Это предложение уже неактуально');
   const action = m.action;
-  if (apply && action.kind === 'command') return runCommand(h, id, messages, m, action);
-  if (apply && action.kind !== 'command') await control(h, id, action);
+  if (apply && action.kind === 'command') return runCommand(k, id, messages, m, action);
+  if (apply && action.kind !== 'command') await control(k, id, action);
   m.actionState = apply ? 'applied' : 'dismissed';
-  publish(h, id, messages);
+  publish(k, id, messages);
   return messages;
 }
 
@@ -126,18 +126,18 @@ const hasWorktree = (r: RunFile) => !r.workspacePending && !r.worktreeRemoved &&
 
 /** Команда, подтверждённая человеком: выполняется в папке проекта или прогона, вывод — отдельным сообщением. */
 async function runCommand(
-  h: Kernel,
+  k: Kernel,
   id: string,
   messages: ManagerMessage[],
   m: ManagerMessage,
   a: CommandAction,
 ): Promise<ManagerMessage[]> {
-  if (h.managerBusy.has(id)) throw new Error('Менеджер ещё занят — дождитесь ответа');
-  const run = h.mustLoad(id);
+  if (k.managerBusy.has(id)) throw new Error('Менеджер ещё занят — дождитесь ответа');
+  const run = k.mustLoad(id);
   const cwd = a.cwd === 'worktree' && hasWorktree(run) ? run.worktreePath : run.projectPath;
   m.actionState = 'applied';
-  h.managerBusy.add(id);
-  publish(h, id, messages);
+  k.managerBusy.add(id);
+  publish(k, id, messages);
   let output = '';
   const take = (t: string) => {
     output = (output + t).slice(-20_000);
@@ -145,7 +145,7 @@ async function runCommand(
   try {
     const r = await runProc(a.command, [], {
       cwd,
-      env: h.opts.env,
+      env: k.opts.env,
       shell: true,
       group: `${id}:manager`,
       timeoutMs: 5 * 60_000,
@@ -163,9 +163,9 @@ async function runCommand(
       result: { code: r.code, output: tail(clean, 6000) },
     });
   } finally {
-    h.managerBusy.delete(id);
+    k.managerBusy.delete(id);
   }
-  publish(h, id, messages);
+  publish(k, id, messages);
   return messages;
 }
 
@@ -225,9 +225,9 @@ const mins = (from: string, to?: string) => {
 };
 
 /** Факты о прогоне для менеджера: структурированно, с ограничением объёма — не пересказ сырого лога. */
-export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> {
+export async function managerSnapshot(k: Kernel, run: RunFile): Promise<string> {
   const out: string[] = [];
-  out.push(`Задача: ${clip(taskText(h, run), 3000)}`);
+  out.push(`Задача: ${clip(taskText(k, run), 3000)}`);
   out.push(
     `Режим: ${run.mode}${run.autopilot ? ', автопилот' : ''}. Статус: ${STATUS[run.status]}. Сейчас: ${STAGE_TITLES[run.next]}.${run.message ? ` Сообщение: ${run.message}` : ''}`,
   );
@@ -238,7 +238,7 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
     `\n## Ход прогона (старые — выше)\n${stages.map((a) => `- ${STAGE_TITLES[a.stage]} №${a.attempt}: ${a.status}, ${mins(a.startedAt, a.endedAt)}${a.summary ? ` — ${a.summary}` : ''}${a.error ? ` (ошибка: ${clip(a.error, 300)})` : ''}`).join('\n')}`,
   );
 
-  const docs = run.mode === 'quick' ? null : await getChangeDocs(h, run.id).catch(() => null);
+  const docs = run.mode === 'quick' ? null : await getChangeDocs(k, run.id).catch(() => null);
   if (docs?.tasks.trim()) out.push(`\n## План (tasks.md, [x] — сделано)\n${clip(docs.tasks, 6000)}`);
 
   const test = run.tests.at(-1);
@@ -261,9 +261,9 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
       }`,
     );
 
-  const tools = await h.tools(['git']).catch(() => null);
+  const tools = await k.tools(['git']).catch(() => null);
   if (tools && !run.workspacePending && !run.worktreeRemoved) {
-    const files = await new Git(tools.git, h.opts.env).changedFiles(run.worktreePath, diffBase(h, run)).catch(() => [] as string[]);
+    const files = await new Git(tools.git, k.opts.env).changedFiles(run.worktreePath, diffBase(k, run)).catch(() => [] as string[]);
     const code = files.filter((f) => !f.startsWith('openspec/'));
     out.push(
       `\n## Изменённые файлы (${code.length})\n${
@@ -275,7 +275,7 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
     );
   }
 
-  if (tools) out.push(await gitFacts(h, run, tools.git));
+  if (tools) out.push(await gitFacts(k, run, tools.git));
 
   const impl = [...run.attempts].reverse().find((a) => a.stage === 'implement' && a.output);
   if (impl?.output) out.push(`\n## Последний отчёт исполнителя\n${clip(impl.output, 2500)}`);
@@ -294,7 +294,7 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
         .join('\n')}`,
     );
 
-  const log = h.store
+  const log = k.store
     .readLog(run.id, 64 * 1024)
     .replace(/\x1b\[[0-9;]*m/g, '')
     .replace(/\r/g, '');
@@ -303,9 +303,9 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
 }
 
 /** Git проекта для вопросов о ветках, тегах и релизах — менеджер сам git не запускает. */
-async function gitFacts(h: Kernel, run: RunFile, bin: string): Promise<string> {
+async function gitFacts(k: Kernel, run: RunFile, bin: string): Promise<string> {
   const g = (args: string[]) =>
-    runProc(bin, args, { cwd: run.projectPath, env: h.opts.env, timeoutMs: 15_000 })
+    runProc(bin, args, { cwd: run.projectPath, env: k.opts.env, timeoutMs: 15_000 })
       .then((r) => (r.code === 0 ? r.stdout.trim() : ''))
       .catch(() => '');
   const [status, tags, log] = await Promise.all([

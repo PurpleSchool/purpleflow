@@ -14,58 +14,58 @@ import { diffBase } from '../services/workspace.js';
 import type { RunFile } from '../types.js';
 import { captureBaseChecks, settleBaseChecks } from './checks.js';
 import { startFilesBlock } from './plan.js';
-export async function stageImplement(h: Kernel, run: RunFile) {
+export async function stageImplement(k: Kernel, run: RunFile) {
   // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
   // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
   if (!run.attempts.some((x) => x.stage === 'implement')) {
     // Тесты задачи снимались в фоне, пока человек смотрел план, — дожидаемся; чего нет — снимаем здесь.
-    if (run.mode !== 'quick') await settleBaseChecks(h, run);
-    await captureBaseChecks(h, run);
+    if (run.mode !== 'quick') await settleBaseChecks(k, run);
+    await captureBaseChecks(k, run);
   }
   run.implAttemptsUsed++;
-  const attempt = h.begin(run, 'implement', run.models.executor);
-  const prompt = h.prompts.render(tpl(h, 'implement', run), {
+  const attempt = k.begin(run, 'implement', run.models.executor);
+  const prompt = k.prompts.render(tpl(k, 'implement', run), {
     changeId: run.changeId,
-    task: taskText(h, run),
-    attachments: attachmentsBlock(h, run) + (await startFilesBlock(h, run)),
+    task: taskText(k, run),
+    attachments: attachmentsBlock(k, run) + (await startFilesBlock(k, run)),
     testCommand: run.testCommand || 'не задана',
     attempt: run.implAttemptsUsed,
     limit: run.implAttemptsLimit,
-    feedback: phaseBlock(h, run) + feedbackBlock(h, run.feedback),
+    feedback: phaseBlock(k, run) + feedbackBlock(k, run.feedback),
   });
   let res: AgentResult;
-  const systemPrompt = h.prompts.raw('executor.system.md') + modeRules(h, 'executor', run);
+  const systemPrompt = k.prompts.raw('executor.system.md') + modeRules(k, 'executor', run);
   const onClaude = run.agents.executor === 'claude';
-  const related = await relatedState(h, run.projectPath);
+  const related = await relatedState(k, run.projectPath);
   try {
     // Следующая попытка на claude продолжает сессию прошлой: только замечания, без повторного изучения проекта.
     if (onClaude && run.executorSession) {
-      h.log(run, c.dim('продолжаю сессию исполнителя — в контексте прошлая попытка') + '\n');
-      const short = h.prompts.render('implement-continue.md', {
+      k.log(run, c.dim('продолжаю сессию исполнителя — в контексте прошлая попытка') + '\n');
+      const short = k.prompts.render('implement-continue.md', {
         changeId: run.changeId,
         testCommand: run.testCommand || 'не задана',
         attempt: run.implAttemptsUsed,
         limit: run.implAttemptsLimit,
-        feedback: phaseBlock(h, run) + feedbackBlock(h, run.feedback),
+        feedback: phaseBlock(k, run) + feedbackBlock(k, run.feedback),
       });
-      res = await runRole(h, run, 'executor', { prompt: short, systemPrompt, openspec: true, resume: run.executorSession });
+      res = await runRole(k, run, 'executor', { prompt: short, systemPrompt, openspec: true, resume: run.executorSession });
       if (!res.ok && !res.stopped && /no conversation|session|не найден/i.test(res.error ?? '')) {
         // Сессия пропала (чистка ~/.claude, другой компьютер) — начинаем заново с полной постановкой.
-        h.log(run, c.dim('сессия не найдена — начинаю заново') + '\n');
+        k.log(run, c.dim('сессия не найдена — начинаю заново') + '\n');
         run.executorSession = crypto.randomUUID();
-        res = await runRole(h, run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: run.executorSession });
+        res = await runRole(k, run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: run.executorSession });
       }
     } else {
       if (onClaude) run.executorSession = crypto.randomUUID();
-      res = await runRole(h, run, 'executor', {
+      res = await runRole(k, run, 'executor', {
         prompt,
         systemPrompt,
         openspec: true,
         sessionId: onClaude ? run.executorSession : undefined,
       });
     }
-    h.afterAgent(run, attempt, res);
-    await checkRelatedUntouched(h, run, related);
+    k.afterAgent(run, attempt, res);
+    await checkRelatedUntouched(k, run, related);
   } catch (e) {
     // Сбой агента (ключ, токены, таймаут) не тратит попытку реализации.
     run.implAttemptsUsed--;
@@ -81,24 +81,24 @@ export async function stageImplement(h: Kernel, run: RunFile) {
   }
   const report = res.text.replace(/^НАЗВАНИЕ:.*$/m, '').trim();
   if (report) attempt.output = report;
-  h.end(run, attempt, 'done', firstLine(report) || 'Реализация выполнена');
-  await dropArtifacts(h, run);
+  k.end(run, attempt, 'done', firstLine(report) || 'Реализация выполнена');
+  await dropArtifacts(k, run);
   run.next = 'tests';
-  h.save(run);
+  k.save(run);
 }
 
 /** Сборочные артефакты (tsbuildinfo, next-env.d.ts…), которые агент изменил запуском сборки, — назад к базе: в дифф и коммит они не идут. */
-export async function dropArtifacts(h: Kernel, run: RunFile) {
-  const tools = await h.tools(['git']).catch(() => null);
+export async function dropArtifacts(k: Kernel, run: RunFile) {
+  const tools = await k.tools(['git']).catch(() => null);
   if (!tools) return;
-  const git = new Git(tools.git, h.opts.env);
-  const changed = await git.changedFiles(run.worktreePath, diffBase(h, run)).catch(() => [] as string[]);
+  const git = new Git(tools.git, k.opts.env);
+  const changed = await git.changedFiles(run.worktreePath, diffBase(k, run)).catch(() => [] as string[]);
   const junk = changed.filter((f) => ARTIFACT_RE.test(f));
   if (!junk.length) return;
   await git
-    .restoreFromBase(run.worktreePath, diffBase(h, run), junk)
+    .restoreFromBase(run.worktreePath, diffBase(k, run), junk)
     .catch((e) =>
-      h.warn(run, `Не удалось откатить сборочные артефакты (${junk.join(', ')}) — они попадут в дифф: ${(e as Error).message}`),
+      k.warn(run, `Не удалось откатить сборочные артефакты (${junk.join(', ')}) — они попадут в дифф: ${(e as Error).message}`),
     );
-  h.log(run, c.dim(`Откатил сборочные артефакты, которые попали в изменения: ${junk.join(', ')}`) + '\n');
+  k.log(run, c.dim(`Откатил сборочные артефакты, которые попали в изменения: ${junk.join(', ')}`) + '\n');
 }

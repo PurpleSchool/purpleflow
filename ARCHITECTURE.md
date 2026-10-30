@@ -22,7 +22,7 @@ renderer (React)  ──window.purpleflow──▶  preload  ──IPC──▶ 
 ```
 orchestrator.ts   фасад: implements CoreApi, разводит команды по модулям
       │
-engine.ts         цикл стадий drive, очередь, гейты, решения человека, start/stop/resume, восстановление
+engine.ts, gates.ts   цикл стадий drive, очередь, start/stop/resume, восстановление; гейты и решения человека
       │
 stages/           plan · implement · checks · review · visual · finish
 services/         agents · prompting · attachments · workspace · projects · pr · preview · runs · disk
@@ -34,7 +34,7 @@ model/, parse.ts, route.ts, git.ts, proc.ts, env.ts, store.ts …   типы и 
 ```
 
 - **Kernel** — единственный объект с изменяемым состоянием прогонов: какие прогоны сейчас крутятся, фоновые проверки, превью, занятые чаты. Ещё в нём общие операции: `save`, `log`, `begin`/`end` попытки, `fail`, `tools`. Доменной логики в Kernel нет, от стадий и сервисов он не зависит.
-- **Стадии и сервисы** — функции вида `fn(h: Kernel, …)`. Друг друга они вызывают напрямую. Две операции движка им всё же нужны: `drive` (продолжить цикл) и `halt` (остановить стадию). Их стадии получают через `h.engine` (`EngineHooks`). Связывает эти хуки Orchestrator, поэтому ни стадии, ни сервисы не импортируют `engine.ts`.
+- **Стадии и сервисы** — функции вида `fn(k: Kernel, …)`. Друг друга они вызывают напрямую. Две операции движка им всё же нужны: `drive` (продолжить цикл) и `halt` (остановить стадию). Их стадии получают через `k.engine` (`EngineHooks`). Связывает эти хуки Orchestrator, поэтому ни стадии, ни сервисы не импортируют `engine.ts`.
 - **Движок** знает про все стадии: `drive` вызывает их по `run.next`, пока прогон в статусе `running`, а на гейте останавливается и ждёт человека.
 - **Orchestrator** — тонкий фасад для `core-host`, тестов и `scripts/e2e.ts`. Проверка `implements CoreApi` гарантирует, что фасад покрывает весь API окна.
 

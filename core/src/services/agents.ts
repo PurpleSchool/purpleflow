@@ -14,7 +14,7 @@ import { knowledgeBlock, relatedRepos } from './projects.js';
  * прокси, вход и модель из настроек в одном месте. По умолчанию без инструментов и во временной папке.
  */
 export async function service(
-  h: Kernel,
+  k: Kernel,
   o: {
     prompt: string;
     group: string;
@@ -33,13 +33,13 @@ export async function service(
     fullAccess?: boolean;
   },
 ): Promise<AgentResult> {
-  const s = h.opts.getSettings();
-  const agent = o.agent && (await h.hasTool(o.agent)) ? o.agent : await serviceAgent(h);
-  const tools = await h.tools([agent]);
+  const s = k.opts.getSettings();
+  const agent = o.agent && (await k.hasTool(o.agent)) ? o.agent : await serviceAgent(k);
+  const tools = await k.tools([agent]);
   const common = {
     bin: tools[agent],
     cwd: o.cwd ?? os.tmpdir(),
-    env: o.env ?? h.opts.env,
+    env: o.env ?? k.opts.env,
     prompt: o.prompt,
     timeoutMs: o.timeoutMs,
     idleTimeoutMs: o.idleTimeoutMs,
@@ -50,31 +50,31 @@ export async function service(
   };
   if (agent === 'codex') {
     // Без claude служебное — на codex в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
-    return h.codex({
+    return k.codex({
       ...common,
-      model: o.model || agentModel(h, 'codex', s.agents, s.models) || undefined,
+      model: o.model || agentModel(k, 'codex', s.agents, s.models) || undefined,
       sandbox: o.fullAccess ? 'danger-full-access' : 'read-only',
     });
   }
-  return h.claude({
+  return k.claude({
     ...common,
     claudeAuth: s.claudeAuth,
-    model: o.model || claudeModel(h, s.agents, s.models) || undefined,
+    model: o.model || claudeModel(k, s.agents, s.models) || undefined,
     addDirs: o.addDirs,
     tools: o.tools ?? [],
   });
 }
 
 /** Кто выполняет служебные вызовы (сводка, профиль, уроки, менеджер): claude, а если его нет — codex. */
-export async function serviceAgent(h: Kernel): Promise<AgentKind> {
-  if (await h.hasTool('claude')) return 'claude';
-  if (await h.hasTool('codex')) return 'codex';
+export async function serviceAgent(k: Kernel): Promise<AgentKind> {
+  if (await k.hasTool('claude')) return 'claude';
+  if (await k.hasTool('codex')) return 'codex';
   throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
 }
 
 /** Модель первой роли, которую выполняет этот агент. */
 export function agentModel(
-  h: Kernel,
+  k: Kernel,
   agent: AgentKind,
   agents: Partial<Record<Role, AgentKind>> | undefined,
   models: Record<Role, string>,
@@ -85,7 +85,7 @@ export function agentModel(
 }
 
 /** Модель для служебных запусков claude: модель исполнителя или планировщика, если эту роль выполняет claude. */
-export function claudeModel(h: Kernel, agents: Partial<Record<Role, AgentKind>> | undefined, models: Record<Role, string>): string {
+export function claudeModel(k: Kernel, agents: Partial<Record<Role, AgentKind>> | undefined, models: Record<Role, string>): string {
   const a = { ...DEFAULT_AGENTS, ...agents };
   if (a.executor === 'claude') return models.executor;
   if (a.planner === 'claude') return models.planner;
@@ -97,7 +97,7 @@ export function claudeModel(h: Kernel, agents: Partial<Record<Role, AgentKind>> 
  * readOnly — стадия не меняет файлы (уточнение, ревью): у claude это требование промпта, инструменты не ограничены; у codex — песочница read-only.
  */
 export async function runRole(
-  h: Kernel,
+  k: Kernel,
   run: RunFile,
   role: Role,
   o: {
@@ -114,16 +114,16 @@ export async function runRole(
   },
 ): Promise<AgentResult> {
   const agent = run.agents[role];
-  const tools = await h.tools(o.openspec ? [agent, 'openspec'] : [agent]);
+  const tools = await k.tools(o.openspec ? [agent, 'openspec'] : [agent]);
   const base = {
-    ...agentBase(h, run, tools[agent], o.openspec ? tools.openspec : undefined),
+    ...agentBase(k, run, tools[agent], o.openspec ? tools.openspec : undefined),
     ...(o.onOutput ? { onOutput: o.onOutput } : {}),
   };
   const model = run.models[role] || undefined;
   // Знания о проекте (профиль и уроки) — всем ролям; в продолжении сессии они уже в контексте.
-  const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${knowledgeBlock(h, run)}` || undefined;
+  const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${knowledgeBlock(k, run)}` || undefined;
   if (agent === 'codex') {
-    return h.codex({
+    return k.codex({
       ...base,
       prompt: o.prompt,
       systemPrompt,
@@ -139,7 +139,7 @@ export async function runRole(
     ? `${o.prompt}\n\nИзображения (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}`
     : o.prompt;
   const dirs = [...new Set([...(base.addDirs ?? []), ...images.map((f) => path.dirname(f))])];
-  return h.claude({
+  return k.claude({
     ...base,
     prompt,
     systemPrompt,
@@ -150,10 +150,10 @@ export async function runRole(
   });
 }
 
-export function agentBase(h: Kernel, run: RunFile, bin: string, openspecBin?: string) {
-  const s = h.opts.getSettings();
+export function agentBase(k: Kernel, run: RunFile, bin: string, openspecBin?: string) {
+  const s = k.opts.getSettings();
   // Агенту нужен тот же openspec, что и ядру.
-  const env = openspecBin ? prependPath(h.opts.env, path.dirname(openspecBin)) : h.opts.env;
+  const env = openspecBin ? prependPath(k.opts.env, path.dirname(openspecBin)) : k.opts.env;
   return {
     bin,
     cwd: run.worktreePath,
@@ -163,19 +163,19 @@ export function agentBase(h: Kernel, run: RunFile, bin: string, openspecBin?: st
     timeoutMs: Math.max(1, s.agentTimeoutMin) * 4 * 60_000,
     idleTimeoutMs: Math.max(1, s.agentTimeoutMin) * 60_000,
     group: run.id,
-    onOutput: (text: string) => h.log(run, text, false),
+    onOutput: (text: string) => k.log(run, text, false),
     proxy: s.proxy.baseUrl ? s.proxy : undefined,
     claudeAuth: s.claudeAuth,
     userConfig: s.userConfig ?? true,
-    addDirs: agentDirs(h, run),
+    addDirs: agentDirs(k, run),
   };
 }
 
 /** Каталоги, которые агент видит помимо рабочей копии: вложения задачи и соседние репозитории (только чтение). */
-export function agentDirs(h: Kernel, run: RunFile): string[] | undefined {
+export function agentDirs(k: Kernel, run: RunFile): string[] | undefined {
   const dirs = [
     ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : []),
-    ...relatedRepos(h, run.projectPath).map((r) => r.path),
+    ...relatedRepos(k, run.projectPath).map((r) => r.path),
   ];
   return dirs.length ? dirs : undefined;
 }

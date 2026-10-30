@@ -3,6 +3,7 @@
 import path from 'node:path';
 import { checkCommand, detectProjectCommands, findEnvFiles } from './detect.js';
 import * as engine from './engine.js';
+import { decide } from './gates.js';
 import { detectTools, which } from './env.js';
 import { Git } from './git.js';
 import { Kernel } from './kernel.js';
@@ -65,19 +66,19 @@ export class Orchestrator implements CoreApi {
         await engine.resume(k, cmd.runId);
         break;
       case 'gate.approve':
-        await engine.decide(k, cmd.runId, 'approve', cmd.comment);
+        await decide(k, cmd.runId, 'approve', cmd.comment);
         break;
       case 'gate.reject':
-        await engine.decide(k, cmd.runId, 'reject', cmd.comment, cmd.lineComments);
+        await decide(k, cmd.runId, 'reject', cmd.comment, cmd.lineComments);
         break;
       case 'gate.cancel':
-        await engine.decide(k, cmd.runId, 'cancel');
+        await decide(k, cmd.runId, 'cancel');
         break;
       case 'gate.accept':
-        await engine.decide(k, cmd.runId, 'accept');
+        await decide(k, cmd.runId, 'accept');
         break;
       case 'gate.fix':
-        await engine.decide(k, cmd.runId, 'fix', cmd.comment, cmd.lineComments);
+        await decide(k, cmd.runId, 'fix', cmd.comment, cmd.lineComments);
         break;
       case 'gate.answer':
         await answer(k, cmd.runId, cmd.answers);

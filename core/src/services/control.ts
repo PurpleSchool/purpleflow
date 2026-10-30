@@ -20,8 +20,8 @@ const ACTION_TITLE: Record<ControlAction['kind'], string> = {
  * Управление прогоном на ходу. Заметка и пауза ждут ближайшей контрольной точки (перед стадией),
  * «переделать» и «к плану» прерывают текущую стадию сразу — как «Пропустить проверки».
  */
-export async function control(h: Kernel, id: string, action: ControlAction) {
-  const before = h.mustLoad(id);
+export async function control(k: Kernel, id: string, action: ControlAction) {
+  const before = k.mustLoad(id);
   if (!availableActions(before).includes(action.kind)) {
     if (action.kind === 'replan' && replansLeft(before) <= 0)
       throw new Error('Возвращаться к плану можно не больше двух раз за прогон — отмените задачу или начните новую');
@@ -37,19 +37,19 @@ export async function control(h: Kernel, id: string, action: ControlAction) {
       { ...action, ...(text ? { text } : {}), at: now } as ControlAction & { at: string },
     ];
     before.interventions = [...(before.interventions ?? []), { at: now, kind: action.kind, text: text || undefined }];
-    h.log(
+    k.log(
       before,
       c.violet(
         action.kind === 'pause' ? '⏸ пауза перед следующей стадией' : `✎ заметка человека — уйдёт агенту при следующем запуске:\n${text}`,
       ) + '\n',
     );
-    h.save(before);
+    k.save(before);
     return;
   }
 
-  await h.engine.halt(id);
-  const r = h.mustLoad(id);
-  await stopPreview(h, id);
+  await k.engine.halt(id);
+  const r = k.mustLoad(id);
+  await stopPreview(k, id);
   const label = action.kind === 'replan' ? 'Возврат к плану' : 'Переделать попытку';
   for (const a of r.attempts) {
     if (a.status !== 'running') continue;
@@ -66,21 +66,21 @@ export async function control(h: Kernel, id: string, action: ControlAction) {
       `Человек прервал попытку и просит переделать так:\n${text}`,
     );
     r.interventions = [...(r.interventions ?? []), { at: now, kind: 'restart', text, appliedAt: now }];
-    h.log(r, c.violet(`↻ человек прервал попытку: переделать — ${text}`) + '\n');
+    k.log(r, c.violet(`↻ человек прервал попытку: переделать — ${text}`) + '\n');
   } else {
-    await replan(h, r, text, action.keepCode !== false);
+    await replan(k, r, text, action.keepCode !== false);
   }
   r.status = 'running';
-  h.save(r);
-  void h.engine.drive(r);
+  k.save(r);
+  void k.engine.drive(r);
 }
 
 /** Вернуться к плану: снимок работы, по желанию — откат кода, планировщику — что сделано и почему вернули. */
-async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) {
+async function replan(k: Kernel, r: RunFile, reason: string, keepCode: boolean) {
   const now = new Date().toISOString();
-  const tools = await h.tools(['git']);
-  const git = new Git(tools.git, h.opts.env);
-  const base = diffBase(h, r);
+  const tools = await k.tools(['git']);
+  const git = new Git(tools.git, k.opts.env);
+  const base = diffBase(k, r);
   const n = (r.interventions ?? []).filter((i) => i.kind === 'replan').length + 1;
   const ref = `refs/purpleflow/${r.id}/replan-${n}`;
   let snapshot: string | undefined;
@@ -88,11 +88,11 @@ async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) 
     await git.snapshot(r.worktreePath, ref, `PurpleFlow: работа до возврата к плану №${n}`);
     snapshot = ref;
   } catch (e) {
-    h.warn(r, `Не удалось сохранить снимок работы перед возвратом к плану: ${(e as Error).message}`);
+    k.warn(r, `Не удалось сохранить снимок работы перед возвратом к плану: ${(e as Error).message}`);
   }
   // Файлы плана (openspec/) правит планировщик — их не откатываем.
   const code = (await git.changedFiles(r.worktreePath, base).catch(() => [] as string[])).filter(
-    (f) => !f.startsWith('openspec/') && !envFilesOf(h, r).includes(f),
+    (f) => !f.startsWith('openspec/') && !envFilesOf(k, r).includes(f),
   );
   if (!keepCode && code.length) {
     if (!snapshot)
@@ -103,7 +103,7 @@ async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) 
   const impl = [...r.attempts].reverse().find((a) => a.stage === 'implement' && (a.output || a.summary));
   r.feedback = {
     source: 'human',
-    text: h.prompts.render('replan.md', {
+    text: k.prompts.render('replan.md', {
       reason,
       files: code.length
         ? code
@@ -128,7 +128,7 @@ async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) 
   r.taskMap = undefined;
   r.changeSummary = undefined;
   r.interventions = [...(r.interventions ?? []), { at: now, kind: 'replan', text: reason, appliedAt: now, snapshot, keepCode }];
-  h.log(r, c.violet(`↩ возврат к плану${keepCode ? '' : ' (код откачен)'}: ${reason}`) + '\n');
+  k.log(r, c.violet(`↩ возврат к плану${keepCode ? '' : ' (код откачен)'}: ${reason}`) + '\n');
 }
 
 /**
@@ -136,7 +136,7 @@ async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) 
  * планировщика или исполнителя: проверки и ревью перезаписывают обратную связь, и заметка бы потерялась.
  * true — прогон поставлен на паузу.
  */
-export function applyPending(h: Kernel, run: RunFile): boolean {
+export function applyPending(k: Kernel, run: RunFile): boolean {
   const list = run.pending ?? [];
   if (!list.length) return false;
   const now = new Date().toISOString();
@@ -153,11 +153,11 @@ export function applyPending(h: Kernel, run: RunFile): boolean {
       run.feedback,
       `Заметки человека, оставленные во время работы, — учти их:\n${notes.map((p) => `- ${'text' in p ? p.text : ''}`).join('\n')}`,
     );
-    h.log(run, c.violet(`✎ заметки человека переданы: ${STAGE_TITLES[run.next]}`) + '\n');
+    k.log(run, c.violet(`✎ заметки человека переданы: ${STAGE_TITLES[run.next]}`) + '\n');
   }
-  h.save(run);
+  k.save(run);
   if (pause) {
-    h.markStopped(run, `Пауза по просьбе человека перед стадией «${STAGE_TITLES[run.next]}». «Продолжить» — с того же места.`);
+    k.markStopped(run, `Пауза по просьбе человека перед стадией «${STAGE_TITLES[run.next]}». «Продолжить» — с того же места.`);
     return true;
   }
   return false;

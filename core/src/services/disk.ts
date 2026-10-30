@@ -8,9 +8,9 @@ import type { RunFile, StorageItem } from '../types.js';
 import { stopPreview } from './preview.js';
 import { runsWithFiles } from './runs.js';
 
-export async function getStorage(h: Kernel): Promise<StorageItem[]> {
-  const runs = runsWithFiles(h);
-  const wtRoot = h.store.worktreesDir();
+export async function getStorage(k: Kernel): Promise<StorageItem[]> {
+  const runs = runsWithFiles(k);
+  const wtRoot = k.store.worktreesDir();
   const own = (r: RunFile) =>
     r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && r.worktreePath.startsWith(wtRoot);
   const ended = (r: RunFile) => r.status === 'finished' || r.status === 'cancelled';
@@ -18,10 +18,10 @@ export async function getStorage(h: Kernel): Promise<StorageItem[]> {
   const active = runs.filter((r) => own(r) && !ended(r));
   const known = new Set(runs.map((r) => path.resolve(r.worktreePath)));
   const orphan = subdirs(wtRoot).filter((d) => !known.has(path.resolve(d)) && !path.basename(d).startsWith('merge-'));
-  const visualRoot = path.join(h.opts.dataDir, 'visual');
+  const visualRoot = path.join(k.opts.dataDir, 'visual');
   const leftovers = browserLeftovers(visualRoot);
   const shots = screenshots(visualRoot);
-  const history = ['logs', 'runs', 'attachments'].map((d) => path.join(h.opts.dataDir, d));
+  const history = ['logs', 'runs', 'attachments'].map((d) => path.join(k.opts.dataDir, d));
   return [
     {
       id: 'worktrees-done',
@@ -73,23 +73,23 @@ export async function getStorage(h: Kernel): Promise<StorageItem[]> {
 }
 
 /** Очистить категорию; возвращает, сколько байт освободили. */
-export async function cleanStorage(h: Kernel, id: StorageItem['id']): Promise<number> {
-  const before = (await getStorage(h)).find((x) => x.id === id)?.bytes ?? 0;
-  const tools = await h.tools(['git']);
-  const git = new Git(tools.git, h.opts.env);
-  const wtRoot = h.store.worktreesDir();
+export async function cleanStorage(k: Kernel, id: StorageItem['id']): Promise<number> {
+  const before = (await getStorage(k)).find((x) => x.id === id)?.bytes ?? 0;
+  const tools = await k.tools(['git']);
+  const git = new Git(tools.git, k.opts.env);
+  const wtRoot = k.store.worktreesDir();
   if (id === 'worktrees-done') {
-    for (const r of runsWithFiles(h)) {
+    for (const r of runsWithFiles(k)) {
       if (r.workspace === 'branch' || r.worktreeRemoved || !(r.status === 'finished' || r.status === 'cancelled')) continue;
-      if (!r.worktreePath.startsWith(wtRoot) || h.driving.has(r.id)) continue;
-      await stopPreview(h, r.id);
+      if (!r.worktreePath.startsWith(wtRoot) || k.driving.has(r.id)) continue;
+      await stopPreview(k, r.id);
       // Сначала помечаем: дальше run.json пишется только в данные приложения и worktree не пересоздаётся.
       r.worktreeRemoved = true;
-      h.save(r);
+      k.save(r);
       await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => fs.rmSync(r.worktreePath, { recursive: true, force: true }));
     }
   } else if (id === 'worktrees-orphan') {
-    const known = new Set(runsWithFiles(h).map((r) => path.resolve(r.worktreePath)));
+    const known = new Set(runsWithFiles(k).map((r) => path.resolve(r.worktreePath)));
     for (const d of subdirs(wtRoot)) {
       if (known.has(path.resolve(d)) || path.basename(d).startsWith('merge-')) continue;
       // Worktree знает свой репозиторий по файлу .git — снимаем регистрацию там же.
@@ -108,10 +108,10 @@ export async function cleanStorage(h: Kernel, id: StorageItem['id']): Promise<nu
       fs.rmSync(d, { recursive: true, force: true });
     }
   } else if (id === 'browser') {
-    for (const p of browserLeftovers(path.join(h.opts.dataDir, 'visual'))) fs.rmSync(p, { recursive: true, force: true });
+    for (const p of browserLeftovers(path.join(k.opts.dataDir, 'visual'))) fs.rmSync(p, { recursive: true, force: true });
   } else if (id === 'shots') {
-    for (const p of screenshots(path.join(h.opts.dataDir, 'visual'))) fs.rmSync(p, { force: true });
+    for (const p of screenshots(path.join(k.opts.dataDir, 'visual'))) fs.rmSync(p, { force: true });
   }
-  const after = (await getStorage(h)).find((x) => x.id === id)?.bytes ?? 0;
+  const after = (await getStorage(k)).find((x) => x.id === id)?.bytes ?? 0;
   return Math.max(0, before - after);
 }
