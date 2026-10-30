@@ -28,7 +28,7 @@ export function SettingsScreen() {
     void bridge.account.profile().then((r) => {
       if (r.ok || r.code === 'unauthorized') void reloadSettings();
     });
-  }, [tab, accountEmail]);
+  }, [tab, accountEmail, reloadSettings]);
 
   if (!s) return null;
   const first = !s.onboarded;
@@ -54,7 +54,10 @@ export function SettingsScreen() {
           </div>
         </div>
       ) : (
-        <Topbar title="Настройки" sub="Аккаунт, статистика, инструменты, модели и вид приложения" />
+        <Topbar
+          title="Настройки"
+          sub={s.accountEnabled ? 'Аккаунт, статистика, инструменты, модели и вид приложения' : 'Инструменты, модели и вид приложения'}
+        />
       )}
 
       <div className="settings-tabs">

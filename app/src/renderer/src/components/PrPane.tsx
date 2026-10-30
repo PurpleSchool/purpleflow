@@ -80,6 +80,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
   };
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- детали PR грузятся при открытии прогона; дальше — кнопкой «Обновить»
   }, [runId]);
 
   if (!run.pr) return null;

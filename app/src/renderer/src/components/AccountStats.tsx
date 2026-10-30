@@ -109,9 +109,11 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
 
   useEffect(() => {
     if (account) void loadOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- перезагрузка только при смене аккаунта
   }, [account?.email]);
   useEffect(() => {
     if (account) void loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- запрос расхода — при смене аккаунта, периода или ключа
   }, [account?.email, period, keyId]);
 
   const models = useMemo(() => usage?.modelSummary.models.map((m) => m.modelName) ?? [], [usage]);

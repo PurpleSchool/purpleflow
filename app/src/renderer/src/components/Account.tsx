@@ -203,6 +203,7 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
       if (auto.data === 'picked') await reloadSettings();
       await load();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- загрузка — при входе и при смене ключа, не на каждый рендер
   }, [hasKey]);
 
   const act = async (id: string, fn: () => Promise<{ ok: true } | { ok: false; error: string; code?: string }>) => {

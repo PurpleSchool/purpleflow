@@ -42,6 +42,7 @@ export function AgentOutput({ runId, slice, attempt }: { runId: string; slice: L
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- срез лога определяют название и номер попытки, объект slice новый на каждый рендер
   }, [runId, slice.title, slice.attempt, running, attempt.output]);
   useEffect(() => {
     if (!running) setTab('result');

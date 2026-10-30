@@ -182,7 +182,7 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
 
   // Открытый PR: статус проверок CI — при открытии прогона и после обновления на вкладке «Pull Request», без фонового опроса.
   useEffect(() => {
-    if (!run.pr) return;
+    if (!run.pr?.url) return;
     let alive = true;
     const load = () =>
       void bridge.core
@@ -335,6 +335,7 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- файлы задачи только добавляются: хватает их числа
   }, [runId, files.length]);
   return (
     <>

@@ -145,6 +145,7 @@ export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
       ro.disconnect();
       term.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- терминал пересоздаётся при смене попытки, а не при каждом новом объекте slice
   }, [runId, slice?.title, slice?.attempt, slice?.live]);
 
   // Отступы — у внешней обёртки: FitAddon меряет ширину родителя без учёта его padding.

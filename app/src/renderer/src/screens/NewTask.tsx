@@ -77,6 +77,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
       }
     }
     if (last) void choose(last).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- последний проект подставляется один раз, при открытии экрана
   }, []);
 
   const loadBranches = async (dir: string, fetch: boolean) => {

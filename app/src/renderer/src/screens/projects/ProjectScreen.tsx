@@ -29,6 +29,7 @@ export function ProjectScreen({ path, initialTab }: { path: string; initialTab?:
       .catch((e) => setError(cleanErr(e)));
   useEffect(() => {
     void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- проект перечитывается при смене пути; после правок — вызовом reload()
   }, [path]);
 
   const repo = p?.info.isRepo;
