@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Globe, Wrench, CircleCheck, ClipboardCheck, RotateCcw, UserRoundCheck } from 'lucide-react';
+import { Globe, Wrench, CircleCheck, ClipboardCheck, RotateCcw, UserRoundCheck, MessageCircleQuestion } from 'lucide-react';
 import type { StageId } from '@purpleflow/core';
 import { Button, TextArea } from '../../components/ui';
 import { bridge } from '../../lib/api';
@@ -184,6 +184,40 @@ export function GateBar(props: {
             </Button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Гейт вопросов перед планом: ответы — в панели уточнения, здесь — продолжить без них или отменить задачу. */
+export function ClarifyGateBar({
+  busy,
+  error,
+  onCancel,
+  onSkip,
+}: {
+  busy: string | null;
+  error: string | null;
+  onCancel: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="gatebar is-gate">
+      <div className="gate-sign" aria-hidden>
+        <MessageCircleQuestion size={17} />
+      </div>
+      <div className="gate-text">
+        <strong>Вопросы перед планом</strong>
+        <span>Ответьте выше — ответы получат все стадии. Можно продолжить и без них: планировщик решит сам.</span>
+      </div>
+      <div className="gate-actions">
+        {error && <span className="actionbar-error">{error}</span>}
+        <Button tone="quiet" busy={busy === 'cancel'} onClick={onCancel}>
+          Отменить задачу
+        </Button>
+        <Button tone="ghost" busy={busy === 'skip'} onClick={onSkip}>
+          Продолжить без ответов
+        </Button>
       </div>
     </div>
   );
