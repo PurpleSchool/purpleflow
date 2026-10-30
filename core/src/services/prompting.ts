@@ -1,6 +1,6 @@
 // Общие блоки промптов: задача с уточнениями, правила режима, этап, обратная связь.
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import type { Feedback, RunFile } from '../types.js';
 
 /** Задача с ответами на вопросы уточнения — её видят все стадии. */
@@ -12,7 +12,7 @@ export function taskText(h: Kernel, run: RunFile): string {
 
 /** Правила режима — дополнение к системному промпту роли (prompts/<role>.<mode>.md). */
 export function modeRules(h: Kernel, role: 'planner' | 'executor' | 'review' | 'visual', run: RunFile): string {
-  const file = `${role}.${modeOf(run)}.md`;
+  const file = `${role}.${run.mode}.md`;
   try {
     return '\n\n' + h.prompts.raw(file);
   } catch {
@@ -22,7 +22,7 @@ export function modeRules(h: Kernel, role: 'planner' | 'executor' | 'review' | '
 
 /** Шаблон промпта режима, если есть (implement.quick.md), иначе общий. */
 export function tpl(h: Kernel, base: string, run: RunFile): string {
-  const name = `${base}.${modeOf(run)}.md`;
+  const name = `${base}.${run.mode}.md`;
   try {
     h.prompts.raw(name);
     return name;
@@ -32,7 +32,7 @@ export function tpl(h: Kernel, base: string, run: RunFile): string {
 }
 
 export function phaseBlock(h: Kernel, run: RunFile): string {
-  if (modeOf(run) !== 'epic' || !run.phases) return '';
+  if (run.mode !== 'epic' || !run.phases) return '';
   return `\n## Этап ${run.phase ?? 1} из ${run.phases}\n\nВыполни только пункты раздела «## ${run.phase ?? 1}.» в tasks.md. Следующие этапы не трогай — они будут отдельными шагами после проверок.\n`;
 }
 

@@ -20,7 +20,7 @@ import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline } from '../components/Timeline';
 import { isGate } from '../lib/bars';
-import { MODES, acceptTarget, limitRow, nodeState, runStages, type Mode } from '../lib/stages';
+import { MODES, acceptTarget, limitRow, nodeState, runStages } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { LiveLog, type LogSlice } from '../components/Terminal';
 import { AgentScreen, BrowserPane, useAgentScreen, usePreview } from '../components/BrowserPane';
@@ -339,7 +339,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <div className="run-meta">
             <StatusPill status={run.status} />
             <span className="chip mode-chip">
-              {MODE_ICON[(run.mode ?? 'task') as Mode]} {MODES.find((m) => m.id === (run.mode ?? 'task'))?.title}
+              {MODE_ICON[run.mode]} {MODES.find((m) => m.id === run.mode)?.title}
               {run.mode === 'epic' && run.phases ? ` · этап ${Math.min(run.phase ?? 1, run.phases)}/${run.phases}` : ''}
             </span>
             {run.autopilot && (
@@ -543,12 +543,12 @@ export function RunScreen({ runId }: { runId: string }) {
                           <strong>{stageDef.title}</strong>
                           <span>
                             {drawer === 'visual'
-                              ? (run.agents?.visual ?? 'claude')
+                              ? (run.agents.visual ?? 'claude')
                               : stageDef.role
-                                ? (run.agents?.[stageDef.role] ?? stageDef.actor)
+                                ? run.agents[stageDef.role]
                                 : stageDef.actor}
                             {drawer === 'visual'
-                              ? attempt?.model && attempt.model !== (run.agents?.visual ?? 'claude')
+                              ? attempt?.model && attempt.model !== (run.agents.visual ?? 'claude')
                                 ? ` · ${attempt.model}`
                                 : ''
                               : stageDef.role && run.models[stageDef.role]

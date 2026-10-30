@@ -5,7 +5,7 @@ import { c } from '../agents/common.js';
 import { Git } from '../git.js';
 import { pushBranch } from '../github.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { OpenSpec } from '../openspec.js';
 import { learn } from '../services/projects.js';
 import { envFilesOf } from '../services/workspace.js';
@@ -18,7 +18,7 @@ export async function stageFinish(h: Kernel, run: RunFile) {
   const git = new Git(tools.git, h.opts.env);
 
   // Повтор после сбоя на коммите: архив уже сделан — второй раз openspec archive не запускаем.
-  if (modeOf(run) !== 'quick' && (!run.archivedPath || !fs.existsSync(path.dirname(run.archivedPath)))) {
+  if (run.mode !== 'quick' && (!run.archivedPath || !fs.existsSync(path.dirname(run.archivedPath)))) {
     h.log(run, c.sky(`$ openspec archive ${run.changeId} -y`) + '\n');
     const archivedDir = await openspec.archive(run.worktreePath, run.changeId, run.id);
     run.archivedPath = path.join(archivedDir, 'run.json');
@@ -35,7 +35,7 @@ export async function stageFinish(h: Kernel, run: RunFile) {
   try {
     // Быстрая правка идёт без OpenSpec: run.json остаётся в данных прогона, но не в коммите проекта.
     const exclude = [
-      ...(modeOf(run) === 'quick' && RunStore.inProject(run)
+      ...(run.mode === 'quick' && RunStore.inProject(run)
         ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')]
         : []),
       // Скопированные файлы окружения — секреты разработчика, в коммит не попадают даже без .gitignore.
@@ -47,7 +47,7 @@ export async function stageFinish(h: Kernel, run: RunFile) {
         ? `Merge ${run.pr!.base} в ${run.branch}${round.conflicts?.length ? `\n\nРазрешены конфликты:\n${round.conflicts.map((f) => `- ${f}`).join('\n')}` : ''}\n\nPurpleFlow run: ${run.id}`
         : round
           ? `purpleflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
-          : `purpleflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
+          : `purpleflow: ${run.changeId}\n\n${run.task}\n\n${run.mode === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
     sha = await git.commitAll(run.worktreePath, message, exclude);
   } catch (e) {
     // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.

@@ -1,4 +1,5 @@
 // Движок прогона: цикл стадий, очередь, гейты и решения человека, жизненный цикл.
+import { RUN_VERSION } from './migrate.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { c, emptyUsage } from './agents/common.js';
 import { Git } from './git.js';
 import { makeChangeId, makeTitle, runBranch } from './ids.js';
 import type { Kernel } from './kernel.js';
-import { MODE_FIRST, MODE_LIMIT, modeOf } from './modes.js';
+import { MODE_FIRST, MODE_LIMIT } from './modes.js';
 import { killGroup, killPid } from './proc.js';
 import { acceptTarget, afterChecks } from './route.js';
 import { IMPL_LIMIT, StopSignal } from './runtime.js';
@@ -127,7 +128,7 @@ export async function start(h: Kernel, input: StartRunInput): Promise<string> {
     .map((p) => ({ name: path.basename(p).replace(/^\d+-/, ''), data: fs.readFileSync(p) }));
   const attachments = saveAttachments(h, id, [...carried, ...(input.attachments ?? [])]);
   const run: RunFile = {
-    version: 1,
+    version: RUN_VERSION,
     id,
     changeId,
     title: makeTitle(input.task),
@@ -428,7 +429,7 @@ export async function decide(
           )
         : undefined;
       r.replanNote = undefined;
-      if (modeOf(r) === 'epic') r.phase = 1;
+      if (r.mode === 'epic') r.phase = 1;
     } else {
       r.next = 'plan';
       r.planRetries = 0;
@@ -517,8 +518,8 @@ export function gateMessage(h: Kernel, run: RunFile): string | undefined {
   if (run.next === 'gate0')
     return `У планировщика ${run.clarify?.questions.length ?? 0} ${(run.clarify?.questions.length ?? 0) === 1 ? 'вопрос' : 'вопроса'} по задаче — ответьте, чтобы план не строился на догадках.`;
   if (run.next === 'limit') return run.message ?? 'Попытки реализации исчерпаны. Дать ещё одну попытку?';
-  if (run.next === 'gate1' && modeOf(run) === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
-  if (run.next === 'gate1' && modeOf(run) === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
+  if (run.next === 'gate1' && run.mode === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
+  if (run.next === 'gate1' && run.mode === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
   if (run.next === 'gate1' && run.nextParts)
     return 'Задача большая — планировщик взял в этот план первую часть, остальные перечислены в разделе «Next Parts» в proposal. Запустите их следующими задачами после этой. Принять план первой части?';
   if (run.next === 'gate1') return 'Проверьте proposal и tasks. Принять, вернуть с комментарием или отменить?';

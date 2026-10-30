@@ -2,7 +2,7 @@
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
-import { MODE_LIMIT, modeOf } from '../modes.js';
+import { MODE_LIMIT } from '../modes.js';
 import { availableActions, replansLeft } from '../route.js';
 import { isGate, STAGE_TITLES } from '../stage-info.js';
 import type { ControlAction, RunFile } from '../types.js';
@@ -123,7 +123,7 @@ async function replan(h: Kernel, r: RunFile, reason: string, keepCode: boolean) 
   r.next = 'plan';
   r.planRetries = 0;
   // Новый план — новый запас попыток: иначе после принятия сразу «попытки исчерпаны».
-  r.implAttemptsLimit = r.implAttemptsUsed + MODE_LIMIT[modeOf(r)];
+  r.implAttemptsLimit = r.implAttemptsUsed + MODE_LIMIT[r.mode];
   r.autoRetried = undefined;
   r.taskMap = undefined;
   r.changeSummary = undefined;

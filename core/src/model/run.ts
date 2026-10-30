@@ -181,7 +181,8 @@ export interface ManagerMessage {
 }
 
 export interface RunFile {
-  version: 1;
+  /** Версия схемы; старые файлы приводятся к текущей в migrate.ts. */
+  version: 2;
   id: string;
   changeId: string;
   title: string;
@@ -195,8 +196,7 @@ export interface RunFile {
   testCommand: string;
   setupCommand?: string;
   lintCommand?: string;
-  /** Режим (у старых прогонов отсутствует — считается «задачей»). */
-  mode?: RunMode;
+  mode: RunMode;
   /** Рабочая копия ещё не создана (прогон в очереди) — run.json живёт только в данных приложения. */
   workspacePending?: boolean;
   /** Уточнение до плана: вопросы планировщика и ответы человека (они дописываются к задаче для всех стадий). */
@@ -205,8 +205,8 @@ export interface RunFile {
   executorSession?: string;
   /** Идёт быстрая правка с приёмки: после зелёных проверок — сразу обратно на приёмку. */
   quickFix?: boolean;
-  /** Где шла работа; у старых прогонов — worktree. */
-  workspace?: Workspace;
+  /** Где идёт работа. */
+  workspace: Workspace;
   /** Ветка, на которой была рабочая копия до прогона в режиме «ветка». */
   originalBranch?: string;
   visual?: boolean;
@@ -239,8 +239,8 @@ export interface RunFile {
   /** Команда подготовки (установка зависимостей) уже выполнена в worktree. */
   prepared?: boolean;
   models: Models;
-  /** Агенты по ролям на момент старта (у старых прогонов — по умолчанию). */
-  agents?: Record<Role, AgentKind> & { visual?: AgentKind };
+  /** Агенты по ролям на момент старта. */
+  agents: Record<Role, AgentKind> & { visual?: AgentKind };
   status: RunStatus;
   /** Стадия, которая выполняется сейчас или будет запущена при продолжении. */
   next: StageId;

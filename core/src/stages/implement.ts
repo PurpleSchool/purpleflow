@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { c, type AgentResult } from '../agents/common.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { firstLine } from '../parse.js';
 import { ARTIFACT_RE } from '../reviewdiff.js';
 import { runRole } from '../services/agents.js';
@@ -12,7 +12,6 @@ import { checkRelatedUntouched, relatedState } from '../services/projects.js';
 import { feedbackBlock, modeRules, phaseBlock, taskText, tpl } from '../services/prompting.js';
 import { diffBase } from '../services/workspace.js';
 import type { RunFile } from '../types.js';
-import { DEFAULT_AGENTS } from '../types.js';
 import { captureBaseChecks, settleBaseChecks } from './checks.js';
 import { startFilesBlock } from './plan.js';
 export async function stageImplement(h: Kernel, run: RunFile) {
@@ -20,7 +19,7 @@ export async function stageImplement(h: Kernel, run: RunFile) {
   // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
   if (!run.attempts.some((x) => x.stage === 'implement')) {
     // Тесты задачи снимались в фоне, пока человек смотрел план, — дожидаемся; чего нет — снимаем здесь.
-    if (modeOf(run) !== 'quick') await settleBaseChecks(h, run);
+    if (run.mode !== 'quick') await settleBaseChecks(h, run);
     await captureBaseChecks(h, run);
   }
   run.implAttemptsUsed++;
@@ -36,7 +35,7 @@ export async function stageImplement(h: Kernel, run: RunFile) {
   });
   let res: AgentResult;
   const systemPrompt = h.prompts.raw('executor.system.md') + modeRules(h, 'executor', run);
-  const onClaude = (run.agents?.executor ?? DEFAULT_AGENTS.executor) === 'claude';
+  const onClaude = run.agents.executor === 'claude';
   const related = await relatedState(h, run.projectPath);
   try {
     // Следующая попытка на claude продолжает сессию прошлой: только замечания, без повторного изучения проекта.
@@ -72,7 +71,7 @@ export async function stageImplement(h: Kernel, run: RunFile) {
     run.implAttemptsUsed--;
     throw e;
   }
-  if (modeOf(run) === 'quick' && !run.titleFromPlan) {
+  if (run.mode === 'quick' && !run.titleFromPlan) {
     // Плана нет — короткое название пишет исполнитель последней строкой «НАЗВАНИЕ: …».
     const m = res.text.match(/НАЗВАНИЕ:\s*(.+)\s*$/m);
     if (m) {

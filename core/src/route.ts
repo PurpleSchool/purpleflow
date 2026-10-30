@@ -3,7 +3,7 @@
  * где показывать «попытки исчерпаны», куда ведёт «Дальше как есть».
  * Чистые функции без Node: окно импортирует этот файл напрямую (`@purpleflow/route`).
  */
-import { modeOf, stagesOf } from './modes.js';
+import { stagesOf } from './modes.js';
 import type { ControlAction, RunFile, StageId } from './types.js';
 
 export { stagesOf } from './modes.js';
@@ -25,7 +25,7 @@ export function roundOf(run: Pick<RunFile, 'quickFix' | 'mergeOnly' | 'roundFile
 
 /** Большая задача, и после этого этапа есть следующий. */
 export const epicHasMore = (run: Pick<RunFile, 'mode' | 'phase' | 'phases'>) =>
-  modeOf(run) === 'epic' && Boolean(run.phases) && (run.phase ?? 1) < (run.phases ?? 1);
+  run.mode === 'epic' && Boolean(run.phases) && (run.phase ?? 1) < (run.phases ?? 1);
 
 /** Стадии, которые в этом круге пропускаются. */
 export function skippedStages(run: Pick<RunFile, 'visual' | 'quickFix' | 'mergeOnly' | 'roundFiles'>): Set<StageId> {
@@ -99,7 +99,7 @@ export const currentRow = (run: Pick<RunFile, 'attempts' | 'next'>): StageId =>
 /** Стадии после текущей: 'planned' — пройдёт, 'skip' — пропустится в этом круге. */
 export function plannedRoute(run: RouteRun): Partial<Record<StageId, 'planned' | 'skip'>> {
   if (run.status === 'finished' || run.status === 'cancelled') return {};
-  const ids = stagesOf(modeOf(run), Boolean(run.visual));
+  const ids = stagesOf(run.mode, Boolean(run.visual));
   const from = ids.indexOf(currentRow(run));
   if (from < 0) return {};
   const skip = skippedStages(run);
@@ -131,7 +131,7 @@ export function availableActions(run: ControlRun): ControlAction['kind'][] {
   const normal = roundOf(run) === 'normal' && !run.prRound;
   if (implStarted && normal && AFTER_IMPLEMENT.includes(run.next)) {
     out.push('restart');
-    const planned = modeOf(run) !== 'quick' && run.attempts.some((a) => a.stage === 'plan' && a.status === 'done');
+    const planned = run.mode !== 'quick' && run.attempts.some((a) => a.stage === 'plan' && a.status === 'done');
     if (planned && replansLeft(run) > 0) out.push('replan');
   }
   return out;

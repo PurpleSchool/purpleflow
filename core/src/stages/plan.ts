@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { c } from '../agents/common.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { OpenSpec } from '../openspec.js';
 import { countPhases, firstLine, parseFocusTests, parseQuestions, planTitle } from '../parse.js';
 import { PLAN_RETRIES } from '../runtime.js';
@@ -93,7 +93,7 @@ export async function stagePlan(h: Kernel, run: RunFile) {
   });
   h.afterAgent(run, attempt, res);
 
-  const mode = modeOf(run);
+  const mode = run.mode;
   const changeDir = path.join(run.worktreePath, 'openspec', 'changes', run.changeId);
   if (mode === 'refactor' && fs.existsSync(changeDir)) {
     // Рефакторинг не меняет поведение: изменение без дельт спецификаций.
@@ -180,7 +180,7 @@ export async function stagePlan(h: Kernel, run: RunFile) {
  * Профиль проекта у него и так в системном промпте.
  */
 export async function startFilesBlock(h: Kernel, run: RunFile): Promise<string> {
-  if (modeOf(run) === 'quick') return '';
+  if (run.mode === 'quick') return '';
   const docs = await getChangeDocs(h, run.id).catch(() => null);
   if (!docs) return '';
   const text = `${docs.proposal}\n${docs.tasks}`;

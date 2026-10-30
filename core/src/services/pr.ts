@@ -8,7 +8,7 @@ import { Git } from '../git.js';
 import { createPr, failedJobLog, mergePr, prComments, prReadiness, prStatus, pushBranch } from '../github.js';
 import { isRunBranch } from '../ids.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import type { PrDetails, PrFollowupItem, PrStatus, RunFile } from '../types.js';
 import { getChangeDocs } from './runs.js';
 import { copyEnvFiles } from './workspace.js';
@@ -64,7 +64,7 @@ export async function prBody(h: Kernel, r: RunFile): Promise<string> {
   if (review) {
     const notes = review.notes.map((n) => `- ${n.file ? `\`${n.file}${n.line ? ':' + n.line : ''}\` — ` : ''}${n.message}`).join('\n');
     parts.push(
-      `## Ревью (${r.agents?.reviewer ?? 'codex'})\n\n${review.blocking.length ? `Блокирующих: ${review.blocking.length}` : 'Блокирующих замечаний нет.'}${notes ? `\n\nЗаметки:\n${notes}` : ''}`,
+      `## Ревью (${r.agents.reviewer})\n\n${review.blocking.length ? `Блокирующих: ${review.blocking.length}` : 'Блокирующих замечаний нет.'}${notes ? `\n\nЗаметки:\n${notes}` : ''}`,
     );
   }
   if (visual) {
@@ -72,7 +72,7 @@ export async function prBody(h: Kernel, r: RunFile): Promise<string> {
       `## Визуальная проверка\n\n${visual.unverified ? `⚠️ Проверить не удалось: ${visual.unverified}` : visual.blocking.length ? `Проблем: ${visual.blocking.length}` : '✅ В браузере всё выглядит верно'}${visual.shots.length ? `\n\nСкриншоты (${visual.shots.length}) — в PurpleFlow:\n${visual.shots.map((s) => `- ${s.caption}`).join('\n')}` : ''}`,
     );
   }
-  parts.push(`---\nСделано в PurpleFlow · режим «${modeOf(r)}» · прогон \`${r.id.slice(0, 8)}\``);
+  parts.push(`---\nСделано в PurpleFlow · режим «${r.mode}» · прогон \`${r.id.slice(0, 8)}\``);
   return parts.join('\n\n');
 }
 

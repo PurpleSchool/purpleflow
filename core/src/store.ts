@@ -1,3 +1,4 @@
+import { migrateRun } from './migrate.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ManagerMessage, ProjectConfig, RunFile, RunSummary } from './types.js';
@@ -85,7 +86,7 @@ export class RunStore {
 
   private readFile(file: string): RunFile | null {
     try {
-      return JSON.parse(fs.readFileSync(file, 'utf8')) as RunFile;
+      return migrateRun(JSON.parse(fs.readFileSync(file, 'utf8')));
     } catch {
       return null;
     }

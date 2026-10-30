@@ -4,7 +4,7 @@ import path from 'node:path';
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { OpenSpec } from '../openspec.js';
 import { run as runProc } from '../proc.js';
 import type { RunFile } from '../types.js';
@@ -31,7 +31,7 @@ export async function prepareWorkspace(h: Kernel, run: RunFile) {
   } else {
     await git.addWorktree(run.projectPath, run.worktreePath, run.branch, run.baseCommit);
   }
-  if (modeOf(run) !== 'quick') await new OpenSpec(tools.openspec, h.opts.env).ensureInit(run.worktreePath, 'init');
+  if (run.mode !== 'quick') await new OpenSpec(tools.openspec, h.opts.env).ensureInit(run.worktreePath, 'init');
   run.workspacePending = undefined;
   h.save(run);
   copyEnvFiles(h, run);

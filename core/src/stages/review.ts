@@ -5,7 +5,7 @@ import { Git } from '../git.js';
 import { formatItem, originTag } from '../items.js';
 import { parseJsonReply } from '../json.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { parseReview, parseVerdicts } from '../parse.js';
 import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from '../reviewdiff.js';
 import { afterReview } from '../route.js';
@@ -70,7 +70,7 @@ export async function summarizeChanges(h: Kernel, id: string) {
 /** Группы файлов диффа по пунктам плана — считаются к каждой приёмке, если есть tasks.md. */
 export async function mapFilesToPlan(h: Kernel, id: string) {
   const run = h.store.load(id);
-  if (!run || modeOf(run) === 'quick') return;
+  if (!run || run.mode === 'quick') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
   if (run.taskMap?.attempt === attempt) return;
   const docs = await getChangeDocs(h, id).catch(() => null);

@@ -274,7 +274,7 @@ function StatsPanel({ repo, runsKey }: { repo: string; runsKey: string }) {
           </ul>
           {s.stops.length > 0 && (
             <p className="stats-note">
-              Останавливались на: {s.stops.map((x) => `${stageTitle({ mode: undefined, visual: true }, x.stage)} — ${x.count}`).join(', ')}
+              Останавливались на: {s.stops.map((x) => `${stageTitle({ mode: 'task', visual: true }, x.stage)} — ${x.count}`).join(', ')}
             </p>
           )}
         </div>

@@ -37,7 +37,7 @@ export function projectStats(runs: RunFile[], now = Date.now(), days = 28): Proj
 
   const modes = new Map<RunMode, { total: number; finished: number }>();
   for (const r of runs) {
-    const m = r.mode ?? 'task';
+    const m = r.mode;
     const x = modes.get(m) ?? { total: 0, finished: 0 };
     x.total++;
     if (r.status === 'finished') x.finished++;

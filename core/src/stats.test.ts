@@ -8,7 +8,10 @@ const iso = (min: number) => new Date(T0 + min * 60_000).toISOString();
 
 function run(p: Partial<RunFile>): RunFile {
   return {
-    version: 1,
+    version: 2,
+    mode: 'task',
+    workspace: 'worktree',
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
     id: 'x',
     changeId: 'c',
     title: 't',

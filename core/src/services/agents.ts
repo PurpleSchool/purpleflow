@@ -113,7 +113,7 @@ export async function runRole(
     onOutput?: (text: string) => void;
   },
 ): Promise<AgentResult> {
-  const agent = run.agents?.[role] ?? DEFAULT_AGENTS[role];
+  const agent = run.agents[role];
   const tools = await h.tools(o.openspec ? [agent, 'openspec'] : [agent]);
   const base = {
     ...agentBase(h, run, tools[agent], o.openspec ? tools.openspec : undefined),

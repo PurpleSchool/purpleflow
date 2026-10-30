@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
-import { modeOf } from '../modes.js';
+
 import { run as runProc } from '../proc.js';
 import { availableActions, replansLeft } from '../route.js';
 import { isGate, STAGE_TITLES } from '../stage-info.js';
@@ -229,7 +229,7 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
   const out: string[] = [];
   out.push(`Задача: ${clip(taskText(h, run), 3000)}`);
   out.push(
-    `Режим: ${modeOf(run)}${run.autopilot ? ', автопилот' : ''}. Статус: ${STATUS[run.status]}. Сейчас: ${STAGE_TITLES[run.next]}.${run.message ? ` Сообщение: ${run.message}` : ''}`,
+    `Режим: ${run.mode}${run.autopilot ? ', автопилот' : ''}. Статус: ${STATUS[run.status]}. Сейчас: ${STAGE_TITLES[run.next]}.${run.message ? ` Сообщение: ${run.message}` : ''}`,
   );
   out.push(`Попытки реализации: ${run.implAttemptsUsed} из ${run.implAttemptsLimit}. Возвратов к плану осталось: ${replansLeft(run)}.`);
 
@@ -238,7 +238,7 @@ export async function managerSnapshot(h: Kernel, run: RunFile): Promise<string> 
     `\n## Ход прогона (старые — выше)\n${stages.map((a) => `- ${STAGE_TITLES[a.stage]} №${a.attempt}: ${a.status}, ${mins(a.startedAt, a.endedAt)}${a.summary ? ` — ${a.summary}` : ''}${a.error ? ` (ошибка: ${clip(a.error, 300)})` : ''}`).join('\n')}`,
   );
 
-  const docs = modeOf(run) === 'quick' ? null : await getChangeDocs(h, run.id).catch(() => null);
+  const docs = run.mode === 'quick' ? null : await getChangeDocs(h, run.id).catch(() => null);
   if (docs?.tasks.trim()) out.push(`\n## План (tasks.md, [x] — сделано)\n${clip(docs.tasks, 6000)}`);
 
   const test = run.tests.at(-1);

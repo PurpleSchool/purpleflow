@@ -90,7 +90,7 @@ export function stagesFor(mode: Mode = 'task', visual = false): StageDef[] {
 
 /** Стадии прогона. У прогонов до появления «Уточнения» этой строки нет — не показываем пустую. */
 export const runStages = (run: Pick<RunFile, 'mode' | 'visual'> & { attempts?: RunFile['attempts'] }) => {
-  const all = stagesFor((run.mode ?? 'task') as Mode, Boolean(run.visual));
+  const all = stagesFor(run.mode, Boolean(run.visual));
   const old = run.attempts?.length && !run.attempts.some((a) => a.stage === 'clarify');
   const rows = old ? all.filter((s) => s.id !== 'clarify') : all;
   // Исходные проверки идут в фоне с уточнения — строка появляется, когда они запущены.

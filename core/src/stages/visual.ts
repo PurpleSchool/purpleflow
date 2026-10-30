@@ -27,7 +27,7 @@ export function visualDir(h: Kernel, run: RunFile, attempt: number): string {
  * собрать скриншоты и вердикт { blocking, notes, shots }.
  */
 export async function stageVisual(h: Kernel, run: RunFile) {
-  const agent = run.agents?.visual ?? 'claude';
+  const agent = run.agents.visual ?? 'claude';
   const tools = await h.tools([agent]);
   // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
   const model =

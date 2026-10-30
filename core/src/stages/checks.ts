@@ -2,7 +2,7 @@
 import { c } from '../agents/common.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
-import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from '../modes.js';
+import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE } from '../modes.js';
 import { errorCount, failedTestNames } from '../parse.js';
 import { afterChecks, afterReview, reviewInParallel } from '../route.js';
 import type { BasePrep } from '../runtime.js';
@@ -180,7 +180,7 @@ function mergeBase(run: RunFile, checks: CheckResult[]) {
 function missingBase(h: Kernel, run: RunFile, withTests: boolean): { lint: boolean; test: string } {
   const lint = Boolean(run.lintCommand) && !hasBase(run, 'lint', run.lintCommand!);
   // В баге планировщик уже написал падающий тест: тесты после плана — не «код до задачи».
-  const afterBugPlan = modeOf(run) === 'bug' && run.attempts.some((a) => a.stage === 'plan');
+  const afterBugPlan = run.mode === 'bug' && run.attempts.some((a) => a.stage === 'plan');
   const cmd = withTests && !afterBugPlan ? iterationTestCommand(h, run) : '';
   return { lint, test: cmd && !hasBase(run, 'test', cmd) ? cmd : '' };
 }
@@ -221,7 +221,7 @@ export async function captureBaseChecks(h: Kernel, run: RunFile, withTests = tru
  * (оно только читает код). 'plan' — выбранные планом тесты, пока человек смотрит план: код ещё не тронут.
  */
 export function startBaseChecks(h: Kernel, run: RunFile, phase: 'clarify' | 'plan' = 'clarify') {
-  const mode = modeOf(run);
+  const mode = run.mode;
   if (mode === 'quick' || mode === 'refactor' || h.basePrep.has(run.id)) return;
   const setup = phase === 'clarify' && !run.prepared && run.setupCommand ? run.setupCommand : '';
   const need = missingBase(h, run, phase === 'plan');
@@ -328,7 +328,7 @@ export async function settleBaseChecks(h: Kernel, run: RunFile) {
     h.basePrep.delete(run.id);
     if (prep.result?.error) throw new Error(prep.result.error);
   }
-  if (modeOf(run) !== 'refactor') {
+  if (run.mode !== 'refactor') {
     for (const a of run.attempts)
       if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
   }
@@ -366,7 +366,7 @@ export async function stageTests(h: Kernel, run: RunFile) {
   const attempt = h.begin(run, 'tests');
 
   // Рефакторинг: тесты — эталон поведения, менять их нельзя.
-  if (modeOf(run) === 'refactor') {
+  if (run.mode === 'refactor') {
     const tools = await h.tools(['git']);
     const changed = await new Git(tools.git, h.opts.env).changedFiles(run.worktreePath, run.baseCommit);
     const touched = changed.filter((f) => TEST_FILE.test(f) && !f.startsWith('openspec/'));
@@ -404,7 +404,7 @@ export async function stageTests(h: Kernel, run: RunFile) {
   // когда всё остальное зелёное и ревью не вернуло задачу. У большой задачи — после последнего этапа.
   const quick = iterationTestCommand(h, run);
   const useQuick = Boolean(run.testCommand && quick !== run.testCommand);
-  const lastPhase = !(modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases);
+  const lastPhase = !(run.mode === 'epic' && run.phases && (run.phase ?? 1) < run.phases);
   const probe = async (r: TestResult, f: CheckResult[]) => {
     const red = f.find((x) => x.kind === 'test' && !x.timedOut);
     if (!red) return { result: r, failed: f };
@@ -510,7 +510,7 @@ export async function stageTests(h: Kernel, run: RunFile) {
   if (result.passed) {
     run.feedback = undefined;
     // Большая задача: следующий этап реализации со свежим запасом попыток.
-    if (modeOf(run) === 'epic' && run.phases && (run.phase ?? 1) < run.phases) {
+    if (run.mode === 'epic' && run.phases && (run.phase ?? 1) < run.phases) {
       run.phase = (run.phase ?? 1) + 1;
       run.executorSession = undefined;
       run.implAttemptsUsed = 0;
@@ -574,7 +574,7 @@ export async function stageBaseline(h: Kernel, run: RunFile) {
 /** После проверок — ревью; быстрая правка с маленьким диффом идёт без него (сразу к визуальной проверке или приёмке). */
 /** Нужно ли ревью: у быстрой правки с маленьким диффом — нет (размер диффа знает только ядро). */
 export async function needsReview(h: Kernel, run: RunFile): Promise<boolean> {
-  if (modeOf(run) !== 'quick') return true;
+  if (run.mode !== 'quick') return true;
   const tools = await h.tools(['git']);
   const diff = await new Git(tools.git, h.opts.env).diffText(run.worktreePath, diffBase(h, run), [RUN_JSON_GLOB, ...envFilesOf(h, run)]);
   const lines = diff.split('\n').filter((l) => /^[+-][^+-]/.test(l)).length;

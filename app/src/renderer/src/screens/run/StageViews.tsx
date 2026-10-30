@@ -615,7 +615,7 @@ export function ReviewView({
             </p>
           </div>
           <span className="muted mono">
-            {run.agents?.reviewer ?? 'codex'} · {run.models.reviewer || 'по умолчанию'}
+            {run.agents.reviewer} · {run.models.reviewer || 'по умолчанию'}
           </span>
         </div>
         <ul className="review-list">

@@ -1,4 +1,4 @@
-import type { RunFile, RunMode, StageId } from './types.js';
+import type { RunMode, StageId } from './types.js';
 
 /** Стадии режима по порядку (гейты — решения человека). */
 export function stagesOf(mode: RunMode, visual: boolean): StageId[] {
@@ -12,8 +12,6 @@ export function stagesOf(mode: RunMode, visual: boolean): StageId[] {
       return ['clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
   }
 }
-
-export const modeOf = (run: Pick<RunFile, 'mode'>): RunMode => run.mode ?? 'task';
 
 export const MODE_FIRST: Record<RunMode, StageId> = {
   quick: 'implement',
