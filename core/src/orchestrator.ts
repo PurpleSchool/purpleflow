@@ -17,20 +17,146 @@ import { type Screencast } from './screencast.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from './storage.js';
 import { MODE_FIRST, MODE_LIMIT, modeOf } from './modes.js';
 import { DEFAULT_AGENTS } from './types.js';
-import type { ChatSummary, ControlAction, ManagerMessage, NextPartDraft, EnvCheck, AgentKind, Role, PrStatus, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, PrDetails, PrFollowupItem, ProjectKnowledge, AiCommands, CheckResult, ModeSuggestion, PreviewState, StorageItem, ProjectConfig, ConnectionCheck, CoreCommand, CoreEvent, DiffFile, Feedback, GateId, LineComment, ReviewItem, ReviewResult, RunFile, RunSummary, StageAttempt, StageId, StartRunInput, TestResult, ToolInfo, ToolName } from './types.js';
-import { type CoreOptions, IMPL_LIMIT, type Listener, STAGE_TITLES, StopSignal, type Tools, expandPorts, isGate, isImageFile, portEnv, readSmallText, waitForUrl } from './shared.js';
+import type {
+  ChatSummary,
+  ControlAction,
+  ManagerMessage,
+  NextPartDraft,
+  EnvCheck,
+  AgentKind,
+  Role,
+  PrStatus,
+  ProjectListItem,
+  ProjectOverview,
+  ProjectStats,
+  ProjectBranches,
+  PrDetails,
+  PrFollowupItem,
+  ProjectKnowledge,
+  AiCommands,
+  CheckResult,
+  ModeSuggestion,
+  PreviewState,
+  StorageItem,
+  ProjectConfig,
+  ConnectionCheck,
+  CoreCommand,
+  CoreEvent,
+  DiffFile,
+  Feedback,
+  GateId,
+  LineComment,
+  ReviewItem,
+  ReviewResult,
+  RunFile,
+  RunSummary,
+  StageAttempt,
+  StageId,
+  StartRunInput,
+  TestResult,
+  ToolInfo,
+  ToolName,
+} from './types.js';
+import {
+  type CoreOptions,
+  IMPL_LIMIT,
+  type Listener,
+  STAGE_TITLES,
+  StopSignal,
+  type Tools,
+  expandPorts,
+  isGate,
+  isImageFile,
+  portEnv,
+  readSmallText,
+  waitForUrl,
+} from './shared.js';
 export * from './shared.js';
-import { runChecks, runCheck, probeTests, checksFeedback, captureBaseChecks, startBaseChecks, settleBaseChecks, flushBaseChecks, compareWithBase, stageTests, stageBaseline, needsReview, type BasePrep } from './pipeline/checks.js';
-import { summaryContext, summarizeChanges, mapFilesToPlan, previousReviewBlock, stageReview, reviewPass, verifyBlocking, reviewFeedback } from './pipeline/review.js';
+import {
+  runChecks,
+  runCheck,
+  probeTests,
+  checksFeedback,
+  captureBaseChecks,
+  startBaseChecks,
+  settleBaseChecks,
+  flushBaseChecks,
+  compareWithBase,
+  stageTests,
+  stageBaseline,
+  needsReview,
+  type BasePrep,
+} from './pipeline/checks.js';
+import {
+  summaryContext,
+  summarizeChanges,
+  mapFilesToPlan,
+  previousReviewBlock,
+  stageReview,
+  reviewPass,
+  verifyBlocking,
+  reviewFeedback,
+} from './pipeline/review.js';
 import { visualDir, stageVisual, startLiveBrowser, getVisualShot } from './pipeline/visual.js';
 import { stageClarify, answer, stagePlan, startFilesBlock } from './pipeline/plan.js';
 import { stageImplement, dropArtifacts } from './pipeline/implement.js';
 import { stageFinish } from './pipeline/finish.js';
 import { applyPending, control } from './pipeline/control.js';
 import { askManager, getManagerChat, resolveManagerAction } from './pipeline/manager.js';
-import { chatChangedFiles, chatDiff, chatToTask, createChat, deleteChat, getChat, listChats, sendChat, startChatPreview, stopChat, unqueueChat, updateChat } from './pipeline/chat.js';
-import { ghBin, prReady, openPr, prBody, getPrStatus, getPrDetails, prFollowup, reopenWorkspace, updateBranch, mergePrOf, listBranches, merge } from './pipeline/pr.js';
-import { knowledgeOf, updateKnowledge, knowledgeBlock, relatedRepos, relatedState, checkRelatedUntouched, profileFor, ensureProfile, refreshProfile, saveKnowledge, getKnowledge, learn, listProjects, nextPartDraft, checkEnvironment, cleanWorkingCopy, projectOverview, projectStats, projectBranches, forgetProject, getProjectConfig, saveProjectConfig, detectCommandsAI, suggestMode } from './pipeline/projects.js';
+import {
+  chatChangedFiles,
+  chatDiff,
+  chatToTask,
+  createChat,
+  deleteChat,
+  getChat,
+  listChats,
+  sendChat,
+  startChatPreview,
+  stopChat,
+  unqueueChat,
+  updateChat,
+} from './pipeline/chat.js';
+import {
+  ghBin,
+  prReady,
+  openPr,
+  prBody,
+  getPrStatus,
+  getPrDetails,
+  prFollowup,
+  reopenWorkspace,
+  updateBranch,
+  mergePrOf,
+  listBranches,
+  merge,
+} from './pipeline/pr.js';
+import {
+  knowledgeOf,
+  updateKnowledge,
+  knowledgeBlock,
+  relatedRepos,
+  relatedState,
+  checkRelatedUntouched,
+  profileFor,
+  ensureProfile,
+  refreshProfile,
+  saveKnowledge,
+  getKnowledge,
+  learn,
+  listProjects,
+  nextPartDraft,
+  checkEnvironment,
+  cleanWorkingCopy,
+  projectOverview,
+  projectStats,
+  projectBranches,
+  forgetProject,
+  getProjectConfig,
+  saveProjectConfig,
+  detectCommandsAI,
+  suggestMode,
+} from './pipeline/projects.js';
 import { diffBase, prepareWorkspace, envFilesOf, copyEnvFiles, cloneDeps, prepareApp } from './pipeline/workspace.js';
 export class Orchestrator {
   listeners = new Set<Listener>();
@@ -50,7 +176,11 @@ export class Orchestrator {
     const store = this.store;
     setPidTracker({
       add: (g, pid) => store.writePids(g, [...store.readPids(g).filter((p) => p !== pid), pid]),
-      remove: (g, pid) => store.writePids(g, store.readPids(g).filter((p) => p !== pid)),
+      remove: (g, pid) =>
+        store.writePids(
+          g,
+          store.readPids(g).filter((p) => p !== pid),
+        ),
     });
   }
 
@@ -63,7 +193,9 @@ export class Orchestrator {
     for (const fn of this.listeners) {
       try {
         fn(e);
-      } catch { /* слушатель UI не должен ронять ядро */ }
+      } catch {
+        /* слушатель UI не должен ронять ядро */
+      }
     }
   }
 
@@ -144,16 +276,24 @@ export class Orchestrator {
       if (r.baseProbeStash) {
         // Приложение закрылось во время проверки тестов на исходном коде — возвращаем изменения прогона из stash.
         const sha = r.baseProbeStash;
-        await this.tools(['git']).then((t) => new Git(t.git, this.opts.env).restoreStash(r.worktreePath, sha))
-          .then(() => { r.baseProbeStash = undefined; })
-          .catch(() => { r.message = `Изменения прогона остались в git stash (${sha.slice(0, 8)}) — верните их: git stash apply ${sha.slice(0, 8)}`; });
+        await this.tools(['git'])
+          .then((t) => new Git(t.git, this.opts.env).restoreStash(r.worktreePath, sha))
+          .then(() => {
+            r.baseProbeStash = undefined;
+          })
+          .catch(() => {
+            r.message = `Изменения прогона остались в git stash (${sha.slice(0, 8)}) — верните их: git stash apply ${sha.slice(0, 8)}`;
+          });
       }
       for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
       // Оборванная реализация — не вина исполнителя: попытку возвращаем.
       if (r.next === 'implement' && r.implAttemptsUsed > 0) r.implAttemptsUsed--;
       // Исполнитель продолжит свою сессию: говорим ему, что прошлая попытка оборвалась, а не «исправь замечания».
       if (r.next === 'implement' && !r.feedback && r.executorSession) {
-        r.feedback = { source: 'system', text: 'Прошлая попытка оборвалась на середине: приложение PurpleFlow было закрыто. Продолжи с того места, где остановился: посмотри, что уже сделано (git status, отметки в tasks.md), и доделай задачу.' };
+        r.feedback = {
+          source: 'system',
+          text: 'Прошлая попытка оборвалась на середине: приложение PurpleFlow было закрыто. Продолжи с того места, где остановился: посмотри, что уже сделано (git status, отметки в tasks.md), и доделай задачу.',
+        };
       }
       if (r.message?.startsWith('Изменения прогона остались в git stash')) {
         r.status = 'stopped';
@@ -205,12 +345,13 @@ export class Orchestrator {
   /** Изменённые файлы без содержимого — для счётчика на вкладке «Код». */
   async getChangedFiles(id: string): Promise<string[]> {
     const r = this.mustLoad(id);
-    if (r.workspacePending || r.worktreeRemoved && r.status !== 'finished') return [];
+    if (r.workspacePending || (r.worktreeRemoved && r.status !== 'finished')) return [];
     const git = new Git((await this.tools(['git'])).git, this.opts.env);
     const skip = this.diffSkip(r);
-    const files = r.status === 'finished'
-      ? await git.namesBetween(r.projectPath, r.baseCommit, r.branch)
-      : await git.changedFiles(r.worktreePath, this.diffBase(r));
+    const files =
+      r.status === 'finished'
+        ? await git.namesBetween(r.projectPath, r.baseCommit, r.branch)
+        : await git.changedFiles(r.worktreePath, this.diffBase(r));
     return files.filter((f) => !skip(f));
   }
 
@@ -225,7 +366,10 @@ export class Orchestrator {
     // Проверяем до удаления чего-либо: открытую в проекте ветку git не удалит.
     if (r && deleteBranch) {
       const cur = await git.currentBranch(r.projectPath).catch(() => null);
-      if (cur === r.branch) throw new Error(`Проект сейчас на ветке ${r.branch} — переключитесь на другую (git checkout ${r.originalBranch ?? 'main'}), чтобы удалить её, или удалите прогон без ветки.`);
+      if (cur === r.branch)
+        throw new Error(
+          `Проект сейчас на ветке ${r.branch} — переключитесь на другую (git checkout ${r.originalBranch ?? 'main'}), чтобы удалить её, или удалите прогон без ветки.`,
+        );
     }
     if (this.driving.has(id)) {
       this.stopping.add(id);
@@ -238,10 +382,12 @@ export class Orchestrator {
     await killGroup(`${id}:manager`);
     await this.stopPreview(id);
     if (r) {
-      if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath)) await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => undefined);
+      if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath))
+        await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => undefined);
       if (deleteBranch) await git.deleteBranch(r.projectPath, r.branch).catch(() => undefined);
     }
-    for (const dir of [this.attachmentsDir(id), path.join(this.opts.dataDir, 'visual', id)]) fs.rmSync(dir, { recursive: true, force: true });
+    for (const dir of [this.attachmentsDir(id), path.join(this.opts.dataDir, 'visual', id)])
+      fs.rmSync(dir, { recursive: true, force: true });
     this.store.forget(id);
     this.emit({ type: 'run.deleted', runId: id });
     void this.pump();
@@ -250,13 +396,17 @@ export class Orchestrator {
   // ——— Хранилище: сколько места занимают данные и что можно почистить ———
 
   runsWithFiles(): RunFile[] {
-    return this.store.list().map((s) => this.store.load(s.id)).filter((r): r is RunFile => Boolean(r));
+    return this.store
+      .list()
+      .map((s) => this.store.load(s.id))
+      .filter((r): r is RunFile => Boolean(r));
   }
 
   async getStorage(): Promise<StorageItem[]> {
     const runs = this.runsWithFiles();
     const wtRoot = this.store.worktreesDir();
-    const own = (r: RunFile) => r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && r.worktreePath.startsWith(wtRoot);
+    const own = (r: RunFile) =>
+      r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && r.worktreePath.startsWith(wtRoot);
     const ended = (r: RunFile) => r.status === 'finished' || r.status === 'cancelled';
     const done = runs.filter((r) => own(r) && ended(r));
     const active = runs.filter((r) => own(r) && !ended(r));
@@ -267,12 +417,52 @@ export class Orchestrator {
     const shots = screenshots(visualRoot);
     const history = ['logs', 'runs', 'attachments'].map((d) => path.join(this.opts.dataDir, d));
     return [
-      { id: 'worktrees-done', title: 'Рабочие копии завершённых прогонов', hint: 'Worktree с зависимостями. Ветки с результатом, история, дифф и план остаются — пропадёт только ручной запуск во вкладке «Браузер».', bytes: await sizeOfAll(done.map((r) => r.worktreePath)), count: done.length, clean: 'Удалить' },
-      { id: 'worktrees-active', title: 'Рабочие копии незавершённых прогонов', hint: 'Нужны, чтобы продолжить прогон. Удаляются вместе с прогоном.', bytes: await sizeOfAll(active.map((r) => r.worktreePath)), count: active.length },
-      { id: 'worktrees-orphan', title: 'Брошенные рабочие копии', hint: 'Остались от удалённых или потерянных прогонов — ни к чему не привязаны.', bytes: await sizeOfAll(orphan), count: orphan.length, clean: 'Удалить' },
-      { id: 'browser', title: 'Служебные файлы браузера', hint: 'Профили Chrome и кэш Playwright после визуальных проверок. Скриншоты не трогаются.', bytes: await sizeOfAll(leftovers), count: leftovers.length, clean: 'Удалить' },
-      { id: 'shots', title: 'Скриншоты визуальных проверок', hint: 'Пропадут из деталей стадии «Визуальная проверка» у всех прогонов.', bytes: await sizeOfAll(shots), count: shots.length, clean: 'Удалить' },
-      { id: 'history', title: 'История прогонов', hint: 'Логи, run.json и изображения к задачам. Удаляются вместе с прогоном.', bytes: await sizeOfAll(history), count: runs.length },
+      {
+        id: 'worktrees-done',
+        title: 'Рабочие копии завершённых прогонов',
+        hint: 'Worktree с зависимостями. Ветки с результатом, история, дифф и план остаются — пропадёт только ручной запуск во вкладке «Браузер».',
+        bytes: await sizeOfAll(done.map((r) => r.worktreePath)),
+        count: done.length,
+        clean: 'Удалить',
+      },
+      {
+        id: 'worktrees-active',
+        title: 'Рабочие копии незавершённых прогонов',
+        hint: 'Нужны, чтобы продолжить прогон. Удаляются вместе с прогоном.',
+        bytes: await sizeOfAll(active.map((r) => r.worktreePath)),
+        count: active.length,
+      },
+      {
+        id: 'worktrees-orphan',
+        title: 'Брошенные рабочие копии',
+        hint: 'Остались от удалённых или потерянных прогонов — ни к чему не привязаны.',
+        bytes: await sizeOfAll(orphan),
+        count: orphan.length,
+        clean: 'Удалить',
+      },
+      {
+        id: 'browser',
+        title: 'Служебные файлы браузера',
+        hint: 'Профили Chrome и кэш Playwright после визуальных проверок. Скриншоты не трогаются.',
+        bytes: await sizeOfAll(leftovers),
+        count: leftovers.length,
+        clean: 'Удалить',
+      },
+      {
+        id: 'shots',
+        title: 'Скриншоты визуальных проверок',
+        hint: 'Пропадут из деталей стадии «Визуальная проверка» у всех прогонов.',
+        bytes: await sizeOfAll(shots),
+        count: shots.length,
+        clean: 'Удалить',
+      },
+      {
+        id: 'history',
+        title: 'История прогонов',
+        hint: 'Логи, run.json и изображения к задачам. Удаляются вместе с прогоном.',
+        bytes: await sizeOfAll(history),
+        count: runs.length,
+      },
     ];
   }
 
@@ -299,8 +489,14 @@ export class Orchestrator {
         // Worktree знает свой репозиторий по файлу .git — снимаем регистрацию там же.
         let gitdir: string | null = null;
         try {
-          gitdir = fs.readFileSync(path.join(d, '.git'), 'utf8').match(/gitdir:\s*(.+)/)?.[1]?.trim() ?? null;
-        } catch { /* не worktree */ }
+          gitdir =
+            fs
+              .readFileSync(path.join(d, '.git'), 'utf8')
+              .match(/gitdir:\s*(.+)/)?.[1]
+              ?.trim() ?? null;
+        } catch {
+          /* не worktree */
+        }
         const repo = gitdir ? path.resolve(gitdir, '..', '..', '..') : null;
         if (repo && fs.existsSync(repo)) await git.removeWorktree(repo, d).catch(() => undefined);
         fs.rmSync(d, { recursive: true, force: true });
@@ -316,34 +512,62 @@ export class Orchestrator {
 
   // ——— Pull Request на GitHub ———
 
-  ghBin() : string | null { return ghBin(this); }
+  ghBin(): string | null {
+    return ghBin(this);
+  }
 
-  prReady(id: string) : Promise<string | null> { return prReady(this, id); }
+  prReady(id: string): Promise<string | null> {
+    return prReady(this, id);
+  }
 
-  openPr(id: string, base: string) { return openPr(this, id, base); }
+  openPr(id: string, base: string) {
+    return openPr(this, id, base);
+  }
 
-  prBody(r: RunFile) : Promise<string> { return prBody(this, r); }
+  prBody(r: RunFile): Promise<string> {
+    return prBody(this, r);
+  }
 
-  getPrStatus(id: string) : Promise<PrStatus | null> { return getPrStatus(this, id); }
+  getPrStatus(id: string): Promise<PrStatus | null> {
+    return getPrStatus(this, id);
+  }
 
-  getPrDetails(id: string) : Promise<PrDetails | null> { return getPrDetails(this, id); }
+  getPrDetails(id: string): Promise<PrDetails | null> {
+    return getPrDetails(this, id);
+  }
 
-  prFollowup(id: string, items: PrFollowupItem[], note?: string) { return prFollowup(this, id, items, note); }
+  prFollowup(id: string, items: PrFollowupItem[], note?: string) {
+    return prFollowup(this, id, items, note);
+  }
 
-  reopenWorkspace(r: RunFile) : Promise<{ git: Git; pulled: 'updated' | 'same' | 'diverged' | 'no-remote' }> { return reopenWorkspace(this, r); }
+  reopenWorkspace(r: RunFile): Promise<{ git: Git; pulled: 'updated' | 'same' | 'diverged' | 'no-remote' }> {
+    return reopenWorkspace(this, r);
+  }
 
-  updateBranch(id: string) { return updateBranch(this, id); }
+  updateBranch(id: string) {
+    return updateBranch(this, id);
+  }
 
-  diffBase(run: RunFile) : string { return diffBase(this, run); }
+  diffBase(run: RunFile): string {
+    return diffBase(this, run);
+  }
 
-  mergePrOf(id: string) { return mergePrOf(this, id); }
+  mergePrOf(id: string) {
+    return mergePrOf(this, id);
+  }
 
-  listBranches(id: string) : Promise<{ branches: string[]; current: string | null; suggested: string | null }> { return listBranches(this, id); }
+  listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }> {
+    return listBranches(this, id);
+  }
 
-  merge(id: string, target: string) { return merge(this, id, target); }
+  merge(id: string, target: string) {
+    return merge(this, id, target);
+  }
 
   /** proposal.md, tasks.md и дельты спецификаций — для гейта 1 и ревью. */
-  async getChangeDocs(id: string): Promise<{ proposal: string; tasks: string; design: string; specs: { path: string; content: string }[] }> {
+  async getChangeDocs(
+    id: string,
+  ): Promise<{ proposal: string; tasks: string; design: string; specs: { path: string; content: string }[] }> {
     const r = this.mustLoad(id);
     const dir = r.archivedPath ? path.dirname(r.archivedPath) : path.join(r.worktreePath, 'openspec', 'changes', r.changeId);
     if (!fs.existsSync(dir) && r.status === 'finished') {
@@ -357,7 +581,9 @@ export class Orchestrator {
         proposal: await at('proposal.md'),
         tasks: await at('tasks.md'),
         design: await at('design.md'),
-        specs: await Promise.all(specFiles.map(async (f) => ({ path: f.slice(rel.length + 1), content: await git.show(r.projectPath, r.branch, f) }))),
+        specs: await Promise.all(
+          specFiles.map(async (f) => ({ path: f.slice(rel.length + 1), content: await git.show(r.projectPath, r.branch, f) })),
+        ),
       };
     }
     const read = (f: string) => {
@@ -374,7 +600,8 @@ export class Orchestrator {
       for (const name of fs.readdirSync(d).sort()) {
         const full = path.join(d, name);
         if (fs.statSync(full).isDirectory()) walk(full);
-        else if (name.endsWith('.md')) specs.push({ path: path.relative(dir, full).split(path.sep).join('/'), content: fs.readFileSync(full, 'utf8') });
+        else if (name.endsWith('.md'))
+          specs.push({ path: path.relative(dir, full).split(path.sep).join('/'), content: fs.readFileSync(full, 'utf8') });
       }
     };
     walk(specsDir);
@@ -401,9 +628,27 @@ export class Orchestrator {
       const agents = { ...DEFAULT_AGENTS, ...s.agents };
       const role = (['planner', 'executor', 'reviewer'] as Role[]).find((x) => agents[x] === agent);
       const model = role ? s.models[role] : '';
-      const base = { bin: tools[agent], cwd: dir, env: this.opts.env, prompt, model, timeoutMs: 120_000, group: `check-${agent}`, onOutput: () => {}, proxy, claudeAuth: s.claudeAuth };
+      const base = {
+        bin: tools[agent],
+        cwd: dir,
+        env: this.opts.env,
+        prompt,
+        model,
+        timeoutMs: 120_000,
+        group: `check-${agent}`,
+        onOutput: () => {},
+        proxy,
+        claudeAuth: s.claudeAuth,
+      };
       const r = agent === 'claude' ? await this.claude(base) : await this.codex({ ...base, sandbox: 'read-only' });
-      return { agent, ok: r.ok, model: model || 'по умолчанию', durationMs: Date.now() - t0, reply: r.text.trim().slice(0, 200), error: r.error };
+      return {
+        agent,
+        ok: r.ok,
+        model: model || 'по умолчанию',
+        durationMs: Date.now() - t0,
+        reply: r.text.trim().slice(0, 200),
+        error: r.error,
+      };
     };
     try {
       return await Promise.all(present.map(one));
@@ -417,7 +662,11 @@ export class Orchestrator {
   async start(input: StartRunInput): Promise<string> {
     const s = this.opts.getSettings();
     // Нужны только агенты, выбранные для ролей: на машине может стоять один claude или один codex.
-    const roles: Record<Role, AgentKind> = { planner: s.agents?.planner ?? DEFAULT_AGENTS.planner, executor: s.agents?.executor ?? DEFAULT_AGENTS.executor, reviewer: s.agents?.reviewer ?? DEFAULT_AGENTS.reviewer };
+    const roles: Record<Role, AgentKind> = {
+      planner: s.agents?.planner ?? DEFAULT_AGENTS.planner,
+      executor: s.agents?.executor ?? DEFAULT_AGENTS.executor,
+      reviewer: s.agents?.reviewer ?? DEFAULT_AGENTS.reviewer,
+    };
     const visualAgent = s.agents?.visual ?? 'claude';
     const tools = await this.tools(['git', 'openspec', ...new Set(Object.values(roles))]);
     const git = new Git(tools.git, this.opts.env);
@@ -431,8 +680,8 @@ export class Orchestrator {
     const baseBranch = input.baseBranch?.trim() || (await git.currentBranch(repo)) || undefined;
     const base = input.baseBranch?.trim()
       ? await git.revParse(repo, input.baseBranch.trim()).catch(() => {
-        throw new Error(`Ветка ${input.baseBranch} не найдена`);
-      })
+          throw new Error(`Ветка ${input.baseBranch} не найдена`);
+        })
       : head;
 
     const changeId = makeChangeId(input.task);
@@ -440,8 +689,14 @@ export class Orchestrator {
     const workspace = input.workspace ?? 'worktree';
     if (workspace === 'branch') {
       // В режиме «ветка» прогон занимает рабочую копию проекта целиком — второй в том же проекте ей бы помешал.
-      const busy = this.runsWithFiles().find((r) => r.workspace === 'branch' && path.resolve(r.projectPath) === path.resolve(repo) && ['running', 'waiting', 'queued'].includes(r.status));
-      if (busy) throw new Error(`В режиме «Ветка» в проекте уже идёт «${busy.title}». Дождитесь его или выберите отдельную копию (worktree).`);
+      const busy = this.runsWithFiles().find(
+        (r) =>
+          r.workspace === 'branch' &&
+          path.resolve(r.projectPath) === path.resolve(repo) &&
+          ['running', 'waiting', 'queued'].includes(r.status),
+      );
+      if (busy)
+        throw new Error(`В режиме «Ветка» в проекте уже идёт «${busy.title}». Дождитесь его или выберите отдельную копию (worktree).`);
     }
     const worktreePath = workspace === 'branch' ? repo : path.join(this.store.worktreesDir(), `${path.basename(repo)}-${changeId}`);
     const mode = input.mode ?? 'task';
@@ -451,7 +706,9 @@ export class Orchestrator {
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const carried = (input.attachmentPaths ?? []).filter((p) => fs.existsSync(p)).map((p) => ({ name: path.basename(p).replace(/^\d+-/, ''), data: fs.readFileSync(p) }));
+    const carried = (input.attachmentPaths ?? [])
+      .filter((p) => fs.existsSync(p))
+      .map((p) => ({ name: path.basename(p).replace(/^\d+-/, ''), data: fs.readFileSync(p) }));
     const attachments = this.saveAttachments(id, [...carried, ...(input.attachments ?? [])]);
     const run: RunFile = {
       version: 1,
@@ -497,7 +754,12 @@ export class Orchestrator {
     };
     if (queued) {
       this.save(run);
-      this.log(run, c.dim(`PurpleFlow · ${run.changeId}\nв очереди: одновременно идут ${this.activeCount()} из ${this.maxParallel()} — начнётся, когда освободится место\n`));
+      this.log(
+        run,
+        c.dim(
+          `PurpleFlow · ${run.changeId}\nв очереди: одновременно идут ${this.activeCount()} из ${this.maxParallel()} — начнётся, когда освободится место\n`,
+        ),
+      );
       return run.id;
     }
     try {
@@ -511,7 +773,9 @@ export class Orchestrator {
     return run.id;
   }
 
-  prepareWorkspace(run: RunFile) { return prepareWorkspace(this, run); }
+  prepareWorkspace(run: RunFile) {
+    return prepareWorkspace(this, run);
+  }
 
   // ——— Очередь: сколько прогонов агенты ведут одновременно ———
 
@@ -535,7 +799,10 @@ export class Orchestrator {
     this.pumping = true;
     try {
       while (this.activeCount() < this.maxParallel()) {
-        const next = this.store.list().filter((r) => r.status === 'queued').sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+        const next = this.store
+          .list()
+          .filter((r) => r.status === 'queued')
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
         if (!next) break;
         const run = this.store.load(next.id);
         if (!run) break;
@@ -586,7 +853,10 @@ export class Orchestrator {
     if (r.workspace !== 'branch') return;
     const tools = await this.tools(['git']);
     const cur = await new Git(tools.git, this.opts.env).currentBranch(r.projectPath);
-    if (cur !== r.branch) throw new Error(`Проект сейчас на ветке ${cur ?? 'detached HEAD'}. Переключитесь на ${r.branch} (git checkout ${r.branch}) и продолжите.`);
+    if (cur !== r.branch)
+      throw new Error(
+        `Проект сейчас на ветке ${cur ?? 'detached HEAD'}. Переключитесь на ${r.branch} (git checkout ${r.branch}) и продолжите.`,
+      );
   }
 
   // ——— Ручная проверка: приложение из ветки прогона ———
@@ -662,8 +932,14 @@ export class Orchestrator {
     if (!ready) {
       await killGroup(group);
       const state: PreviewState = {
-        status: 'failed', url, command, output,
-        error: exited !== undefined ? `Приложение завершилось с кодом ${exited}, не открыв ${url}` : `За 2 минуты приложение не ответило на ${url}`,
+        status: 'failed',
+        url,
+        command,
+        output,
+        error:
+          exited !== undefined
+            ? `Приложение завершилось с кодом ${exited}, не открыв ${url}`
+            : `За 2 минуты приложение не ответило на ${url}`,
       };
       this.setPreview(id, state);
       return state;
@@ -679,11 +955,17 @@ export class Orchestrator {
     await killGroup(`${id}:preview`);
   }
 
-  envFilesOf(run: RunFile) : string[] { return envFilesOf(this, run); }
+  envFilesOf(run: RunFile): string[] {
+    return envFilesOf(this, run);
+  }
 
-  copyEnvFiles(run: RunFile) { return copyEnvFiles(this, run); }
+  copyEnvFiles(run: RunFile) {
+    return copyEnvFiles(this, run);
+  }
 
-  cloneDeps(run: RunFile) { return cloneDeps(this, run); }
+  cloneDeps(run: RunFile) {
+    return cloneDeps(this, run);
+  }
 
   async stop(id: string) {
     const r = this.store.load(id);
@@ -706,7 +988,8 @@ export class Orchestrator {
     }
     await killGroup(id);
     if (r.status === 'running' || r.status === 'waiting') {
-      for (const a of r.attempts) if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
+      for (const a of r.attempts)
+        if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
       r.status = 'stopped';
       r.message = 'Остановлено пользователем';
       this.save(r);
@@ -719,7 +1002,8 @@ export class Orchestrator {
     if (this.driving.has(id)) throw new Error('Прогон сейчас работает — дождитесь решения или остановите его');
     const r = this.mustLoad(id);
     if (r.status === 'finished' || r.status === 'cancelled') throw new Error('Прогон уже завершён');
-    if (!r.attempts.some((a) => a.stage === 'implement' && a.status === 'done')) throw new Error('Реализации ещё не было — проверять нечего');
+    if (!r.attempts.some((a) => a.stage === 'implement' && a.status === 'done'))
+      throw new Error('Реализации ещё не было — проверять нечего');
     const cfg = this.getProjectConfig(r.projectPath);
     const runCommand = cfg?.runCommand?.trim() || r.runCommand;
     const appUrl = cfg?.appUrl?.trim() || r.appUrl;
@@ -730,7 +1014,9 @@ export class Orchestrator {
     r.appUrl = appUrl;
     r.visual = true;
     const now = new Date().toISOString();
-    for (const a of r.attempts) if (a.status === 'running') Object.assign(a, { status: 'done', endedAt: now, summary: a.summary ?? 'Перезапуск визуальной проверки' });
+    for (const a of r.attempts)
+      if (a.status === 'running')
+        Object.assign(a, { status: 'done', endedAt: now, summary: a.summary ?? 'Перезапуск визуальной проверки' });
     this.log(r, c.violet('↻ визуальная проверка заново') + '\n');
     r.message = undefined;
     r.next = 'visual';
@@ -742,8 +1028,10 @@ export class Orchestrator {
   /** Человек решил не ждать: текущая реализация или проверки останавливаются, проверки считаются пропущенными. */
   async skipChecks(id: string) {
     const before = this.mustLoad(id);
-    if (before.next !== 'implement' && before.next !== 'tests' && before.next !== 'limit') throw new Error('Пропустить проверки можно только на реализации или проверках');
-    if (!before.attempts.some((a) => a.stage === 'implement' && a.status === 'done')) throw new Error('Реализация ещё ни разу не завершилась — проверять нечего');
+    if (before.next !== 'implement' && before.next !== 'tests' && before.next !== 'limit')
+      throw new Error('Пропустить проверки можно только на реализации или проверках');
+    if (!before.attempts.some((a) => a.stage === 'implement' && a.status === 'done'))
+      throw new Error('Реализация ещё ни разу не завершилась — проверять нечего');
     await this.halt(id);
     const r = this.mustLoad(id);
     const now = new Date().toISOString();
@@ -767,11 +1055,21 @@ export class Orchestrator {
   managerBusy = new Set<string>();
   /** Чаты, в которых агент сейчас отвечает. */
   chatBusy = new Set<string>();
-  listChats(): ChatSummary[] { return listChats(this); }
-  getChat(id: string) { return getChat(this, id); }
-  createChat(o: Parameters<typeof createChat>[1]) { return createChat(this, o); }
-  updateChat(id: string, patch: Parameters<typeof updateChat>[2]) { return updateChat(this, id, patch); }
-  deleteChat(id: string) { return deleteChat(this, id); }
+  listChats(): ChatSummary[] {
+    return listChats(this);
+  }
+  getChat(id: string) {
+    return getChat(this, id);
+  }
+  createChat(o: Parameters<typeof createChat>[1]) {
+    return createChat(this, o);
+  }
+  updateChat(id: string, patch: Parameters<typeof updateChat>[2]) {
+    return updateChat(this, id, patch);
+  }
+  deleteChat(id: string) {
+    return deleteChat(this, id);
+  }
   /** Ход идёт в фоне: ответ приходит событиями chat.updated. */
   async sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void> {
     const p = sendChat(this, id, text, files);
@@ -779,19 +1077,37 @@ export class Orchestrator {
     await Promise.race([p, new Promise((r) => setTimeout(r, 50))]);
     p.catch(() => {});
   }
-  stopChat(id: string) { return stopChat(this, id); }
-  unqueueChat(id: string, messageId: string) { return unqueueChat(this, id, messageId); }
-  chatToTask(id: string) { return chatToTask(this, id); }
-  getChatDiff(id: string) { return chatDiff(this, id); }
-  getChatChangedFiles(id: string) { return chatChangedFiles(this, id); }
+  stopChat(id: string) {
+    return stopChat(this, id);
+  }
+  unqueueChat(id: string, messageId: string) {
+    return unqueueChat(this, id, messageId);
+  }
+  chatToTask(id: string) {
+    return chatToTask(this, id);
+  }
+  getChatDiff(id: string) {
+    return chatDiff(this, id);
+  }
+  getChatChangedFiles(id: string) {
+    return chatChangedFiles(this, id);
+  }
 
-  control(id: string, action: ControlAction) { return control(this, id, action); }
+  control(id: string, action: ControlAction) {
+    return control(this, id, action);
+  }
 
-  getManagerChat(id: string): { messages: ManagerMessage[]; thinking: boolean } { return { messages: getManagerChat(this, id), thinking: this.managerBusy.has(id) }; }
+  getManagerChat(id: string): { messages: ManagerMessage[]; thinking: boolean } {
+    return { messages: getManagerChat(this, id), thinking: this.managerBusy.has(id) };
+  }
 
-  askManager(id: string, text: string): Promise<ManagerMessage[]> { return askManager(this, id, text); }
+  askManager(id: string, text: string): Promise<ManagerMessage[]> {
+    return askManager(this, id, text);
+  }
 
-  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> { return resolveManagerAction(this, id, messageId, apply); }
+  resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]> {
+    return resolveManagerAction(this, id, messageId, apply);
+  }
 
   /** Остановить крутящийся цикл стадий и дождаться, пока он отпустит прогон, — перед тем как самим поменять маршрут. */
   async halt(id: string) {
@@ -807,7 +1123,13 @@ export class Orchestrator {
     await this.stopPreview(id);
     if (!isGate(r.next) || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт решения на гейте');
     const gate = r.next as GateId;
-    r.gates.push({ gate, at: new Date().toISOString(), decision, comment: comment?.trim() || undefined, lineComments: lineComments?.length ? lineComments : undefined });
+    r.gates.push({
+      gate,
+      at: new Date().toISOString(),
+      decision,
+      comment: comment?.trim() || undefined,
+      lineComments: lineComments?.length ? lineComments : undefined,
+    });
     const gateAttempt = [...r.attempts].reverse().find((a) => a.stage === gate && a.status === 'running');
     if (gateAttempt) {
       gateAttempt.status = 'done';
@@ -872,7 +1194,11 @@ export class Orchestrator {
       if (decision === 'approve') {
         r.next = 'implement';
         // План обновлён после возврата с реализации — исполнитель должен узнать, что и почему поменялось.
-        r.feedback = r.replanNote ? human(`План обновлён: человек вернул задачу на план с реализации — «${r.replanNote}». Сверься с обновлённым proposal и tasks.md и продолжай по ним; то, что новому плану противоречит, переделай.`) : undefined;
+        r.feedback = r.replanNote
+          ? human(
+              `План обновлён: человек вернул задачу на план с реализации — «${r.replanNote}». Сверься с обновлённым proposal и tasks.md и продолжай по ним; то, что новому плану противоречит, переделай.`,
+            )
+          : undefined;
         r.replanNote = undefined;
         if (modeOf(r) === 'epic') r.phase = 1;
       } else {
@@ -894,7 +1220,11 @@ export class Orchestrator {
       r.next = 'implement';
       r.implAttemptsLimit = r.implAttemptsUsed + 1;
       const prev = r.feedback?.text ?? '';
-      r.feedback = { source: r.feedback?.source ?? 'human', text: [prev, comment?.trim() ? `Комментарий человека:\n${comment.trim()}` : ''].filter(Boolean).join('\n\n'), lineComments };
+      r.feedback = {
+        source: r.feedback?.source ?? 'human',
+        text: [prev, comment?.trim() ? `Комментарий человека:\n${comment.trim()}` : ''].filter(Boolean).join('\n\n'),
+        lineComments,
+      };
     }
     r.status = 'running';
     this.save(r);
@@ -917,14 +1247,30 @@ export class Orchestrator {
         }
         if (applyPending(this, run)) break;
         switch (run.next) {
-          case 'baseline': await this.stageBaseline(run); break;
-          case 'visual': await this.stageVisual(run); break;
-          case 'clarify': await this.stageClarify(run); break;
-          case 'plan': await this.stagePlan(run); break;
-          case 'implement': await this.stageImplement(run); break;
-          case 'tests': await this.stageTests(run); break;
-          case 'review': await this.stageReview(run); break;
-          case 'finish': await this.stageFinish(run); break;
+          case 'baseline':
+            await this.stageBaseline(run);
+            break;
+          case 'visual':
+            await this.stageVisual(run);
+            break;
+          case 'clarify':
+            await this.stageClarify(run);
+            break;
+          case 'plan':
+            await this.stagePlan(run);
+            break;
+          case 'implement':
+            await this.stageImplement(run);
+            break;
+          case 'tests':
+            await this.stageTests(run);
+            break;
+          case 'review':
+            await this.stageReview(run);
+            break;
+          case 'finish':
+            await this.stageFinish(run);
+            break;
         }
       }
     } catch (e) {
@@ -950,117 +1296,231 @@ export class Orchestrator {
     return `${run.task}\n\nУточнения от человека:\n${a.map((x) => `- ${x.q} — ${x.a}`).join('\n')}`;
   }
 
-  stageClarify(run: RunFile) { return stageClarify(this, run); }
+  stageClarify(run: RunFile) {
+    return stageClarify(this, run);
+  }
 
-  answer(id: string, answers: { q: string; a: string }[]) { return answer(this, id, answers); }
+  answer(id: string, answers: { q: string; a: string }[]) {
+    return answer(this, id, answers);
+  }
 
   // ——— Знания о проекте: профиль и уроки прошлых прогонов ———
 
-  knowledgeOf(repo: string) : ProjectKnowledge { return knowledgeOf(this, repo); }
+  knowledgeOf(repo: string): ProjectKnowledge {
+    return knowledgeOf(this, repo);
+  }
 
-  updateKnowledge(repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) { return updateKnowledge(this, repo, fn); }
+  updateKnowledge(repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) {
+    return updateKnowledge(this, repo, fn);
+  }
 
-  knowledgeBlock(run: RunFile) : string { return knowledgeBlock(this, run); }
+  knowledgeBlock(run: RunFile): string {
+    return knowledgeBlock(this, run);
+  }
 
-  relatedState(run: RunFile) { return relatedState(this, run.projectPath); }
+  relatedState(run: RunFile) {
+    return relatedState(this, run.projectPath);
+  }
 
-  checkRelatedUntouched(run: RunFile, before: Map<string, string>) { return checkRelatedUntouched(this, run, before); }
+  checkRelatedUntouched(run: RunFile, before: Map<string, string>) {
+    return checkRelatedUntouched(this, run, before);
+  }
 
-  profileFor(repo: string, cwd: string, onOutput: (t: string) => void, group: string) : Promise<AgentResult> { return profileFor(this, repo, cwd, onOutput, group); }
+  profileFor(repo: string, cwd: string, onOutput: (t: string) => void, group: string): Promise<AgentResult> {
+    return profileFor(this, repo, cwd, onOutput, group);
+  }
 
-  ensureProfile(run: RunFile, attempt: StageAttempt) { return ensureProfile(this, run, attempt); }
+  ensureProfile(run: RunFile, attempt: StageAttempt) {
+    return ensureProfile(this, run, attempt);
+  }
 
-  refreshProfile(repo: string) : Promise<ProjectKnowledge> { return refreshProfile(this, repo); }
+  refreshProfile(repo: string): Promise<ProjectKnowledge> {
+    return refreshProfile(this, repo);
+  }
 
-  saveKnowledge(repo: string, k: ProjectKnowledge) : ProjectKnowledge { return saveKnowledge(this, repo, k); }
+  saveKnowledge(repo: string, k: ProjectKnowledge): ProjectKnowledge {
+    return saveKnowledge(this, repo, k);
+  }
 
-  getKnowledge(repo: string) : ProjectKnowledge { return getKnowledge(this, repo); }
+  getKnowledge(repo: string): ProjectKnowledge {
+    return getKnowledge(this, repo);
+  }
 
-  summaryContext(run: RunFile) : string { return summaryContext(this, run); }
+  summaryContext(run: RunFile): string {
+    return summaryContext(this, run);
+  }
 
-  summarizeChanges(id: string) { return summarizeChanges(this, id); }
+  summarizeChanges(id: string) {
+    return summarizeChanges(this, id);
+  }
 
-  learn(run: RunFile) { return learn(this, run); }
+  learn(run: RunFile) {
+    return learn(this, run);
+  }
 
-  stagePlan(run: RunFile) { return stagePlan(this, run); }
+  stagePlan(run: RunFile) {
+    return stagePlan(this, run);
+  }
 
-  mapFilesToPlan(id: string) { return mapFilesToPlan(this, id); }
+  mapFilesToPlan(id: string) {
+    return mapFilesToPlan(this, id);
+  }
 
-  startFilesBlock(run: RunFile) : Promise<string> { return startFilesBlock(this, run); }
+  startFilesBlock(run: RunFile): Promise<string> {
+    return startFilesBlock(this, run);
+  }
 
-  stageImplement(run: RunFile) { return stageImplement(this, run); }
+  stageImplement(run: RunFile) {
+    return stageImplement(this, run);
+  }
 
-  dropArtifacts(run: RunFile) { return dropArtifacts(this, run); }
+  dropArtifacts(run: RunFile) {
+    return dropArtifacts(this, run);
+  }
 
-  runChecks(run: RunFile, testCommand = run.testCommand) : Promise<{ result: TestResult; failed: CheckResult[] }> { return runChecks(this, run, testCommand); }
+  runChecks(run: RunFile, testCommand = run.testCommand): Promise<{ result: TestResult; failed: CheckResult[] }> {
+    return runChecks(this, run, testCommand);
+  }
 
-  runCheck(run: RunFile, kind: CheckResult['kind'], command: string, timeoutMin: number, note = '') : Promise<CheckResult> { return runCheck(this, run, kind, command, timeoutMin, note); }
+  runCheck(run: RunFile, kind: CheckResult['kind'], command: string, timeoutMin: number, note = ''): Promise<CheckResult> {
+    return runCheck(this, run, kind, command, timeoutMin, note);
+  }
 
-  probeTests(run: RunFile, check: CheckResult, beforeStash?: Promise<unknown> | null) : Promise<CheckResult> { return probeTests(this, run, check, beforeStash); }
+  probeTests(run: RunFile, check: CheckResult, beforeStash?: Promise<unknown> | null): Promise<CheckResult> {
+    return probeTests(this, run, check, beforeStash);
+  }
 
-  checksFeedback(failed: CheckResult[], base?: CheckResult[]) : string { return checksFeedback(this, failed, base); }
+  checksFeedback(failed: CheckResult[], base?: CheckResult[]): string {
+    return checksFeedback(this, failed, base);
+  }
 
-  captureBaseChecks(run: RunFile, withTests = true) { return captureBaseChecks(this, run, withTests); }
+  captureBaseChecks(run: RunFile, withTests = true) {
+    return captureBaseChecks(this, run, withTests);
+  }
 
-  startBaseChecks(run: RunFile, phase: 'clarify' | 'plan' = 'clarify') { return startBaseChecks(this, run, phase); }
+  startBaseChecks(run: RunFile, phase: 'clarify' | 'plan' = 'clarify') {
+    return startBaseChecks(this, run, phase);
+  }
 
-  settleBaseChecks(run: RunFile) { return settleBaseChecks(this, run); }
+  settleBaseChecks(run: RunFile) {
+    return settleBaseChecks(this, run);
+  }
 
-  flushBaseChecks(run: RunFile) { return flushBaseChecks(this, run); }
+  flushBaseChecks(run: RunFile) {
+    return flushBaseChecks(this, run);
+  }
 
-  compareWithBase(run: RunFile, result: TestResult) : { result: TestResult; failed: CheckResult[] } { return compareWithBase(this, run, result); }
+  compareWithBase(run: RunFile, result: TestResult): { result: TestResult; failed: CheckResult[] } {
+    return compareWithBase(this, run, result);
+  }
 
-  stageTests(run: RunFile) { return stageTests(this, run); }
+  stageTests(run: RunFile) {
+    return stageTests(this, run);
+  }
 
-  stageBaseline(run: RunFile) { return stageBaseline(this, run); }
+  stageBaseline(run: RunFile) {
+    return stageBaseline(this, run);
+  }
 
-  needsReview(run: RunFile) : Promise<boolean> { return needsReview(this, run); }
+  needsReview(run: RunFile): Promise<boolean> {
+    return needsReview(this, run);
+  }
 
-  listProjects() : ProjectListItem[] { return listProjects(this); }
+  listProjects(): ProjectListItem[] {
+    return listProjects(this);
+  }
 
-  nextPartDraft(id: string) : Promise<NextPartDraft | null> { return nextPartDraft(this, id); }
+  nextPartDraft(id: string): Promise<NextPartDraft | null> {
+    return nextPartDraft(this, id);
+  }
 
   envChecks = new Set<string>();
 
-  checkEnvironment(repo: string) : Promise<EnvCheck> { return checkEnvironment(this, repo); }
+  checkEnvironment(repo: string): Promise<EnvCheck> {
+    return checkEnvironment(this, repo);
+  }
 
-  cleanWorkingCopy(repo: string, how: 'stash' | 'discard') : Promise<{ files: number }> { return cleanWorkingCopy(this, repo, how); }
+  cleanWorkingCopy(repo: string, how: 'stash' | 'discard'): Promise<{ files: number }> {
+    return cleanWorkingCopy(this, repo, how);
+  }
 
-  projectOverview(repo: string) : Promise<ProjectOverview> { return projectOverview(this, repo); }
+  projectOverview(repo: string): Promise<ProjectOverview> {
+    return projectOverview(this, repo);
+  }
 
-  projectStats(repo: string) : ProjectStats { return projectStats(this, repo); }
+  projectStats(repo: string): ProjectStats {
+    return projectStats(this, repo);
+  }
 
-  projectBranches(repo: string, fetch = false) : Promise<ProjectBranches> { return projectBranches(this, repo, fetch); }
+  projectBranches(repo: string, fetch = false): Promise<ProjectBranches> {
+    return projectBranches(this, repo, fetch);
+  }
 
-  forgetProject(repo: string) : void { return forgetProject(this, repo); }
+  forgetProject(repo: string): void {
+    return forgetProject(this, repo);
+  }
 
-  getProjectConfig(repo: string) : ProjectConfig | null { return getProjectConfig(this, repo); }
+  getProjectConfig(repo: string): ProjectConfig | null {
+    return getProjectConfig(this, repo);
+  }
 
-  saveProjectConfig(repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>) : ProjectConfig { return saveProjectConfig(this, repo, cfg); }
+  saveProjectConfig(repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>): ProjectConfig {
+    return saveProjectConfig(this, repo, cfg);
+  }
 
-  detectCommandsAI(dir: string) : Promise<AiCommands> { return detectCommandsAI(this, dir); }
+  detectCommandsAI(dir: string): Promise<AiCommands> {
+    return detectCommandsAI(this, dir);
+  }
 
-  suggestMode(task: string) : Promise<ModeSuggestion> { return suggestMode(this, task); }
+  suggestMode(task: string): Promise<ModeSuggestion> {
+    return suggestMode(this, task);
+  }
 
-  visualDir(run: RunFile, attempt: number) : string { return visualDir(this, run, attempt); }
+  visualDir(run: RunFile, attempt: number): string {
+    return visualDir(this, run, attempt);
+  }
 
-  stageVisual(run: RunFile) { return stageVisual(this, run); }
+  stageVisual(run: RunFile) {
+    return stageVisual(this, run);
+  }
 
-  startLiveBrowser(run: RunFile, dir: string, url: string, group: string, session: string) : Promise<{ cast: Screencast } | null> { return startLiveBrowser(this, run, dir, url, group, session); }
+  startLiveBrowser(run: RunFile, dir: string, url: string, group: string, session: string): Promise<{ cast: Screencast } | null> {
+    return startLiveBrowser(this, run, dir, url, group, session);
+  }
 
-  getVisualShot(id: string, file: string) : string | null { return getVisualShot(this, id, file); }
+  getVisualShot(id: string, file: string): string | null {
+    return getVisualShot(this, id, file);
+  }
 
-  previousReviewBlock(run: RunFile) : string { return previousReviewBlock(this, run); }
+  previousReviewBlock(run: RunFile): string {
+    return previousReviewBlock(this, run);
+  }
 
-  stageReview(run: RunFile) { return stageReview(this, run); }
+  stageReview(run: RunFile) {
+    return stageReview(this, run);
+  }
 
-  reviewPass(run: RunFile, quiet = false) : Promise<{ review: ReviewResult; log: string }> { return reviewPass(this, run, quiet); }
+  reviewPass(run: RunFile, quiet = false): Promise<{ review: ReviewResult; log: string }> {
+    return reviewPass(this, run, quiet);
+  }
 
-  verifyBlocking(run: RunFile, attempt: StageAttempt, items: ReviewItem[], proposal: string, out: (t: string) => void) : Promise<{ blocking: ReviewItem[]; demoted: ReviewItem[] }> { return verifyBlocking(this, run, attempt, items, proposal, out); }
+  verifyBlocking(
+    run: RunFile,
+    attempt: StageAttempt,
+    items: ReviewItem[],
+    proposal: string,
+    out: (t: string) => void,
+  ): Promise<{ blocking: ReviewItem[]; demoted: ReviewItem[] }> {
+    return verifyBlocking(this, run, attempt, items, proposal, out);
+  }
 
-  reviewFeedback(review: ReviewResult) : string { return reviewFeedback(this, review); }
+  reviewFeedback(review: ReviewResult): string {
+    return reviewFeedback(this, review);
+  }
 
-  stageFinish(run: RunFile) { return stageFinish(this, run); }
+  stageFinish(run: RunFile) {
+    return stageFinish(this, run);
+  }
 
   // ——— Вспомогательное ———
 
@@ -1076,11 +1536,13 @@ export class Orchestrator {
   }
 
   gateMessage(run: RunFile): string | undefined {
-    if (run.next === 'gate0') return `У планировщика ${run.clarify?.questions.length ?? 0} ${(run.clarify?.questions.length ?? 0) === 1 ? 'вопрос' : 'вопроса'} по задаче — ответьте, чтобы план не строился на догадках.`;
+    if (run.next === 'gate0')
+      return `У планировщика ${run.clarify?.questions.length ?? 0} ${(run.clarify?.questions.length ?? 0) === 1 ? 'вопрос' : 'вопроса'} по задаче — ответьте, чтобы план не строился на догадках.`;
     if (run.next === 'limit') return run.message ?? 'Попытки реализации исчерпаны. Дать ещё одну попытку?';
     if (run.next === 'gate1' && modeOf(run) === 'bug') return 'Баг воспроизведён падающим тестом. Причина и план исправления верны?';
     if (run.next === 'gate1' && modeOf(run) === 'epic') return 'Проверьте design.md, этапы в tasks.md и proposal. Принять дизайн?';
-    if (run.next === 'gate1' && run.nextParts) return 'Задача большая — планировщик взял в этот план первую часть, остальные перечислены в разделе «Next Parts» в proposal. Запустите их следующими задачами после этой. Принять план первой части?';
+    if (run.next === 'gate1' && run.nextParts)
+      return 'Задача большая — планировщик взял в этот план первую часть, остальные перечислены в разделе «Next Parts» в proposal. Запустите их следующими задачами после этой. Принять план первой части?';
     if (run.next === 'gate1') return 'Проверьте proposal и tasks. Принять, вернуть с комментарием или отменить?';
     if (run.next === 'gate2') return 'Посмотрите дифф и замечания ревью. Принять или вернуть на доработку?';
     return undefined;
@@ -1126,7 +1588,9 @@ export class Orchestrator {
       }
       this.log(run, c.violet('Автопилот: план принят без остановки.') + '\n');
       await new Promise((r) => setTimeout(r, 800));
-      await this.decide(run.id, 'approve', 'Автопилот').catch((e) => this.warn(this.mustLoad(run.id), `Автопилот не смог принять план — примите его сами: ${(e as Error).message}`));
+      await this.decide(run.id, 'approve', 'Автопилот').catch((e) =>
+        this.warn(this.mustLoad(run.id), `Автопилот не смог принять план — примите его сами: ${(e as Error).message}`),
+      );
       return;
     }
     if (gate === 'limit' && !run.autoRetried) {
@@ -1135,7 +1599,9 @@ export class Orchestrator {
       this.save(r);
       this.log(run, c.violet('Автопилот: попытки исчерпаны — даю ещё одну сам; следующий раз решите вы.') + '\n');
       await new Promise((res) => setTimeout(res, 800));
-      await this.decide(run.id, 'approve').catch((e) => this.warn(this.mustLoad(run.id), `Автопилот не смог дать ещё одну попытку: ${(e as Error).message}`));
+      await this.decide(run.id, 'approve').catch((e) =>
+        this.warn(this.mustLoad(run.id), `Автопилот не смог дать ещё одну попытку: ${(e as Error).message}`),
+      );
     }
   }
 
@@ -1171,7 +1637,8 @@ export class Orchestrator {
   }
 
   markStopped(run: RunFile, message: string) {
-    for (const a of run.attempts) if (a.status === 'running' && !isGate(a.stage)) Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
+    for (const a of run.attempts)
+      if (a.status === 'running' && !isGate(a.stage)) Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
     run.status = 'stopped';
     run.message = message;
     this.save(run);
@@ -1181,7 +1648,8 @@ export class Orchestrator {
 
   fail(run: RunFile, error: string) {
     const stage = run.next;
-    for (const a of run.attempts) if (a.status === 'running') Object.assign(a, { status: 'failed', endedAt: new Date().toISOString(), error });
+    for (const a of run.attempts)
+      if (a.status === 'running') Object.assign(a, { status: 'failed', endedAt: new Date().toISOString(), error });
     run.status = 'stopped';
     run.message = error;
     this.save(run);
@@ -1218,9 +1686,12 @@ export class Orchestrator {
 
   feedbackBlock(f?: Feedback): string {
     if (!f) return '';
-    const source = { validator: 'валидатор OpenSpec', tests: 'тесты', review: 'ревьюер', human: 'человек', system: 'оркестратор' }[f.source];
+    const source = { validator: 'валидатор OpenSpec', tests: 'тесты', review: 'ревьюер', human: 'человек', system: 'оркестратор' }[
+      f.source
+    ];
     const lines = f.lineComments?.length
-      ? '\nЗамечания на строках:\n' + f.lineComments.map((l) => `- ${l.file}:${l.line}${l.quote ? ` («${l.quote}»)` : ''} — ${l.text}`).join('\n')
+      ? '\nЗамечания на строках:\n' +
+        f.lineComments.map((l) => `- ${l.file}:${l.line}${l.quote ? ` («${l.quote}»)` : ''} — ${l.text}`).join('\n')
       : '';
     return this.prompts.render('feedback.md', { source, text: f.text, lineComments: lines });
   }
@@ -1230,8 +1701,17 @@ export class Orchestrator {
    * прокси, вход и модель из настроек в одном месте. По умолчанию без инструментов и во временной папке.
    */
   async service(o: {
-    prompt: string; group: string; timeoutMs: number; cwd?: string; env?: NodeJS.ProcessEnv; tools?: string[];
-    model?: string; addDirs?: string[]; idleTimeoutMs?: number; userConfig?: boolean; onOutput?: (t: string) => void;
+    prompt: string;
+    group: string;
+    timeoutMs: number;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    tools?: string[];
+    model?: string;
+    addDirs?: string[];
+    idleTimeoutMs?: number;
+    userConfig?: boolean;
+    onOutput?: (t: string) => void;
     /** Агент, выбранный в настройках (менеджер, проверка окружения); если его нет на машине — как у служебных вызовов. */
     agent?: AgentKind;
     /** Нужен браузер и запись вне рабочей копии (проверка окружения) — у codex песочница без ограничений. */
@@ -1241,18 +1721,31 @@ export class Orchestrator {
     const agent = o.agent && (await this.hasTool(o.agent)) ? o.agent : await this.serviceAgent();
     const tools = await this.tools([agent]);
     const common = {
-      bin: tools[agent], cwd: o.cwd ?? os.tmpdir(), env: o.env ?? this.opts.env, prompt: o.prompt,
-      timeoutMs: o.timeoutMs, idleTimeoutMs: o.idleTimeoutMs, group: o.group, onOutput: o.onOutput ?? (() => {}),
-      proxy: s.proxy.baseUrl ? s.proxy : undefined, userConfig: o.userConfig,
+      bin: tools[agent],
+      cwd: o.cwd ?? os.tmpdir(),
+      env: o.env ?? this.opts.env,
+      prompt: o.prompt,
+      timeoutMs: o.timeoutMs,
+      idleTimeoutMs: o.idleTimeoutMs,
+      group: o.group,
+      onOutput: o.onOutput ?? (() => {}),
+      proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      userConfig: o.userConfig,
     };
     if (agent === 'codex') {
       // Без claude служебное — на codex в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
-      return this.codex({ ...common, model: o.model || this.agentModel('codex', s.agents, s.models) || undefined, sandbox: o.fullAccess ? 'danger-full-access' : 'read-only' });
+      return this.codex({
+        ...common,
+        model: o.model || this.agentModel('codex', s.agents, s.models) || undefined,
+        sandbox: o.fullAccess ? 'danger-full-access' : 'read-only',
+      });
     }
     return this.claude({
-      ...common, claudeAuth: s.claudeAuth,
+      ...common,
+      claudeAuth: s.claudeAuth,
       model: o.model || this.claudeModel(s.agents, s.models) || undefined,
-      addDirs: o.addDirs, tools: o.tools ?? [],
+      addDirs: o.addDirs,
+      tools: o.tools ?? [],
     });
   }
 
@@ -1287,24 +1780,47 @@ export class Orchestrator {
    * Запуск агента роли: claude или codex — как выбрано в настройках на момент старта прогона.
    * readOnly — стадия не меняет файлы (уточнение, ревью): у claude это требование промпта, инструменты не ограничены; у codex — песочница read-only.
    */
-  async runRole(run: RunFile, role: Role, o: {
-    prompt: string; systemPrompt?: string; openspec?: boolean; readOnly?: boolean; images?: string[]; outputSchema?: object;
-    sessionId?: string; resume?: string;
-    /** Свой приёмник вывода (параллельное ревью копит вывод, чтобы не перемешать лог с проверками). */
-    onOutput?: (text: string) => void;
-  }): Promise<AgentResult> {
+  async runRole(
+    run: RunFile,
+    role: Role,
+    o: {
+      prompt: string;
+      systemPrompt?: string;
+      openspec?: boolean;
+      readOnly?: boolean;
+      images?: string[];
+      outputSchema?: object;
+      sessionId?: string;
+      resume?: string;
+      /** Свой приёмник вывода (параллельное ревью копит вывод, чтобы не перемешать лог с проверками). */
+      onOutput?: (text: string) => void;
+    },
+  ): Promise<AgentResult> {
     const agent = run.agents?.[role] ?? DEFAULT_AGENTS[role];
     const tools = await this.tools(o.openspec ? [agent, 'openspec'] : [agent]);
-    const base = { ...this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined), ...(o.onOutput ? { onOutput: o.onOutput } : {}) };
+    const base = {
+      ...this.agentBase(run, tools[agent], o.openspec ? tools.openspec : undefined),
+      ...(o.onOutput ? { onOutput: o.onOutput } : {}),
+    };
     const model = run.models[role] || undefined;
     // Знания о проекте (профиль и уроки) — всем ролям; в продолжении сессии они уже в контексте.
     const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${this.knowledgeBlock(run)}` || undefined;
     if (agent === 'codex') {
-      return this.codex({ ...base, prompt: o.prompt, systemPrompt, model, sandbox: o.readOnly ? 'read-only' : 'workspace-write', images: o.images, outputSchema: o.outputSchema });
+      return this.codex({
+        ...base,
+        prompt: o.prompt,
+        systemPrompt,
+        model,
+        sandbox: o.readOnly ? 'read-only' : 'workspace-write',
+        images: o.images,
+        outputSchema: o.outputSchema,
+      });
     }
     // claude не принимает изображения флагом — даём пути, он откроет их инструментом Read.
     const images = o.images?.filter((f) => fs.existsSync(f)) ?? [];
-    const prompt = images.length ? `${o.prompt}\n\nИзображения (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}` : o.prompt;
+    const prompt = images.length
+      ? `${o.prompt}\n\nИзображения (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}`
+      : o.prompt;
     const dirs = [...new Set([...(base.addDirs ?? []), ...images.map((f) => path.dirname(f))])];
     return this.claude({
       ...base,
@@ -1340,7 +1856,10 @@ export class Orchestrator {
 
   /** Каталоги, которые агент видит помимо рабочей копии: вложения задачи и соседние репозитории (только чтение). */
   agentDirs(run: RunFile): string[] | undefined {
-    const dirs = [...(run.attachments?.length ? [path.dirname(run.attachments[0])] : []), ...relatedRepos(this, run.projectPath).map((r) => r.path)];
+    const dirs = [
+      ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : []),
+      ...relatedRepos(this, run.projectPath).map((r) => r.path),
+    ];
     return dirs.length ? dirs : undefined;
   }
 
@@ -1354,8 +1873,15 @@ export class Orchestrator {
     const dir = this.attachmentsDir(id);
     fs.mkdirSync(dir, { recursive: true });
     return files.map((f, i) => {
-      const ext = path.extname(f.name).toLowerCase().replace(/[^.a-z0-9]/g, '');
-      const base = path.basename(f.name, path.extname(f.name)).replace(/[^\p{L}\p{N}_.-]+/gu, '-').slice(0, 60) || 'file';
+      const ext = path
+        .extname(f.name)
+        .toLowerCase()
+        .replace(/[^.a-z0-9]/g, '');
+      const base =
+        path
+          .basename(f.name, path.extname(f.name))
+          .replace(/[^\p{L}\p{N}_.-]+/gu, '-')
+          .slice(0, 60) || 'file';
       const file = path.join(dir, `${String(i + 1).padStart(2, '0')}-${base}${ext}`);
       fs.writeFileSync(file, Buffer.from(f.data));
       return file;
@@ -1366,7 +1892,9 @@ export class Orchestrator {
     if (!run.attachments?.length) return '';
     const images = run.attachments.filter(isImageFile);
     return [
-      images.length ? `\nК задаче приложены изображения (макеты, скриншоты). Открой их инструментом Read и учитывай:\n${images.map((p) => `- ${p}`).join('\n')}\n` : '',
+      images.length
+        ? `\nК задаче приложены изображения (макеты, скриншоты). Открой их инструментом Read и учитывай:\n${images.map((p) => `- ${p}`).join('\n')}\n`
+        : '',
       this.filesBlock(run),
     ].join('');
   }
@@ -1420,8 +1948,12 @@ export class Orchestrator {
   }
 
   /** Запуск агентов — через них, чтобы тесты конвейера могли подменить claude и codex. */
-  claude(o: Parameters<typeof runClaude>[0]) { return (this.opts.runners?.claude ?? runClaude)(o); }
-  codex(o: Parameters<typeof runCodex>[0]) { return (this.opts.runners?.codex ?? runCodex)(o); }
+  claude(o: Parameters<typeof runClaude>[0]) {
+    return (this.opts.runners?.claude ?? runClaude)(o);
+  }
+  codex(o: Parameters<typeof runCodex>[0]) {
+    return (this.opts.runners?.codex ?? runCodex)(o);
+  }
 
   /** Предупреждение: прогон идёт дальше, но человеку стоит знать — в логе и в окне прогона. */
   warn(run: RunFile, text: string) {

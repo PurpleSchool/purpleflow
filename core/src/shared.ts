@@ -39,10 +39,14 @@ export const STAGE_TITLES: Record<StageId, string> = {
 
 export type Listener = (e: CoreEvent) => void;
 
-export interface Tools { git: string; claude: string; codex: string; openspec: string }
+export interface Tools {
+  git: string;
+  claude: string;
+  codex: string;
+  openspec: string;
+}
 
 export class StopSignal extends Error {}
-
 
 export function isGate(s: StageId): boolean {
   return s === 'gate0' || s === 'gate1' || s === 'gate2' || s === 'limit';
@@ -52,7 +56,10 @@ export function isGate(s: StageId): boolean {
 export function planTitle(proposal: string): string | null {
   const m = proposal.match(/^\s*#\s+(.+?)\s*$/m);
   if (!m || /^(why|what changes|impact)$/i.test(m[1])) return null;
-  const t = m[1].replace(/^(change|изменение)\s*:\s*/i, '').replace(/[`*]/g, '').trim();
+  const t = m[1]
+    .replace(/^(change|изменение)\s*:\s*/i, '')
+    .replace(/[`*]/g, '')
+    .trim();
   return t ? (t.length > 72 ? t.slice(0, 70) + '…' : t) : null;
 }
 
@@ -110,22 +117,21 @@ export function parseVerdicts(text: string): { index: number; verdict: 'confirme
 
 /** Имена упавших тестов из вывода раннера (Jest, Vitest, pytest, go test, node:test); null — не распознали. */
 export function failedTestNames(output: string): string[] | null {
-   
   const text = output.replace(/\x1b\[[0-9;]*m/g, '');
   const names = new Set<string>();
   for (const l of text.split('\n')) {
-    const m = l.match(/^\s*● (.+?)\s*$/) // Jest
-      ?? l.match(/^\s*(?:FAIL|×|✗)\s+(\S+\s+>\s+.+?)(?:\s+\d+m?s)?\s*$/) // Vitest
-      ?? l.match(/^FAILED (\S+)/) // pytest
-      ?? l.match(/^\s*--- FAIL: (\S+)/) // go test
-      ?? l.match(/^\s*not ok \d+ - (.+?)\s*$/); // node:test, TAP
+    const m =
+      l.match(/^\s*● (.+?)\s*$/) ?? // Jest
+      l.match(/^\s*(?:FAIL|×|✗)\s+(\S+\s+>\s+.+?)(?:\s+\d+m?s)?\s*$/) ?? // Vitest
+      l.match(/^FAILED (\S+)/) ?? // pytest
+      l.match(/^\s*--- FAIL: (\S+)/) ?? // go test
+      l.match(/^\s*not ok \d+ - (.+?)\s*$/); // node:test, TAP
     if (m && !/^Console$/.test(m[1])) names.add(m[1]);
   }
   return names.size ? [...names] : null;
 }
 
 export function errorCount(output: string): number | null {
-   
   const text = output.replace(/\x1b\[[0-9;]*m/g, '');
   const patterns = [
     /✖\s*\d+\s+problems?\s*\((\d+)\s+errors?/g, // ESLint
@@ -162,7 +168,7 @@ export async function expandPorts(url: string, command: string): Promise<{ port:
   const take = async () => {
     for (let i = 0; i < 20; i++) {
       const p = await freePort();
-      if (!used.has(p)) return used.add(p), p;
+      if (!used.has(p)) return (used.add(p), p);
     }
     throw new Error('Не нашлось свободных портов');
   };
@@ -171,7 +177,8 @@ export async function expandPorts(url: string, command: string): Promise<{ port:
   for (const m of `${url} ${command}`.matchAll(/\{port:([a-z0-9_-]+)\}/gi)) {
     if (!named.has(m[1])) named.set(m[1], await take());
   }
-  const fill = (t: string) => t.replace(/\{port:([a-z0-9_-]+)\}/gi, (_, n: string) => String(named.get(n))).replaceAll('{port}', String(port));
+  const fill = (t: string) =>
+    t.replace(/\{port:([a-z0-9_-]+)\}/gi, (_, n: string) => String(named.get(n))).replaceAll('{port}', String(port));
   return { port, url: fill(url), command: fill(command) };
 }
 
@@ -198,7 +205,9 @@ export async function waitForUrl(url: string, timeoutMs: number, abort: () => bo
       await fetch(url, { signal: ctrl.signal, redirect: 'manual' });
       clearTimeout(timer);
       return true;
-    } catch { /* ещё не поднялось */ }
+    } catch {
+      /* ещё не поднялось */
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
   return false;
@@ -221,11 +230,16 @@ export function parseQuestions(text: string): ClarifyQuestion[] {
     const j = parseJsonReply<{ questions?: unknown }>(text);
     if (!j || !Array.isArray(j.questions)) return [];
     return j.questions
-      .filter((q): q is { q: string; options?: unknown; why?: unknown } => Boolean(q) && typeof (q as { q?: unknown }).q === 'string' && (q as { q: string }).q.trim().length > 3)
+      .filter(
+        (q): q is { q: string; options?: unknown; why?: unknown } =>
+          Boolean(q) && typeof (q as { q?: unknown }).q === 'string' && (q as { q: string }).q.trim().length > 3,
+      )
       .slice(0, 4)
       .map((q) => ({
         q: q.q.trim(),
-        options: Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === 'string' && Boolean(o.trim())).slice(0, 4) : undefined,
+        options: Array.isArray(q.options)
+          ? q.options.filter((o): o is string => typeof o === 'string' && Boolean(o.trim())).slice(0, 4)
+          : undefined,
         why: typeof q.why === 'string' && q.why.trim() ? q.why.trim() : undefined,
       }));
   } catch {
@@ -238,7 +252,9 @@ export function parseShots(text: string): { file: string; caption: string }[] {
     const j = parseJsonReply<Record<string, unknown>>(text);
     if (!j) return [];
     return Array.isArray(j.shots)
-      ? j.shots.filter((x: { file?: unknown }) => typeof x?.file === 'string').map((x: { file: string; caption?: unknown }) => ({ file: x.file, caption: String(x.caption ?? '') }))
+      ? j.shots
+          .filter((x: { file?: unknown }) => typeof x?.file === 'string')
+          .map((x: { file: string; caption?: unknown }) => ({ file: x.file, caption: String(x.caption ?? '') }))
       : [];
   } catch {
     return [];
@@ -251,7 +267,11 @@ export function countPhases(tasks: string): number {
 }
 
 export function firstLine(s: string): string {
-  const line = s.trim().split('\n').find((l) => l.trim()) ?? '';
+  const line =
+    s
+      .trim()
+      .split('\n')
+      .find((l) => l.trim()) ?? '';
   return line.replace(/^[#>*\-\s]+/, '').slice(0, 160);
 }
 
@@ -274,11 +294,15 @@ export function parseReview(text: string): { blocking: ReviewItem[]; notes: Revi
                 file: (x as ReviewItem).file ?? null,
                 line: typeof (x as ReviewItem).line === 'number' ? (x as ReviewItem).line : null,
                 message: String((x as ReviewItem).message ?? JSON.stringify(x)),
-                ...(['new', 'unfixed', 'from_fix'].includes((x as ReviewItem).origin as string) ? { origin: (x as ReviewItem).origin } : {}),
+                ...(['new', 'unfixed', 'from_fix'].includes((x as ReviewItem).origin as string)
+                  ? { origin: (x as ReviewItem).origin }
+                  : {}),
               };
         return { blocking: j.blocking.map(norm), notes: j.notes.map(norm) };
       }
-    } catch { /* следующий кандидат */ }
+    } catch {
+      /* следующий кандидат */
+    }
   }
   return null;
 }

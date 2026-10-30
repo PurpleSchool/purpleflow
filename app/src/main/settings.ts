@@ -160,7 +160,11 @@ export function coreSettings(): CoreSettings {
   return {
     toolPaths: s.toolPaths,
     // Есть включённый ключ — агенты идут через прокси PurpleSchool; нет или выключен — через собственный вход claude и codex.
-    proxy: { baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '', codexBaseUrl: s.proxy.codexBaseUrl.trim() || PURPLESCHOOL_CODEX_PROXY, apiKey },
+    proxy: {
+      baseUrl: apiKey ? s.proxy.baseUrl.trim() || PURPLESCHOOL_PROXY : '',
+      codexBaseUrl: s.proxy.codexBaseUrl.trim() || PURPLESCHOOL_CODEX_PROXY,
+      apiKey,
+    },
     models: s.models,
     agents: s.agents,
     claudeAuth: s.claudeAuth,

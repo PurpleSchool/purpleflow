@@ -13,7 +13,16 @@ const SIDEBAR_KEY = 'purpleflow.sidebarCollapsed';
 export function App() {
   const { state } = useStore();
   const v = state.view;
-  const viewKey = v.name === 'chat' ? `chat:${v.chatId ?? 'new'}` : v.name === 'run' ? `run:${v.runId}` : v.name === 'project' ? `project:${v.path}` : v.name === 'new' ? `new:${v.project ?? ''}` : v.name;
+  const viewKey =
+    v.name === 'chat'
+      ? `chat:${v.chatId ?? 'new'}`
+      : v.name === 'run'
+        ? `run:${v.runId}`
+        : v.name === 'project'
+          ? `project:${v.path}`
+          : v.name === 'new'
+            ? `new:${v.project ?? ''}`
+            : v.name;
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === '1';
@@ -21,12 +30,15 @@ export function App() {
       return false;
     }
   });
-  const toggle = () => setCollapsed((c) => {
-    try {
-      localStorage.setItem(SIDEBAR_KEY, c ? '0' : '1');
-    } catch { /* без памяти о панели */ }
-    return !c;
-  });
+  const toggle = () =>
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, c ? '0' : '1');
+      } catch {
+        /* без памяти о панели */
+      }
+      return !c;
+    });
   const { go } = useStore();
   // Звук внимания (прогон ждёт решения, готов или упал) и переход к прогону по клику на уведомление.
   useEffect(() => {
@@ -65,7 +77,9 @@ export function App() {
         {/* Полоса сверху вместо заголовка окна: за неё окно перетаскивается. */}
         <div className="main-drag drag" aria-hidden />
         <div className="screen-enter" key={viewKey}>
-          {v.name === 'new' && <NewTaskScreen key={v.draft ? `draft-${v.draft.task.length}` : 'new'} initialProject={v.project} draft={v.draft} />}
+          {v.name === 'new' && (
+            <NewTaskScreen key={v.draft ? `draft-${v.draft.task.length}` : 'new'} initialProject={v.project} draft={v.draft} />
+          )}
           {v.name === 'projects' && <ProjectsScreen />}
           {v.name === 'project' && <ProjectScreen path={v.path} initialTab={v.tab} />}
           {v.name === 'run' && <RunScreen runId={v.runId} />}
@@ -96,5 +110,7 @@ function chime() {
       o.stop(t + 0.55);
     }
     setTimeout(() => void ctx.close(), 1200);
-  } catch { /* без звука */ }
+  } catch {
+    /* без звука */
+  }
 }

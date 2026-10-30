@@ -5,13 +5,10 @@ import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type Agent
  * claude -p (stdin) --output-format stream-json --verbose.
  * Флаги сверены с claude 2.1.x, см. README.
  */
-export function claudeArgs(o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig' | 'partial'>): string[] {
-  const args = [
-    '-p',
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--permission-mode', 'bypassPermissions',
-  ];
+export function claudeArgs(
+  o: Pick<AgentRunOptions, 'model' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig' | 'partial'>,
+): string[] {
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions'];
   if (o.userConfig) {
     // Настройки пользователя (MCP, скиллы, плагины) — как в его обычном claude; только хуки выключены,
     // чтобы уведомления, логгеры и проверки из ~/.claude не срабатывали на каждом шаге прогона.
@@ -71,7 +68,8 @@ function plainTool(name: string, input: Record<string, unknown> = {}): string {
 
 function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map((b) => (typeof b === 'object' && b && 'text' in b ? String((b as { text: unknown }).text) : '')).join('\n');
+  if (Array.isArray(content))
+    return content.map((b) => (typeof b === 'object' && b && 'text' in b ? String((b as { text: unknown }).text) : '')).join('\n');
   return '';
 }
 
@@ -119,7 +117,8 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
         out(c.dim(`● claude · ${String(ev.model ?? o.model ?? '')} · ${String(ev.cwd ?? '')}`) + '\n');
       } else if (ev.type === 'stream_event') {
         const se = ev.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
-        if (se?.type === 'content_block_delta' && se.delta?.type === 'text_delta' && se.delta.text) o.onStep?.({ kind: 'text', text: se.delta.text, delta: true });
+        if (se?.type === 'content_block_delta' && se.delta?.type === 'text_delta' && se.delta.text)
+          o.onStep?.({ kind: 'text', text: se.delta.text, delta: true });
       } else if (ev.type === 'assistant') {
         const msg = ev.message as { content?: ContentBlock[] };
         for (const b of msg?.content ?? []) {
@@ -159,7 +158,15 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   });
 
   if (r.killed) return { ok: false, text: finalText, usage, stopped: true, error: 'Остановлено' };
-  if (r.timedOut) return { ok: false, text: finalText, usage, error: r.idle ? `claude: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен` : `claude: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
+  if (r.timedOut)
+    return {
+      ok: false,
+      text: finalText,
+      usage,
+      error: r.idle
+        ? `claude: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен`
+        : `claude: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин`,
+    };
   if (r.spawnError) return { ok: false, text: '', usage, error: `claude не запустился: ${r.spawnError}` };
   if (resultError || r.code !== 0 || !gotResult) {
     // Хвост stdout — это JSON-события; в них бывают картинки в base64 (ответ Read на скриншот), они не должны вытеснять причину.
@@ -167,7 +174,9 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
     const raw = [resultError, r.stderr.trim(), tail].filter(Boolean).join('\n');
     if (r.stderr.trim()) out(c.coral(clip(r.stderr, 2000)) + '\n');
     const auth = o.proxy?.baseUrl ? 'proxy' : (o.claudeAuth ?? 'login');
-    const why = raw ? explainError('claude', raw, auth) : `claude: завершился без ответа (код выхода ${r.code ?? '—'}${r.signal ? `, сигнал ${r.signal}` : ''})`;
+    const why = raw
+      ? explainError('claude', raw, auth)
+      : `claude: завершился без ответа (код выхода ${r.code ?? '—'}${r.signal ? `, сигнал ${r.signal}` : ''})`;
     return { ok: false, text: finalText, usage, error: why };
   }
   return { ok: true, text: finalText, usage };

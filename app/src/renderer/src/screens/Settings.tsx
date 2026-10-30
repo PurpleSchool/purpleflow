@@ -34,7 +34,11 @@ export function SettingsScreen() {
   const { state, saveSettings, reloadSettings, refreshTools, go } = useStore();
   const s = state.settings;
   const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '' });
-  const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind }>({ planner: 'claude', executor: 'claude', reviewer: 'codex' });
+  const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind }>({
+    planner: 'claude',
+    executor: 'claude',
+    reviewer: 'codex',
+  });
   const [paths, setPaths] = useState<Partial<Record<ToolName, string>>>({});
   const [agentTimeout, setAgentTimeout] = useState(30);
   const [testTimeout, setTestTimeout] = useState(10);
@@ -129,7 +133,10 @@ export function SettingsScreen() {
         <div key={c.agent} className={`check ${c.ok ? 'is-ok' : 'is-bad'}`}>
           {c.ok ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
           <div>
-            <strong>{c.agent}</strong> <span className="muted mono">{c.model} · {(c.durationMs / 1000).toFixed(1)} с</span>
+            <strong>{c.agent}</strong>{' '}
+            <span className="muted mono">
+              {c.model} · {(c.durationMs / 1000).toFixed(1)} с
+            </span>
             <p>{c.ok ? `Ответил: «${c.reply}»` : c.error}</p>
           </div>
         </div>
@@ -144,13 +151,16 @@ export function SettingsScreen() {
   const visualAgent = agents.visual ?? 'claude';
   const managerAgent = agents.manager ?? (tools && !claudeFound ? 'codex' : 'claude');
   const pickAgent = (id: Role | 'visual' | 'manager', a: AgentKind) => {
-    if ((id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : agents[id]) === a && (id !== 'manager' || agents.manager)) return;
+    if ((id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : agents[id]) === a && (id !== 'manager' || agents.manager))
+      return;
     setAgents({ ...agents, [id]: a });
     // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
     setModels({ ...models, [id]: '' });
   };
 
-  const allFound = tools && (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents));
+  const allFound =
+    tools &&
+    (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents));
 
   return (
     <div className="screen">
@@ -159,7 +169,10 @@ export function SettingsScreen() {
           <Mark size={46} />
           <div>
             <h1>Настроим PurpleFlow</h1>
-            <p>Задача пройдёт по стадиям: план, реализация, тесты, ревью другой моделью и ваша приёмка. Работают уже установленные claude и codex — проверим, что они найдены, и выберем модели.</p>
+            <p>
+              Задача пройдёт по стадиям: план, реализация, тесты, ревью другой моделью и ваша приёмка. Работают уже установленные claude и
+              codex — проверим, что они найдены, и выберем модели.
+            </p>
           </div>
         </div>
       ) : (
@@ -184,291 +197,382 @@ export function SettingsScreen() {
       <div className="scroll">
         <div className="settings tab-enter" key={tab}>
           {tab === 'account' && (
-          <section className="panel">
-            {s.account ? (
-              <>
-                <header className="panel-head">
-                  <div>
-                    <h2>Аккаунт PurpleSchool</h2>
-                    <p>Агенты работают через AI-прокси PurpleSchool по ключу вашего аккаунта — без VPN. Без ключа claude и codex работают по вашим обычным подпискам.</p>
-                  </div>
-                  {proxyOn && checkButton}
-                </header>
-                <div className="acc-card">
-                  <div className="acc-profile">
-                    <span className="acc-avatar" aria-hidden>
-                      {s.account.photo ? <img src={s.account.photo} alt="" /> : (s.account.name || s.account.email || '?').trim().charAt(0).toUpperCase()}
-                    </span>
-                    <div className="acc-profile-text">
-                      <strong>{s.account.name || s.account.email}</strong>
-                      <span>{s.account.name ? s.account.email : 'Аккаунт PurpleSchool'}</span>
-                    </div>
-                    <span className="grow" />
-                    <Button tone="quiet" icon={<LogOut size={14} />} onClick={() => void logout()}>Выйти</Button>
-                  </div>
-                  {s.proxy.hasKey && (
-                    <div className={`acc-proxy ${s.proxy.enabled ? 'is-on' : ''}`}>
-                      <div className="acc-proxy-text">
-                        <strong>Работать через PurpleSchool <span className="acc-state">{s.proxy.enabled ? 'включено' : 'выключено'}</span></strong>
-                        <span>
-                          {s.proxy.enabled
-                            ? 'claude и codex ходят в модели по ключу ниже — без VPN, расход идёт с баланса аккаунта.'
-                            : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам.'}
-                        </span>
-                      </div>
-                      <button
-                        role="switch"
-                        aria-checked={s.proxy.enabled}
-                        aria-label="Работать через PurpleSchool"
-                        className={`switch acc-switch ${s.proxy.enabled ? 'is-on' : ''}`}
-                        onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
-                      >
-                        <i />
-                      </button>
-                    </div>
-                  )}
-                  <AccountKeys />
-                </div>
-              </>
-            ) : (
-              // Без входа: описание и преимущества слева, форма справа — от верха плашки.
-              <div className="acc-signin">
-                <div className="acc-intro">
+            <section className="panel">
+              {s.account ? (
+                <>
                   <header className="panel-head">
                     <div>
                       <h2>Аккаунт PurpleSchool</h2>
-                      <p>Войдите или зарегистрируйтесь, чтобы claude и codex работали через AI-прокси PurpleSchool — без VPN, с оплатой в рублях. Без этого они работают по вашим обычным подпискам.</p>
+                      <p>
+                        Агенты работают через AI-прокси PurpleSchool по ключу вашего аккаунта — без VPN. Без ключа claude и codex работают
+                        по вашим обычным подпискам.
+                      </p>
                     </div>
+                    {proxyOn && checkButton}
                   </header>
-                  <ul className="acc-benefits">
-                    {ACCOUNT_BENEFITS.map((b) => (
-                      <li key={b.title}><Check size={13} /><div><strong>{b.title}</strong><span>{b.text}</span></div></li>
-                    ))}
-                  </ul>
+                  <div className="acc-card">
+                    <div className="acc-profile">
+                      <span className="acc-avatar" aria-hidden>
+                        {s.account.photo ? (
+                          <img src={s.account.photo} alt="" />
+                        ) : (
+                          (s.account.name || s.account.email || '?').trim().charAt(0).toUpperCase()
+                        )}
+                      </span>
+                      <div className="acc-profile-text">
+                        <strong>{s.account.name || s.account.email}</strong>
+                        <span>{s.account.name ? s.account.email : 'Аккаунт PurpleSchool'}</span>
+                      </div>
+                      <span className="grow" />
+                      <Button tone="quiet" icon={<LogOut size={14} />} onClick={() => void logout()}>
+                        Выйти
+                      </Button>
+                    </div>
+                    {s.proxy.hasKey && (
+                      <div className={`acc-proxy ${s.proxy.enabled ? 'is-on' : ''}`}>
+                        <div className="acc-proxy-text">
+                          <strong>
+                            Работать через PurpleSchool <span className="acc-state">{s.proxy.enabled ? 'включено' : 'выключено'}</span>
+                          </strong>
+                          <span>
+                            {s.proxy.enabled
+                              ? 'claude и codex ходят в модели по ключу ниже — без VPN, расход идёт с баланса аккаунта.'
+                              : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам.'}
+                          </span>
+                        </div>
+                        <button
+                          role="switch"
+                          aria-checked={s.proxy.enabled}
+                          aria-label="Работать через PurpleSchool"
+                          className={`switch acc-switch ${s.proxy.enabled ? 'is-on' : ''}`}
+                          onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
+                        >
+                          <i />
+                        </button>
+                      </div>
+                    )}
+                    <AccountKeys />
+                  </div>
+                </>
+              ) : (
+                // Без входа: описание и преимущества слева, форма справа — от верха плашки.
+                <div className="acc-signin">
+                  <div className="acc-intro">
+                    <header className="panel-head">
+                      <div>
+                        <h2>Аккаунт PurpleSchool</h2>
+                        <p>
+                          Войдите или зарегистрируйтесь, чтобы claude и codex работали через AI-прокси PurpleSchool — без VPN, с оплатой в
+                          рублях. Без этого они работают по вашим обычным подпискам.
+                        </p>
+                      </div>
+                    </header>
+                    <ul className="acc-benefits">
+                      {ACCOUNT_BENEFITS.map((b) => (
+                        <li key={b.title}>
+                          <Check size={13} />
+                          <div>
+                            <strong>{b.title}</strong>
+                            <span>{b.text}</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="acc-form bezel">
+                    <AuthForms onDone={() => undefined} />
+                  </div>
                 </div>
-                <div className="acc-form bezel">
-                  <AuthForms onDone={() => undefined} />
+              )}
+              {s.proxy.hasKey && !s.account && (
+                <div className="user-config acc-use">
+                  <button
+                    role="switch"
+                    aria-checked={s.proxy.enabled}
+                    className={`switch ${s.proxy.enabled ? 'is-on' : ''}`}
+                    onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
+                  >
+                    <i />
+                    <span>Работать через PurpleSchool</span>
+                  </button>
+                  <p>
+                    {s.proxy.enabled
+                      ? 'Агенты ходят в модели по ключу AI-прокси PurpleSchool.'
+                      : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам. Аккаунт остаётся подключённым.'}
+                  </p>
                 </div>
-              </div>
-            )}
-            {s.proxy.hasKey && !s.account && (
-              <div className="user-config acc-use">
-                <button
-                  role="switch"
-                  aria-checked={s.proxy.enabled}
-                  className={`switch ${s.proxy.enabled ? 'is-on' : ''}`}
-                  onClick={() => void saveSettings({ proxy: { enabled: !s.proxy.enabled } })}
-                >
-                  <i />
-                  <span>Работать через PurpleSchool</span>
-                </button>
-                <p>
-                  {s.proxy.enabled
-                    ? 'Агенты ходят в модели по ключу AI-прокси PurpleSchool.'
-                    : 'Ключ сохранён, но не используется: claude и codex работают по вашим обычным подпискам. Аккаунт остаётся подключённым.'}
+              )}
+              {s.proxy.hasKey && !s.account && (
+                <p className="acc-legacy">
+                  <KeyRound size={13} /> Сохранён ключ, вставленный раньше вручную. Войдите, чтобы управлять ключами аккаунта, или{' '}
+                  <button className="link" onClick={() => void saveSettings({ proxy: { apiKey: '' } })}>
+                    удалите его
+                  </button>
+                  .
                 </p>
-              </div>
-            )}
-            {s.proxy.hasKey && !s.account && (
-              <p className="acc-legacy">
-                <KeyRound size={13} /> Сохранён ключ, вставленный раньше вручную. Войдите, чтобы управлять ключами аккаунта, или{' '}
-                <button className="link" onClick={() => void saveSettings({ proxy: { apiKey: '' } })}>удалите его</button>.
-              </p>
-            )}
-            {checks && checksView}
-          </section>
+              )}
+              {checks && checksView}
+            </section>
           )}
           {tab === 'stats' && <AccountStats onSignIn={() => setTab('account')} />}
           {tab === 'tools' && (
-          <section className="panel">
-            <header className="panel-head">
-              <div>
-                <h2>Инструменты</h2>
-                <p>Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную. «Проверить подключение» отправит агентам короткий запрос — {proxyOn ? 'через AI-прокси PurpleSchool' : 'по вашим подпискам claude и codex'}.</p>
+            <section className="panel">
+              <header className="panel-head">
+                <div>
+                  <h2>Инструменты</h2>
+                  <p>
+                    Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную. «Проверить подключение» отправит агентам
+                    короткий запрос — {proxyOn ? 'через AI-прокси PurpleSchool' : 'по вашим подпискам claude и codex'}.
+                  </p>
+                </div>
+                <div className="panel-actions">
+                  <Button tone="quiet" icon={<RefreshCw size={14} />} busy={state.toolsLoading} onClick={() => void refreshTools()}>
+                    Найти снова
+                  </Button>
+                  {checkButton}
+                </div>
+              </header>
+              {checks && checksView}
+              <div className="tools bezel">
+                {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
+                  const info = tools?.[t];
+                  const ok = info?.path && !info.error;
+                  const needed = toolNeeded(t, agents);
+                  return (
+                    <div key={t} className={`tool ${!info ? 'is-loading' : ok ? 'is-ok' : needed ? 'is-bad' : 'is-off'}`}>
+                      <span className="tool-led" />
+                      <div className="tool-id">
+                        <strong>{TOOL_INFO[t].title}</strong>
+                        <span className="mono muted">{info?.version ?? (info ? '—' : 'ищем…')}</span>
+                      </div>
+                      <div className="tool-path">
+                        {ok ? (
+                          <span className="mono" title={info.path!}>
+                            {shortPath(info.path!)}
+                          </span>
+                        ) : info ? (
+                          <span className="tool-miss">
+                            {info.error}.{needed ? '' : ' Не обязателен: ни одна роль на нём не работает.'} Установка:{' '}
+                            <code>{TOOL_INFO[t].install}</code>
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="tool-manual">
+                        <Input
+                          mono
+                          placeholder="путь вручную"
+                          value={paths[t] ?? ''}
+                          onChange={(e) => setPaths({ ...paths, [t]: e.target.value })}
+                        />
+                        <Button
+                          tone="quiet"
+                          title="Выбрать файл"
+                          icon={<FolderSearch size={15} />}
+                          onClick={async () => {
+                            const p = await window.purpleflow.pickFile();
+                            if (p) setPaths({ ...paths, [t]: p });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="panel-actions">
-                <Button tone="quiet" icon={<RefreshCw size={14} />} busy={state.toolsLoading} onClick={() => void refreshTools()}>
-                  Найти снова
-                </Button>
-                {checkButton}
-              </div>
-            </header>
-            {checks && checksView}
-            <div className="tools bezel">
-              {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
-                const info = tools?.[t];
-                const ok = info?.path && !info.error;
-                const needed = toolNeeded(t, agents);
-                return (
-                  <div key={t} className={`tool ${!info ? 'is-loading' : ok ? 'is-ok' : needed ? 'is-bad' : 'is-off'}`}>
-                    <span className="tool-led" />
-                    <div className="tool-id">
-                      <strong>{TOOL_INFO[t].title}</strong>
-                      <span className="mono muted">{info?.version ?? (info ? '—' : 'ищем…')}</span>
-                    </div>
-                    <div className="tool-path">
-                      {ok ? (
-                        <span className="mono" title={info.path!}>{shortPath(info.path!)}</span>
-                      ) : info ? (
-                        <span className="tool-miss">
-                          {info.error}.{needed ? '' : ' Не обязателен: ни одна роль на нём не работает.'} Установка: <code>{TOOL_INFO[t].install}</code>
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="tool-manual">
-                      <Input
-                        mono
-                        placeholder="путь вручную"
-                        value={paths[t] ?? ''}
-                        onChange={(e) => setPaths({ ...paths, [t]: e.target.value })}
-                      />
-                      <Button
-                        tone="quiet"
-                        title="Выбрать файл"
-                        icon={<FolderSearch size={15} />}
-                        onClick={async () => {
-                          const p = await window.purpleflow.pickFile();
-                          if (p) setPaths({ ...paths, [t]: p });
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+            </section>
           )}
           {tab === 'models' && (
-          <section className="panel">
-            <header className="panel-head">
-              <div>
-                <h2>Агенты и модели по ролям</h2>
-                <p>Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию. Служебные вызовы (сводка, профиль, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после сохранения.</p>
-              </div>
-              <Button tone="primary" icon={<Wand2 size={15} />} onClick={() => setQuick(true)}>Быстрая настройка</Button>
-            </header>
-            {quick && (
-              <QuickSetup
-                installed={{ claude: claudeFound, codex: Boolean(tools?.codex.path && !tools.codex.error) }}
-                initialMain={agents.executor}
-                onClose={() => setQuick(false)}
-                onApply={async (v) => {
-                  setAgents(v.agents);
-                  setModels(v.models);
-                  await saveSettings({ agents: v.agents, models: v.models });
-                  setSaved(true);
-                  setTimeout(() => setSaved(false), 1800);
-                }}
-              />
-            )}
-            <div className="roles">
-              {ROLES.map((r) => {
-                const agent = agents[r.id];
-                const sameAsExecutor = r.id === 'reviewer' && agent === agents.executor && models.reviewer.trim() === models.executor.trim();
-                return (
-                  <div key={r.id} className={`role bezel role-${agent}`}>
-                    <div className="role-head">
-                      <strong>{r.title}</strong>
-                      <AgentSwitch label={r.title} value={agent} onChange={(a) => pickAgent(r.id, a)} />
+            <section className="panel">
+              <header className="panel-head">
+                <div>
+                  <h2>Агенты и модели по ролям</h2>
+                  <p>
+                    Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по
+                    умолчанию. Служебные вызовы (сводка, профиль, уроки) — на claude, а если его нет — на codex. Новые настройки действуют
+                    на прогоны, запущенные после сохранения.
+                  </p>
+                </div>
+                <Button tone="primary" icon={<Wand2 size={15} />} onClick={() => setQuick(true)}>
+                  Быстрая настройка
+                </Button>
+              </header>
+              {quick && (
+                <QuickSetup
+                  installed={{ claude: claudeFound, codex: Boolean(tools?.codex.path && !tools.codex.error) }}
+                  initialMain={agents.executor}
+                  onClose={() => setQuick(false)}
+                  onApply={async (v) => {
+                    setAgents(v.agents);
+                    setModels(v.models);
+                    await saveSettings({ agents: v.agents, models: v.models });
+                    setSaved(true);
+                    setTimeout(() => setSaved(false), 1800);
+                  }}
+                />
+              )}
+              <div className="roles">
+                {ROLES.map((r) => {
+                  const agent = agents[r.id];
+                  const sameAsExecutor =
+                    r.id === 'reviewer' && agent === agents.executor && models.reviewer.trim() === models.executor.trim();
+                  return (
+                    <div key={r.id} className={`role bezel role-${agent}`}>
+                      <div className="role-head">
+                        <strong>{r.title}</strong>
+                        <AgentSwitch label={r.title} value={agent} onChange={(a) => pickAgent(r.id, a)} />
+                      </div>
+                      <p>{r.text}</p>
+                      {sameAsExecutor && <p className="role-warn">Совпадает с исполнителем — ревью той же моделью находит меньше.</p>}
+                      <ComboInput
+                        className="role-model"
+                        ariaLabel={`Модель: ${r.title}`}
+                        options={MODEL_OPTIONS[agent]}
+                        placeholder={MODEL_PLACEHOLDER[agent]}
+                        value={models[r.id]}
+                        onChange={(v) => setModels({ ...models, [r.id]: v })}
+                      />
                     </div>
-                    <p>{r.text}</p>
-                    {sameAsExecutor && <p className="role-warn">Совпадает с исполнителем — ревью той же моделью находит меньше.</p>}
-                    <ComboInput className="role-model" ariaLabel={`Модель: ${r.title}`} options={MODEL_OPTIONS[agent]} placeholder={MODEL_PLACEHOLDER[agent]} value={models[r.id]} onChange={(v) => setModels({ ...models, [r.id]: v })} />
+                  );
+                })}
+                <div className={`role bezel role-${visualAgent}`}>
+                  <div className="role-head">
+                    <strong>Визуальная проверка</strong>
+                    <AgentSwitch label="Визуальная проверка" value={visualAgent} onChange={(a) => pickAgent('visual', a)} />
                   </div>
-                );
-              })}
-              <div className={`role bezel role-${visualAgent}`}>
-                <div className="role-head">
-                  <strong>Визуальная проверка</strong>
-                  <AgentSwitch label="Визуальная проверка" value={visualAgent} onChange={(a) => pickAgent('visual', a)} />
+                  <p>
+                    Запускает приложение и проверяет результат в браузере через pw.
+                    {visualAgent === 'codex'
+                      ? ' На codex — без песочницы: браузеру нужны сеть и запись вне проекта, код он не меняет по инструкции.'
+                      : ''}{' '}
+                    Пусто — модель исполнителя, если он на том же агенте.
+                  </p>
+                  <ComboInput
+                    className="role-model"
+                    ariaLabel="Модель: визуальная проверка"
+                    options={MODEL_OPTIONS[visualAgent]}
+                    placeholder={
+                      agents.executor === visualAgent && models.executor
+                        ? `как у исполнителя: ${models.executor}`
+                        : MODEL_PLACEHOLDER[visualAgent]
+                    }
+                    value={models.visual ?? ''}
+                    onChange={(v) => setModels({ ...models, visual: v })}
+                  />
                 </div>
-                <p>Запускает приложение и проверяет результат в браузере через pw.{visualAgent === 'codex' ? ' На codex — без песочницы: браузеру нужны сеть и запись вне проекта, код он не меняет по инструкции.' : ''} Пусто — модель исполнителя, если он на том же агенте.</p>
-                <ComboInput className="role-model" ariaLabel="Модель: визуальная проверка" options={MODEL_OPTIONS[visualAgent]} placeholder={agents.executor === visualAgent && models.executor ? `как у исполнителя: ${models.executor}` : MODEL_PLACEHOLDER[visualAgent]} value={models.visual ?? ''} onChange={(v) => setModels({ ...models, visual: v })} />
-              </div>
-              <div className={`role bezel role-${managerAgent}`}>
-                <div className="role-head">
-                  <strong>Менеджер прогона</strong>
-                  <AgentSwitch label="Менеджер прогона" value={managerAgent} onChange={(a) => pickAgent('manager', a)} />
+                <div className={`role bezel role-${managerAgent}`}>
+                  <div className="role-head">
+                    <strong>Менеджер прогона</strong>
+                    <AgentSwitch label="Менеджер прогона" value={managerAgent} onChange={(a) => pickAgent('manager', a)} />
+                  </div>
+                  <p>
+                    Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели.
+                    {agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том
+                    же агенте.
+                  </p>
+                  <ComboInput
+                    className="role-model"
+                    ariaLabel="Модель: менеджер прогона"
+                    options={MODEL_OPTIONS[managerAgent]}
+                    placeholder={MODEL_PLACEHOLDER[managerAgent]}
+                    value={models.manager ?? ''}
+                    onChange={(v) => setModels({ ...models, manager: v })}
+                  />
                 </div>
-                <p>Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели.{agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том же агенте.</p>
-                <ComboInput className="role-model" ariaLabel="Модель: менеджер прогона" options={MODEL_OPTIONS[managerAgent]} placeholder={MODEL_PLACEHOLDER[managerAgent]} value={models.manager ?? ''} onChange={(v) => setModels({ ...models, manager: v })} />
               </div>
-            </div>
-            <div className="user-config">
-              <button
-                role="switch"
-                aria-checked={s.userConfig}
-                className={`switch ${s.userConfig ? 'is-on' : ''}`}
-                onClick={() => void saveSettings({ userConfig: !s.userConfig })}
-              >
-                <i />
-                <span>Мои настройки агентов</span>
-              </button>
-              <p>
-                {s.userConfig
-                  ? 'Агенты работают с вашими настройками из ~/.claude и ~/.codex: MCP-серверы, скиллы, плагины, CLAUDE.md — как в обычном claude и codex. Хуки claude в прогонах выключены. Файлы настроек PurpleFlow не меняет.'
-                  : 'Агенты запускаются изолированно: только настройки самого проекта, без ваших MCP-серверов, скиллов, плагинов и хуков. Прогоны повторяемее, но, например, задачу из трекера через MCP агент не прочитает.'}
-              </p>
-            </div>
-            <div className="grid-2 narrow">
-              <Field label="Агент молчит дольше, мин" hint="Столько без вывода — агент считается зависшим и останавливается. Долгую работу не обрывает: после этого времени покажем предупреждение, предел — ×4.">
-                <Input type="number" min={1} value={agentTimeout} onChange={(e) => setAgentTimeout(Number(e.target.value) || 30)} />
-              </Field>
-              <Field label="Таймаут тестов, мин">
-                <Input type="number" min={1} value={testTimeout} onChange={(e) => setTestTimeout(Number(e.target.value) || 10)} />
-              </Field>
-              <Field label="Одновременно прогонов" hint="Остальные ждут в очереди. Ожидание вашего решения место не занимает.">
-                <Input type="number" min={1} max={8} value={parallel} onChange={(e) => setParallel(Math.max(1, Math.min(8, Number(e.target.value) || 1)))} />
-              </Field>
-            </div>
-          </section>
-          )}
-          {tab === 'window' && (
-          <section className="panel">
-            <header className="panel-head">
-              <div>
-                <h2>Приложение</h2>
-                <p>Прозрачный фон: сквозь окно размыто виден рабочий стол. Работает на macOS и Windows 11, на Windows 10 и Linux окно остаётся непрозрачным.</p>
-              </div>
-              <button
-                role="switch"
-                aria-checked={s.windowGlass}
-                className={`switch ${s.windowGlass ? 'is-on' : ''}`}
-                onClick={() => void saveSettings({ windowGlass: !s.windowGlass })}
-              >
-                <i />
-                <span>{s.windowGlass ? 'Прозрачное' : 'Непрозрачное'}</span>
-              </button>
-            </header>
-          </section>
-          )}
-          {tab === 'window' && (
-          <section className="panel">
-            <header className="panel-head">
-              <div>
-                <h2>Уведомления</h2>
-                <p>Когда прогону нужно ваше решение (план, приёмка, исчерпанные попытки), он готов или остановился с ошибкой. Если окно в фокусе — только звук; если свёрнуто или в фоне — системное уведомление, клик по нему открывает прогон. Число прогонов, ждущих решения, — на значке в доке.</p>
-              </div>
-              <Button tone="quiet" onClick={() => void window.purpleflow.testNotification()}>Проверить</Button>
-            </header>
-            <div className="notify-toggles">
-              {([
-                { key: 'notify', label: 'Системные уведомления' },
-                { key: 'sound', label: 'Звук' },
-              ] as const).map((t) => (
+              <div className="user-config">
                 <button
-                  key={t.key}
                   role="switch"
-                  aria-checked={s[t.key]}
-                  className={`switch ${s[t.key] ? 'is-on' : ''}`}
-                  onClick={() => void saveSettings({ [t.key]: !s[t.key] })}
+                  aria-checked={s.userConfig}
+                  className={`switch ${s.userConfig ? 'is-on' : ''}`}
+                  onClick={() => void saveSettings({ userConfig: !s.userConfig })}
                 >
                   <i />
-                  <span>{t.label}</span>
+                  <span>Мои настройки агентов</span>
                 </button>
-              ))}
-            </div>
-          </section>
+                <p>
+                  {s.userConfig
+                    ? 'Агенты работают с вашими настройками из ~/.claude и ~/.codex: MCP-серверы, скиллы, плагины, CLAUDE.md — как в обычном claude и codex. Хуки claude в прогонах выключены. Файлы настроек PurpleFlow не меняет.'
+                    : 'Агенты запускаются изолированно: только настройки самого проекта, без ваших MCP-серверов, скиллов, плагинов и хуков. Прогоны повторяемее, но, например, задачу из трекера через MCP агент не прочитает.'}
+                </p>
+              </div>
+              <div className="grid-2 narrow">
+                <Field
+                  label="Агент молчит дольше, мин"
+                  hint="Столько без вывода — агент считается зависшим и останавливается. Долгую работу не обрывает: после этого времени покажем предупреждение, предел — ×4."
+                >
+                  <Input type="number" min={1} value={agentTimeout} onChange={(e) => setAgentTimeout(Number(e.target.value) || 30)} />
+                </Field>
+                <Field label="Таймаут тестов, мин">
+                  <Input type="number" min={1} value={testTimeout} onChange={(e) => setTestTimeout(Number(e.target.value) || 10)} />
+                </Field>
+                <Field label="Одновременно прогонов" hint="Остальные ждут в очереди. Ожидание вашего решения место не занимает.">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={parallel}
+                    onChange={(e) => setParallel(Math.max(1, Math.min(8, Number(e.target.value) || 1)))}
+                  />
+                </Field>
+              </div>
+            </section>
+          )}
+          {tab === 'window' && (
+            <section className="panel">
+              <header className="panel-head">
+                <div>
+                  <h2>Приложение</h2>
+                  <p>
+                    Прозрачный фон: сквозь окно размыто виден рабочий стол. Работает на macOS и Windows 11, на Windows 10 и Linux окно
+                    остаётся непрозрачным.
+                  </p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={s.windowGlass}
+                  className={`switch ${s.windowGlass ? 'is-on' : ''}`}
+                  onClick={() => void saveSettings({ windowGlass: !s.windowGlass })}
+                >
+                  <i />
+                  <span>{s.windowGlass ? 'Прозрачное' : 'Непрозрачное'}</span>
+                </button>
+              </header>
+            </section>
+          )}
+          {tab === 'window' && (
+            <section className="panel">
+              <header className="panel-head">
+                <div>
+                  <h2>Уведомления</h2>
+                  <p>
+                    Когда прогону нужно ваше решение (план, приёмка, исчерпанные попытки), он готов или остановился с ошибкой. Если окно в
+                    фокусе — только звук; если свёрнуто или в фоне — системное уведомление, клик по нему открывает прогон. Число прогонов,
+                    ждущих решения, — на значке в доке.
+                  </p>
+                </div>
+                <Button tone="quiet" onClick={() => void window.purpleflow.testNotification()}>
+                  Проверить
+                </Button>
+              </header>
+              <div className="notify-toggles">
+                {(
+                  [
+                    { key: 'notify', label: 'Системные уведомления' },
+                    { key: 'sound', label: 'Звук' },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    role="switch"
+                    aria-checked={s[t.key]}
+                    className={`switch ${s[t.key] ? 'is-on' : ''}`}
+                    onClick={() => void saveSettings({ [t.key]: !s[t.key] })}
+                  >
+                    <i />
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
           {tab === 'window' && <StoragePanel />}
         </div>
@@ -485,7 +589,9 @@ export function SettingsScreen() {
               {allFound ? 'Готово, к задаче' : 'Сохранить и продолжить'}
             </Button>
           ) : (
-            <Button tone="primary" busy={saving} onClick={() => void save()}>Сохранить</Button>
+            <Button tone="primary" busy={saving} onClick={() => void save()}>
+              Сохранить
+            </Button>
           )}
         </footer>
       )}
@@ -494,10 +600,15 @@ export function SettingsScreen() {
 }
 
 const bytes = (n: number) =>
-  n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} ГБ`
-  : n >= 1024 ** 2 ? `${Math.round(n / 1024 ** 2)} МБ`
-  : n >= 1024 ? `${Math.round(n / 1024)} КБ`
-  : n > 0 ? `${n} Б` : '—';
+  n >= 1024 ** 3
+    ? `${(n / 1024 ** 3).toFixed(1).replace('.', ',')} ГБ`
+    : n >= 1024 ** 2
+      ? `${Math.round(n / 1024 ** 2)} МБ`
+      : n >= 1024
+        ? `${Math.round(n / 1024)} КБ`
+        : n > 0
+          ? `${n} Б`
+          : '—';
 
 type Row = StorageItem;
 
@@ -515,7 +626,17 @@ function StoragePanel() {
     setError(null);
     try {
       const [items, cache] = await Promise.all([window.purpleflow.core.getStorage(), window.purpleflow.appCache.size()]);
-      setRows([...items, { id: 'app-cache', title: 'Кэш приложения', hint: 'Кэш Chromium: загруженные ресурсы, скомпилированный код, данные сайтов во вкладке «Браузер». Восстановится сам.', bytes: cache, count: 0, clean: 'Очистить' }]);
+      setRows([
+        ...items,
+        {
+          id: 'app-cache',
+          title: 'Кэш приложения',
+          hint: 'Кэш Chromium: загруженные ресурсы, скомпилированный код, данные сайтов во вкладке «Браузер». Восстановится сам.',
+          bytes: cache,
+          count: 0,
+          clean: 'Очистить',
+        },
+      ]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -555,17 +676,24 @@ function StoragePanel() {
           <h2>Хранилище{rows ? ` · ${bytes(total)}` : ''}</h2>
           <p>Что PurpleFlow хранит в профиле пользователя. Ваши проекты и ветки с результатами здесь не учитываются и не удаляются.</p>
         </div>
-        <Button tone="quiet" icon={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Пересчитать</Button>
+        <Button tone="quiet" icon={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>
+          Пересчитать
+        </Button>
       </header>
       {error && <p className="inline-error">{error}</p>}
       {!rows ? (
-        <div className="center storage-loading"><span className="spinner big" /></div>
+        <div className="center storage-loading">
+          <span className="spinner big" />
+        </div>
       ) : (
         <div className="storage">
           {rows.map((r) => (
             <div key={r.id} className={`storage-row ${r.bytes ? '' : 'is-empty'}`}>
               <div className="storage-text">
-                <strong>{r.title}{r.count ? <span className="muted"> · {r.count}</span> : null}</strong>
+                <strong>
+                  {r.title}
+                  {r.count ? <span className="muted"> · {r.count}</span> : null}
+                </strong>
                 <span>{r.hint}</span>
               </div>
               <span className="storage-size">{bytes(r.bytes)}</span>

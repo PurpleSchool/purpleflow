@@ -73,7 +73,9 @@ export function listChats(h: Orchestrator): ChatSummary[] {
   let files: string[] = [];
   try {
     files = fs.readdirSync(chatsDir(h)).filter((f) => f.endsWith('.json'));
-  } catch { /* чатов ещё нет */ }
+  } catch {
+    /* чатов ещё нет */
+  }
   return files
     .map((f) => read(h, f.slice(0, -5)))
     .filter((c): c is ChatFile => Boolean(c))
@@ -86,15 +88,24 @@ export function getChat(h: Orchestrator, id: string): { chat: ChatFile; busy: bo
   return chat ? { chat, busy: h.chatBusy.has(id) } : null;
 }
 
-export async function createChat(h: Orchestrator, o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean }): Promise<ChatFile> {
+export async function createChat(
+  h: Orchestrator,
+  o: { projectPath?: string; agent?: AgentKind; model?: string; edits?: boolean },
+): Promise<ChatFile> {
   const now = new Date().toISOString();
   const agent = o.agent ?? (await h.serviceAgent());
   const projectPath = o.projectPath?.trim() || undefined;
   if (projectPath && !fs.existsSync(projectPath)) throw new Error('Папка проекта не найдена');
   const chat: ChatFile = {
     id: `chat-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`,
-    title: 'Новый чат', projectPath, agent, model: o.model ?? '', edits: o.edits ?? true,
-    createdAt: now, updatedAt: now, messages: [],
+    title: 'Новый чат',
+    projectPath,
+    agent,
+    model: o.model ?? '',
+    edits: o.edits ?? true,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
   };
   fs.mkdirSync(chatsDir(h), { recursive: true });
   save(h, chat);
@@ -136,7 +147,9 @@ async function snapshot(git: Git, dir: string): Promise<Map<string, number>> {
     let t = -1;
     try {
       t = fs.statSync(path.join(dir, p)).mtimeMs;
-    } catch { /* удалён */ }
+    } catch {
+      /* удалён */
+    }
     out.set(p, t);
   }
   return out;
@@ -172,8 +185,15 @@ const saveAttachments = (h: Orchestrator, id: string, files: { name: string; dat
   const dir = path.join(chatFilesDir(h, id), 'files');
   fs.mkdirSync(dir, { recursive: true });
   return files.map((f) => {
-    const ext = path.extname(f.name).toLowerCase().replace(/[^.a-z0-9]/g, '');
-    const base = path.basename(f.name, path.extname(f.name)).replace(/[^\p{L}\p{N}_.-]+/gu, '-').slice(0, 60) || 'file';
+    const ext = path
+      .extname(f.name)
+      .toLowerCase()
+      .replace(/[^.a-z0-9]/g, '');
+    const base =
+      path
+        .basename(f.name, path.extname(f.name))
+        .replace(/[^\p{L}\p{N}_.-]+/gu, '-')
+        .slice(0, 60) || 'file';
     const file = path.join(dir, `${Date.now().toString(36)}-${base}${ext}`);
     fs.writeFileSync(file, Buffer.from(f.data));
     return file;
@@ -188,7 +208,14 @@ export async function sendChat(h: Orchestrator, id: string, text: string, files:
   if (!text.trim() && !files.length) throw new Error('Пустое сообщение');
   const chat = must(h, id);
   const attachments = saveAttachments(h, id, files);
-  chat.messages.push({ id: crypto.randomUUID(), role: 'user', at: new Date().toISOString(), text: text.trim(), attachments: attachments.length ? attachments : undefined, queued: true });
+  chat.messages.push({
+    id: crypto.randomUUID(),
+    role: 'user',
+    at: new Date().toISOString(),
+    text: text.trim(),
+    attachments: attachments.length ? attachments : undefined,
+    queued: true,
+  });
   if (chat.title === 'Новый чат' && text.trim()) chat.title = text.trim().replace(/\s+/g, ' ').slice(0, 60);
   save(h, chat);
   if (h.chatBusy.has(id)) return;
@@ -230,7 +257,10 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
   chat.messages = [...chat.messages.filter((m) => !batch.includes(m)), ...batch];
   const attachments = batch.flatMap((m) => m.attachments ?? []);
   const lastAnswer = [...prevMessages].reverse().find((m) => m.role === 'assistant');
-  const said = batch.map((m) => m.text.trim()).filter(Boolean).join('\n\n');
+  const said = batch
+    .map((m) => m.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
   const text = (lastAnswer?.stopped ? 'Я прервал твой предыдущий ответ.\n\n' : '') + said;
   const at = () => new Date().toISOString();
   const answer: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', at: at(), text: '', parts: [], pending: true };
@@ -243,7 +273,10 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
   const flush = () => {
     timer = null;
     answer.parts = parts.map((p) => ({ ...p }));
-    answer.text = parts.filter((p) => p.kind === 'text').map((p) => p.text).join('\n\n');
+    answer.text = parts
+      .filter((p) => p.kind === 'text')
+      .map((p) => p.text)
+      .join('\n\n');
     save(h, chat);
   };
   const onStep = (st: AgentStep) => {
@@ -274,17 +307,32 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
     if (others.length) prompt += `\n\nПрикреплённые файлы (открой и прочитай):\n${others.map((f) => `- ${f}`).join('\n')}`;
     const model = chat.model || h.agentModel(agent, s.agents, s.models) || undefined;
     const common = {
-      bin: tools[agent], cwd, env: h.opts.env, model, group: group(id),
-      timeoutMs: 4 * 60 * 60_000, idleTimeoutMs: s.agentTimeoutMin * 60_000,
-      onOutput: () => {}, onStep, proxy: s.proxy.baseUrl ? s.proxy : undefined, userConfig: s.userConfig,
+      bin: tools[agent],
+      cwd,
+      env: h.opts.env,
+      model,
+      group: group(id),
+      timeoutMs: 4 * 60 * 60_000,
+      idleTimeoutMs: s.agentTimeoutMin * 60_000,
+      onOutput: () => {},
+      onStep,
+      proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      userConfig: s.userConfig,
       addDirs: attachments.length ? [path.dirname(attachments[0])] : undefined,
     };
     if (agent === 'codex') {
       let thread = session;
       res = await h.codex({
-        ...common, prompt, systemPrompt: session ? undefined : sys, images,
-        sandbox: chat.edits ? 'workspace-write' : 'read-only', persist: true, resumeThread: session,
-        onSession: (sid) => { thread = sid; },
+        ...common,
+        prompt,
+        systemPrompt: session ? undefined : sys,
+        images,
+        sandbox: chat.edits ? 'workspace-write' : 'read-only',
+        persist: true,
+        resumeThread: session,
+        onSession: (sid) => {
+          thread = sid;
+        },
       });
       if (thread) chat.session = { agent, id: thread };
     } else {
@@ -292,9 +340,13 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
       if (images.length) prompt += `\n\nИзображения (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}`;
       const sessionId = session ?? crypto.randomUUID();
       res = await h.claude({
-        ...common, prompt, claudeAuth: s.claudeAuth, partial: true,
+        ...common,
+        prompt,
+        claudeAuth: s.claudeAuth,
+        partial: true,
         systemPrompt: session ? undefined : sys,
-        resume: session, sessionId: session ? undefined : sessionId,
+        resume: session,
+        sessionId: session ? undefined : sessionId,
         tools: chat.edits ? undefined : ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch'],
       });
       // Сессия сохраняется, только если claude успел её начать.
@@ -314,7 +366,10 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
   // Финальный ответ: если шагов не было (ошибка до старта или codex без событий), берём итоговый текст.
   if (!parts.some((p) => p.kind === 'text') && res.text.trim()) parts.push({ kind: 'text', text: res.text.trim() });
   answer.parts = parts;
-  answer.text = parts.filter((p) => p.kind === 'text').map((p) => p.text).join('\n\n');
+  answer.text = parts
+    .filter((p) => p.kind === 'text')
+    .map((p) => p.text)
+    .join('\n\n');
   answer.pending = false;
   answer.usage = res.usage;
   if (changed?.length) answer.changedFiles = [...new Set(changed)];
@@ -326,8 +381,11 @@ async function turn(h: Orchestrator, chat: ChatFile, batch: ChatMessage[]): Prom
 /** Черновик задачи для конвейера по переписке: формулировку пишет модель, вложения переходят в задачу. */
 export async function chatToTask(h: Orchestrator, id: string): Promise<NextPartDraft> {
   const chat = must(h, id);
-  const talk = chat.messages.filter((m) => !m.pending && m.text.trim()).slice(-30)
-    .map((m) => `${m.role === 'user' ? 'Человек' : 'Ассистент'}: ${m.text.trim().slice(0, 6000)}`).join('\n\n');
+  const talk = chat.messages
+    .filter((m) => !m.pending && m.text.trim())
+    .slice(-30)
+    .map((m) => `${m.role === 'user' ? 'Человек' : 'Ассистент'}: ${m.text.trim().slice(0, 6000)}`)
+    .join('\n\n');
   if (!talk) throw new Error('В чате пока нечего превращать в задачу');
   const prompt = `Ниже переписка человека с ассистентом о проекте. Сформулируй по ней задачу для разработчика: что сделать и зачем, важные детали и решения из переписки, критерии готовности. Пиши по-русски, коротко и конкретно, в Markdown, без вступления и без обращения к человеку. Верни только текст задачи.\n\n---\n\n${talk}`;
   const res = await h.service({ prompt, group: `${group(id)}:task`, timeoutMs: 3 * 60_000 });
@@ -362,6 +420,7 @@ export async function startChatPreview(h: Orchestrator, id: string): Promise<Pre
   if (cur.status === 'starting' || cur.status === 'ready') return cur;
   if (!chat.projectPath) throw new Error('У чата нет проекта — откройте адрес вручную.');
   const cfg = h.getProjectConfig(chat.projectPath);
-  if (!cfg?.runCommand || !cfg.appUrl) throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
+  if (!cfg?.runCommand || !cfg.appUrl)
+    throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
   return h.launchPreview(id, { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl });
 }

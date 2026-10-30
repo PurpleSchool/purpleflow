@@ -18,7 +18,10 @@ export function useChatChanged(chat: ChatFile | null, busy: boolean): string[] |
   useEffect(() => {
     if (!id || !project) return setFiles(null);
     let alive = true;
-    window.purpleflow.core.getChatChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
+    window.purpleflow.core
+      .getChatChangedFiles(id)
+      .then((f) => alive && setFiles(f))
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -56,7 +59,9 @@ export function useSideWidth() {
       document.body.classList.remove('is-col-resizing', 'is-side-resizing');
       try {
         localStorage.setItem(WIDTH_KEY, String(Math.round(w)));
-      } catch { /* без памяти о ширине */ }
+      } catch {
+        /* без памяти о ширине */
+      }
     };
     document.body.classList.add('is-col-resizing', 'is-side-resizing');
     window.addEventListener('pointermove', move);
@@ -66,7 +71,9 @@ export function useSideWidth() {
     setWidth(640);
     try {
       localStorage.removeItem(WIDTH_KEY);
-    } catch { /* без памяти о ширине */ }
+    } catch {
+      /* без памяти о ширине */
+    }
   };
   return { width, startResize, reset };
 }
@@ -75,36 +82,75 @@ export function useSideWidth() {
  * Правая панель чата — карточка со вкладками «Код» и «Браузер», как у прогона.
  * Обе вкладки остаются смонтированными — страница в браузере не перезагружается.
  */
-export function ChatSide({ chat, busy, pane, onPane, changed, width, onResize, onResetWidth }: {
-  chat: ChatFile; busy: boolean; pane: ChatPane; onPane: (p: ChatPane | null) => void; changed: string[] | null;
-  width: number; onResize: (e: ReactPointerEvent<HTMLDivElement>) => void; onResetWidth: () => void;
+export function ChatSide({
+  chat,
+  busy,
+  pane,
+  onPane,
+  changed,
+  width,
+  onResize,
+  onResetWidth,
+}: {
+  chat: ChatFile;
+  busy: boolean;
+  pane: ChatPane;
+  onPane: (p: ChatPane | null) => void;
+  changed: string[] | null;
+  width: number;
+  onResize: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onResetWidth: () => void;
 }) {
   const [cfg, setCfg] = useState<ProjectConfig | null>(null);
   const preview = usePreview(chat.id);
   useEffect(() => {
-    if (chat.projectPath) window.purpleflow.core.getProjectConfig(chat.projectPath).then(setCfg).catch(() => {});
+    if (chat.projectPath)
+      window.purpleflow.core
+        .getProjectConfig(chat.projectPath)
+        .then(setCfg)
+        .catch(() => {});
   }, [chat.projectPath]);
   const canRun = Boolean(cfg?.runCommand && cfg.appUrl);
 
   return (
     <section className="run-main chat-side" style={{ width }} aria-label="Код и браузер">
-      <div className="side-resize" onPointerDown={onResize} onDoubleClick={onResetWidth} title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию" />
+      <div
+        className="side-resize"
+        onPointerDown={onResize}
+        onDoubleClick={onResetWidth}
+        title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию"
+      />
       <div className="tab-groups">
         <PillTabs<ChatPane>
           className="tabs"
           value={pane}
           onChange={onPane}
           items={[
-            ...(chat.projectPath ? [{ id: 'code' as const, label: 'Код', extra: changed?.length ? <span className="tab-badge">{changed.length}</span> : undefined }] : []),
+            ...(chat.projectPath
+              ? [
+                  {
+                    id: 'code' as const,
+                    label: 'Код',
+                    extra: changed?.length ? <span className="tab-badge">{changed.length}</span> : undefined,
+                  },
+                ]
+              : []),
             {
               id: 'browser',
               label: 'Браузер',
-              extra: preview.state.status === 'ready' ? <span className="tab-dot is-ok" /> : preview.state.status === 'starting' ? <span className="tab-live" /> : undefined,
+              extra:
+                preview.state.status === 'ready' ? (
+                  <span className="tab-dot is-ok" />
+                ) : preview.state.status === 'starting' ? (
+                  <span className="tab-live" />
+                ) : undefined,
             },
           ]}
         />
         <span className="grow" />
-        <button className="manager-collapse" title="Скрыть панель" aria-label="Скрыть панель" onClick={() => onPane(null)}><PanelRightClose size={16} /></button>
+        <button className="manager-collapse" title="Скрыть панель" aria-label="Скрыть панель" onClick={() => onPane(null)}>
+          <PanelRightClose size={16} />
+        </button>
       </div>
       <div className="chat-side-body" hidden={pane !== 'code'}>
         {chat.projectPath && <ChatCode chat={chat} busy={busy} />}
@@ -114,7 +160,11 @@ export function ChatSide({ chat, busy, pane, onPane, changed, width, onResize, o
           preview={preview}
           canRun={canRun}
           manual
-          intro={canRun ? 'Приложение поднимется из папки проекта на свободном порту и откроется прямо здесь.' : 'Откройте страницу своего локального сервера — проверьте, что поменял агент.'}
+          intro={
+            canRun
+              ? 'Приложение поднимется из папки проекта на свободном порту и откроется прямо здесь.'
+              : 'Откройте страницу своего локального сервера — проверьте, что поменял агент.'
+          }
         />
       </div>
     </section>
@@ -170,13 +220,34 @@ function ChatCode({ chat, busy }: { chat: ChatFile; busy: boolean }) {
         <span className="muted">Незакоммиченные изменения проекта{busy ? ' · агент работает, обновится после ответа' : ''}</span>
         <span className="grow" />
         {at && <span className="code-at">в {time(at)}</span>}
-        <Button tone="quiet" icon={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>Обновить</Button>
+        <Button tone="quiet" icon={<RefreshCw size={14} />} busy={loading} onClick={() => void load()}>
+          Обновить
+        </Button>
       </div>
-      {error ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{error}</Empty>
-        : !diff ? <div className="center"><span className="spinner big" /></div>
-        : !diff.length ? <Empty icon={<FileCode2 />} title="Изменений нет">Рабочая копия совпадает с последним коммитом. Попросите агента что-нибудь поправить — изменения появятся здесь.</Empty>
-        : <DiffReview files={diff} viewedKey={`chat:${chat.id}`} visualItems={[]} comments={[]} onComments={() => {}} readOnly tab="code" onTab={() => {}} />}
+      {error ? (
+        <Empty icon={<CircleAlert />} title="Не удалось получить дифф">
+          {error}
+        </Empty>
+      ) : !diff ? (
+        <div className="center">
+          <span className="spinner big" />
+        </div>
+      ) : !diff.length ? (
+        <Empty icon={<FileCode2 />} title="Изменений нет">
+          Рабочая копия совпадает с последним коммитом. Попросите агента что-нибудь поправить — изменения появятся здесь.
+        </Empty>
+      ) : (
+        <DiffReview
+          files={diff}
+          viewedKey={`chat:${chat.id}`}
+          visualItems={[]}
+          comments={[]}
+          onComments={() => {}}
+          readOnly
+          tab="code"
+          onTab={() => {}}
+        />
+      )}
     </div>
   );
 }
-

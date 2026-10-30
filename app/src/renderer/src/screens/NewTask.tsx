@@ -35,7 +35,9 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     setAutopilotState(v);
     try {
       localStorage.setItem(AUTOPILOT_KEY, v ? '1' : '0');
-    } catch { /* без памяти */ }
+    } catch {
+      /* без памяти */
+    }
   };
   /** Где работать — по умолчанию из настроек проекта, меняется для этой задачи. */
   const [workspace, setWorkspace] = useState<Workspace>('worktree');
@@ -59,7 +61,9 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     if (x.info.isRepo) void loadBranches(dir, false);
     try {
       localStorage.setItem(LAST_PROJECT, dir);
-    } catch { /* без памяти о проекте */ }
+    } catch {
+      /* без памяти о проекте */
+    }
   };
 
   useEffect(() => {
@@ -67,7 +71,9 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     if (!last) {
       try {
         last = localStorage.getItem(LAST_PROJECT);
-      } catch { /* нет хранилища */ }
+      } catch {
+        /* нет хранилища */
+      }
     }
     if (last) void choose(last).catch(() => {});
   }, []);
@@ -78,7 +84,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
       const b = await window.purpleflow.core.projectBranches(dir, fetch);
       setBranches(b);
       const preferred = draft?.baseBranch && b.branches.some((x) => x.name === draft.baseBranch) ? draft.baseBranch : null;
-      setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : preferred ?? b.current ?? b.branches[0]?.name ?? ''));
+      setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : (preferred ?? b.current ?? b.branches[0]?.name ?? '')));
     } catch {
       setBranches({ branches: [], current: null });
     } finally {
@@ -101,8 +107,21 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
       const { runId } = await window.purpleflow.core.dispatch({
         type: 'run.start',
         input: {
-          projectPath: p.info.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
-          mode, visual: canVisual && visual, autopilot, attachmentPaths: carried.length ? carried : undefined, runCommand: cmds.run, appUrl: cmds.url, visualNotes: p.visualNotes, envFiles: p.envFiles, workspace, baseBranch: baseBranch || undefined,
+          projectPath: p.info.path,
+          task,
+          testCommand: cmds.test,
+          setupCommand: cmds.setup,
+          lintCommand: cmds.lint,
+          mode,
+          visual: canVisual && visual,
+          autopilot,
+          attachmentPaths: carried.length ? carried : undefined,
+          runCommand: cmds.run,
+          appUrl: cmds.url,
+          visualNotes: p.visualNotes,
+          envFiles: p.envFiles,
+          workspace,
+          baseBranch: baseBranch || undefined,
           attachments: await Promise.all(images.map(async (i) => ({ name: i.name, data: new Uint8Array(await i.file.arrayBuffer()) }))),
         },
       });
@@ -175,27 +194,53 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
         <div className="newtask">
           <div className="newtask-main step-enter">
             {project && !project.isRepo && (
-              <p className="inline-error"><TriangleAlert size={14} /> Это не git-репозиторий. Выполните git init и первый коммит.</p>
+              <p className="inline-error">
+                <TriangleAlert size={14} /> Это не git-репозиторий. Выполните git init и первый коммит.
+              </p>
             )}
             <div className="modes" role="radiogroup" aria-label="Режим">
               {MODES.map((m) => (
-                <button key={m.id} role="radio" aria-checked={mode === m.id} className={`mode ${mode === m.id ? 'is-on' : ''}`} onClick={() => setMode(m.id)} title={m.hint}>
+                <button
+                  key={m.id}
+                  role="radio"
+                  aria-checked={mode === m.id}
+                  className={`mode ${mode === m.id ? 'is-on' : ''}`}
+                  onClick={() => setMode(m.id)}
+                  title={m.hint}
+                >
                   {MODE_ICON[m.id]}
                   <span>{m.title}</span>
                   {suggest?.mode === m.id && <Sparkles size={12} className="mode-ai" />}
                 </button>
               ))}
-              <button className="mode mode-auto" onClick={() => void askMode()} disabled={suggesting || task.trim().length < 6} title={task.trim().length < 6 ? 'Сначала опишите задачу — нейросеть подберёт режим по тексту' : 'Нейросеть прочитает задачу и предложит режим'}>
+              <button
+                className="mode mode-auto"
+                onClick={() => void askMode()}
+                disabled={suggesting || task.trim().length < 6}
+                title={
+                  task.trim().length < 6
+                    ? 'Сначала опишите задачу — нейросеть подберёт режим по тексту'
+                    : 'Нейросеть прочитает задачу и предложит режим'
+                }
+              >
                 {suggesting ? <span className="spinner" /> : <Sparkles size={15} />}
                 <span>{suggesting ? 'Определяю…' : 'Авто'}</span>
               </button>
             </div>
             <p className="mode-hint">
-              {suggest && suggest.mode === mode ? <><Sparkles size={13} /> {suggest.reason}</> : MODES.find((m) => m.id === mode)?.hint}
+              {suggest && suggest.mode === mode ? (
+                <>
+                  <Sparkles size={13} /> {suggest.reason}
+                </>
+              ) : (
+                MODES.find((m) => m.id === mode)?.hint
+              )}
             </p>
 
             <div className="task-sheet bezel">
-              <label htmlFor="task" className="task-label">Что сделать</label>
+              <label htmlFor="task" className="task-label">
+                Что сделать
+              </label>
               <textarea
                 id="task"
                 className="task-input"
@@ -208,8 +253,13 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                 autoFocus
               />
               <div className="task-foot">
-                <span className="muted">{task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}</span>
-                <span className="kbd-hint"><kbd>{window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
+                <span className="muted">
+                  {task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}
+                </span>
+                <span className="kbd-hint">
+                  <kbd>{window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd>
+                  <kbd>Enter</kbd>
+                </span>
               </div>
               {carried.length > 0 && (
                 <div className="carried">
@@ -217,7 +267,9 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                   {carried.map((f) => (
                     <span key={f} className="carried-chip" title={f}>
                       {f.split('/').pop()?.replace(/^\d+-/, '')}
-                      <button title="Не прикладывать" onClick={() => setCarried(carried.filter((x) => x !== f))}>×</button>
+                      <button title="Не прикладывать" onClick={() => setCarried(carried.filter((x) => x !== f))}>
+                        ×
+                      </button>
                     </span>
                   ))}
                 </div>
@@ -234,7 +286,11 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                 const on = !optional || (canVisual && visual);
                 const n = i + 1 - route.slice(0, i).filter((x) => x.gate || (x.id === 'visual' && !(canVisual && visual))).length;
                 return (
-                  <li key={`${mode}-${s.id}`} className={`${s.gate ? 'is-gate' : ''} ${optional ? 'is-optional' : ''} ${on ? '' : 'is-skipped'}`} style={{ animationDelay: `${i * 0.04}s` }}>
+                  <li
+                    key={`${mode}-${s.id}`}
+                    className={`${s.gate ? 'is-gate' : ''} ${optional ? 'is-optional' : ''} ${on ? '' : 'is-skipped'}`}
+                    style={{ animationDelay: `${i * 0.04}s` }}
+                  >
                     <span className="route-n">{s.gate ? '' : on ? n : <MonitorCheck size={12} />}</span>
                     <div>
                       <strong>{s.title}</strong>
@@ -243,7 +299,13 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                       ) : optional && !canVisual ? (
                         <span>
                           Нужна команда запуска приложения —{' '}
-                          {project?.isRepo ? <button className="link" onClick={toProject}>задайте в настройках проекта</button> : 'задайте в настройках проекта'}
+                          {project?.isRepo ? (
+                            <button className="link" onClick={toProject}>
+                              задайте в настройках проекта
+                            </button>
+                          ) : (
+                            'задайте в настройках проекта'
+                          )}
                         </span>
                       ) : (
                         <span>{s.hint}</span>
@@ -268,9 +330,18 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
             <div className="autopilot">
               <div>
                 <strong>Автопилот</strong>
-                <span>План принимается сам, при исчерпанных попытках — ещё одна сама. Вы нужны на приёмке, а также если у планировщика вопросы или он предлагает разбить задачу.</span>
+                <span>
+                  План принимается сам, при исчерпанных попытках — ещё одна сама. Вы нужны на приёмке, а также если у планировщика вопросы
+                  или он предлагает разбить задачу.
+                </span>
               </div>
-              <button role="switch" aria-checked={autopilot} aria-label="Автопилот" className={`switch is-mini ${autopilot ? 'is-on' : ''}`} onClick={() => setAutopilot(!autopilot)}>
+              <button
+                role="switch"
+                aria-checked={autopilot}
+                aria-label="Автопилот"
+                className={`switch is-mini ${autopilot ? 'is-on' : ''}`}
+                onClick={() => setAutopilot(!autopilot)}
+              >
                 <i />
               </button>
             </div>
@@ -279,7 +350,13 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                 <strong>Где работать</strong>
                 <div className="segmented small" role="radiogroup">
                   {WORKSPACES.map((w) => (
-                    <button key={w.id} role="radio" aria-checked={workspace === w.id} className={workspace === w.id ? 'is-on' : ''} onClick={() => setWorkspace(w.id)}>
+                    <button
+                      key={w.id}
+                      role="radio"
+                      aria-checked={workspace === w.id}
+                      className={workspace === w.id ? 'is-on' : ''}
+                      onClick={() => setWorkspace(w.id)}
+                    >
                       {w.title}
                     </button>
                   ))}
@@ -302,15 +379,32 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
                     disabled={!branches?.branches.length}
                     placeholder={branches ? 'веток нет' : 'загружаю…'}
                     onChange={setBaseBranch}
-                    options={branches?.branches.map((b) => ({ value: b.name, label: b.name, hint: b.name === branches.current ? 'текущая' : undefined })) ?? []}
+                    options={
+                      branches?.branches.map((b) => ({
+                        value: b.name,
+                        label: b.name,
+                        hint: b.name === branches.current ? 'текущая' : undefined,
+                      })) ?? []
+                    }
                   />
-                  <button className="side-icon base-branch-fetch" title="Подтянуть ветки с origin (git fetch)" disabled={fetching} onClick={() => project && void loadBranches(project.path, true)}>
+                  <button
+                    className="side-icon base-branch-fetch"
+                    title="Подтянуть ветки с origin (git fetch)"
+                    disabled={fetching}
+                    onClick={() => project && void loadBranches(project.path, true)}
+                  >
                     <RotateCw size={14} className={fetching ? 'spin' : ''} />
                   </button>
                 </div>
               )}
               {branches && baseBranch && branches.current && baseBranch !== branches.current && (
-                <p className="base-branch-note">Задача начнётся от <code>{baseBranch}</code>, хотя проект сейчас на <code>{branches.current}</code>{workspace === 'branch' ? ' — в режиме «Ветка» проект переключится на ветку задачи' : ' — ваша рабочая копия не изменится'}.</p>
+                <p className="base-branch-note">
+                  Задача начнётся от <code>{baseBranch}</code>, хотя проект сейчас на <code>{branches.current}</code>
+                  {workspace === 'branch'
+                    ? ' — в режиме «Ветка» проект переключится на ветку задачи'
+                    : ' — ваша рабочая копия не изменится'}
+                  .
+                </p>
               )}
             </div>
           </aside>
@@ -320,7 +414,14 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
         {error && <span className="actionbar-error">{error}</span>}
         {dirtyError && (
           <span className="dirty-actions">
-            <Button tone="quiet" icon={<Archive size={14} />} busy={cleaning === 'stash'} disabled={Boolean(cleaning) || busy} title="git stash --include-untracked: изменения сохранятся, вернуть — git stash pop" onClick={() => void cleanAndStart('stash')}>
+            <Button
+              tone="quiet"
+              icon={<Archive size={14} />}
+              busy={cleaning === 'stash'}
+              disabled={Boolean(cleaning) || busy}
+              title="git stash --include-untracked: изменения сохранятся, вернуть — git stash pop"
+              onClick={() => void cleanAndStart('stash')}
+            >
               Спрятать и запустить
             </Button>
             <Button
@@ -336,9 +437,16 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
             </Button>
           </span>
         )}
-        {willQueue && !error && <span className="muted">Сейчас идут {active} из {limit} прогонов{queuedCount ? `, в очереди ${queuedCount}` : ''} — этот встанет в очередь и начнётся сам.</span>}
+        {willQueue && !error && (
+          <span className="muted">
+            Сейчас идут {active} из {limit} прогонов{queuedCount ? `, в очереди ${queuedCount}` : ''} — этот встанет в очередь и начнётся
+            сам.
+          </span>
+        )}
         <span className="grow" />
-        <Button tone="primary" busy={busy} disabled={!canStart} onClick={() => void start()}>{willQueue ? "Поставить в очередь" : "Запустить прогон"}</Button>
+        <Button tone="primary" busy={busy} disabled={!canStart} onClick={() => void start()}>
+          {willQueue ? 'Поставить в очередь' : 'Запустить прогон'}
+        </Button>
       </footer>
     </div>
   );

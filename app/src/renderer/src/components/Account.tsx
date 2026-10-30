@@ -55,9 +55,10 @@ export function AuthForms({ onDone, initial = 'login' }: { onDone: () => void | 
         else setError({ text: r.error });
         return;
       }
-      const r = mode === 'login'
-        ? await window.purpleflow.account.login(mail, password)
-        : await window.purpleflow.account.register({ name, email: mail, password, mailing });
+      const r =
+        mode === 'login'
+          ? await window.purpleflow.account.login(mail, password)
+          : await window.purpleflow.account.register({ name, email: mail, password, mailing });
       if (!r.ok) return setError({ text: r.error, toLogin: r.code === 'exists' });
       setPassword('');
       await reloadSettings();
@@ -70,22 +71,44 @@ export function AuthForms({ onDone, initial = 'login' }: { onDone: () => void | 
   return (
     <form className="auth" onSubmit={(e) => void submit(e)} noValidate>
       <h2>{mode === 'login' ? 'Вход в PurpleSchool' : mode === 'register' ? 'Регистрация в PurpleSchool' : 'Восстановление пароля'}</h2>
-      {mode === 'restore' && <p className="auth-sub">Пришлём ссылку для смены пароля. Пароль меняется на сайте PurpleSchool, затем возвращайтесь и входите здесь.</p>}
+      {mode === 'restore' && (
+        <p className="auth-sub">
+          Пришлём ссылку для смены пароля. Пароль меняется на сайте PurpleSchool, затем возвращайтесь и входите здесь.
+        </p>
+      )}
       {mode === 'register' && (
         <Field label="Имя">
           <Input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
       )}
       <Field label="Email">
-        <Input type="email" autoComplete="email" placeholder="name@mail.ru" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus={mode !== 'register'} />
+        <Input
+          type="email"
+          autoComplete="email"
+          placeholder="name@mail.ru"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoFocus={mode !== 'register'}
+        />
       </Field>
       {mode !== 'restore' && (
         <Field
           label="Пароль"
-          aside={mode === 'login' && <button type="button" className="link auth-aside" onClick={() => switchTo('restore')}>Забыли пароль?</button>}
+          aside={
+            mode === 'login' && (
+              <button type="button" className="link auth-aside" onClick={() => switchTo('restore')}>
+                Забыли пароль?
+              </button>
+            )
+          }
           hint={mode === 'register' ? `Не короче ${MIN_PASSWORD} символов` : undefined}
         >
-          <Input type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input
+            type="password"
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         </Field>
       )}
       {mode === 'register' && (
@@ -97,23 +120,49 @@ export function AuthForms({ onDone, initial = 'login' }: { onDone: () => void | 
       {error && (
         <p className="auth-error" role="alert">
           {error.text}
-          {error.toLogin && <> · <button type="button" className="link" onClick={() => switchTo('login')}>Войти</button></>}
+          {error.toLogin && (
+            <>
+              {' '}
+              ·{' '}
+              <button type="button" className="link" onClick={() => switchTo('login')}>
+                Войти
+              </button>
+            </>
+          )}
         </p>
       )}
-      {notice && <p className="auth-notice" role="status"><CheckCircle2 size={15} /> {notice}</p>}
+      {notice && (
+        <p className="auth-notice" role="status">
+          <CheckCircle2 size={15} /> {notice}
+        </p>
+      )}
       <Button tone="primary" type="submit" busy={busy} className="auth-submit">
         {mode === 'login' ? 'Войти' : mode === 'register' ? 'Зарегистрироваться' : 'Отправить ссылку'}
       </Button>
       {mode === 'register' && (
         <p className="auth-legal">
-          Регистрируясь, вы соглашаетесь с <a className="link" href={PRIVACY_URL} target="_blank" rel="noreferrer">политикой конфиденциальности</a> PurpleSchool.
+          Регистрируясь, вы соглашаетесь с{' '}
+          <a className="link" href={PRIVACY_URL} target="_blank" rel="noreferrer">
+            политикой конфиденциальности
+          </a>{' '}
+          PurpleSchool.
         </p>
       )}
       <p className="auth-switch">
         {mode === 'login' ? (
-          <>Нет аккаунта? <button type="button" className="link" onClick={() => switchTo('register')}>Зарегистрироваться</button></>
+          <>
+            Нет аккаунта?{' '}
+            <button type="button" className="link" onClick={() => switchTo('register')}>
+              Зарегистрироваться
+            </button>
+          </>
         ) : (
-          <>{mode === 'register' ? 'Уже есть аккаунт?' : 'Вспомнили пароль?'} <button type="button" className="link" onClick={() => switchTo('login')}>Войти</button></>
+          <>
+            {mode === 'register' ? 'Уже есть аккаунт?' : 'Вспомнили пароль?'}{' '}
+            <button type="button" className="link" onClick={() => switchTo('login')}>
+              Войти
+            </button>
+          </>
         )}
       </p>
     </form>
@@ -176,37 +225,68 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
     <div className="acc-keys">
       <div className="acc-keys-head">
         <strong>Ключ AI-прокси</strong>
-        {keys && active.length > 0 && <span className="muted">{active.length} из {limit}</span>}
+        {keys && active.length > 0 && (
+          <span className="muted">
+            {active.length} из {limit}
+          </span>
+        )}
         <span className="grow" />
         {keys && active.length > 0 && active.length < limit && (
-          <Button tone="quiet" icon={<Plus size={14} />} busy={busy === 'create'} disabled={busy !== null && busy !== 'create'} onClick={create}>Новый ключ</Button>
+          <Button
+            tone="quiet"
+            icon={<Plus size={14} />}
+            busy={busy === 'create'}
+            disabled={busy !== null && busy !== 'create'}
+            onClick={create}
+          >
+            Новый ключ
+          </Button>
         )}
       </div>
-      {!keys && !error && <div className="acc-keys-loading"><span className="spinner" /> Загружаем ключи аккаунта…</div>}
+      {!keys && !error && (
+        <div className="acc-keys-loading">
+          <span className="spinner" /> Загружаем ключи аккаунта…
+        </div>
+      )}
       {keys && active.length === 0 && (
         <div className="acc-key-offer">
-          <span className="acc-key-icon"><KeyRound size={16} /></span>
+          <span className="acc-key-icon">
+            <KeyRound size={16} />
+          </span>
           <div>
             <strong>В аккаунте ещё нет ключа</strong>
             <p>Создадим ключ «PurpleFlow» и подставим его — агенты пойдут через PurpleSchool.</p>
           </div>
-          <Button tone="primary" icon={<Plus size={15} />} busy={busy === 'create'} onClick={create}>Создать ключ</Button>
+          <Button tone="primary" icon={<Plus size={15} />} busy={busy === 'create'} onClick={create}>
+            Создать ключ
+          </Button>
         </div>
       )}
       {active.length > 0 && (
         <div className="acc-key-list">
           {active.map((k) => (
             <div key={k.id} className={`acc-key ${k.current ? 'is-current' : ''}`}>
-              <span className="acc-key-icon"><KeyRound size={16} /></span>
+              <span className="acc-key-icon">
+                <KeyRound size={16} />
+              </span>
               <div className="acc-key-text">
                 <strong>{k.name}</strong>
-                <span>Создан {shortDate(k.createdAt)} · {k.lastUsedAt ? `использовался ${ago(k.lastUsedAt)}` : 'ещё не использовался'}</span>
+                <span>
+                  Создан {shortDate(k.createdAt)} · {k.lastUsedAt ? `использовался ${ago(k.lastUsedAt)}` : 'ещё не использовался'}
+                </span>
               </div>
               <code className="acc-key-mask">•••• {k.tail}</code>
               {k.current ? (
-                <span className="acc-key-used"><CheckCircle2 size={14} /> Подставлен</span>
+                <span className="acc-key-used">
+                  <CheckCircle2 size={14} /> Подставлен
+                </span>
               ) : (
-                <Button tone="ghost" busy={busy === `use-${k.id}`} disabled={busy !== null && busy !== `use-${k.id}`} onClick={() => void act(`use-${k.id}`, () => window.purpleflow.account.useKey(k.id))}>
+                <Button
+                  tone="ghost"
+                  busy={busy === `use-${k.id}`}
+                  disabled={busy !== null && busy !== `use-${k.id}`}
+                  onClick={() => void act(`use-${k.id}`, () => window.purpleflow.account.useKey(k.id))}
+                >
                   Использовать
                 </Button>
               )}
@@ -215,7 +295,11 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
           {!current && hasKey && <p className="acc-key-note">Сейчас подставлен ключ не из этого аккаунта — выберите ключ из списка.</p>}
         </div>
       )}
-      {error && <p className="auth-error" role="alert">{error}</p>}
+      {error && (
+        <p className="auth-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

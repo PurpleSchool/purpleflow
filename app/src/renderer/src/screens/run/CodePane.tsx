@@ -19,7 +19,11 @@ export function useChangedFiles(run: RunFile | undefined): string[] | null {
     let alive = true;
     setFiles((f) => (f && id !== loadedFor.current ? null : f));
     loadedFor.current = id;
-    const load = () => window.purpleflow.core.getChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
+    const load = () =>
+      window.purpleflow.core
+        .getChangedFiles(id)
+        .then((f) => alive && setFiles(f))
+        .catch(() => {});
     void load();
     const timer = live ? setInterval(load, 8000) : undefined;
     return () => {
@@ -50,7 +54,17 @@ export interface AcceptProps {
  * в остальное время — только просмотр. Дифф перезагружается на смене стадии; посреди работы агента —
  * подсказка «Есть новые изменения», чтобы не сбивать просмотр.
  */
-export function CodePane({ run, changed, accept, tools }: { run: RunFile; changed: string[] | null; accept?: AcceptProps; tools: HTMLElement | null }) {
+export function CodePane({
+  run,
+  changed,
+  accept,
+  tools,
+}: {
+  run: RunFile;
+  changed: string[] | null;
+  accept?: AcceptProps;
+  tools: HTMLElement | null;
+}) {
   const [diff, setDiff] = useState<DiffFile[] | null>(null);
   const [at, setAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +84,6 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
   };
   useEffect(() => {
     setDiff(null);
-     
   }, [run.id]);
   // Стадия сменилась (реализация закончилась, пришли на приёмку) — код уже другой, перезагружаем сами.
   useEffect(() => {
@@ -79,7 +92,10 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
   }, [run.id, run.next, run.attempts.length]);
 
   // Набор файлов изменился с последней загрузки — подсказываем обновить, а не перезагружаем под рукой.
-  const loaded = diff?.map((f) => f.path).sort().join('\n');
+  const loaded = diff
+    ?.map((f) => f.path)
+    .sort()
+    .join('\n');
   const now = changed ? [...changed].sort().join('\n') : loaded;
   const stale = Boolean(diff && changed && loaded !== now);
   const live = run.status === 'running';
@@ -96,7 +112,11 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
           onChange={accept.onTab}
           items={[
             { id: 'code', label: `Код · ${diff.length}` },
-            { id: 'notes', label: `Заметки · ${accept.notes}`, extra: accept.picked.length ? <span className="tab-badge is-pick">{accept.picked.length}</span> : undefined },
+            {
+              id: 'notes',
+              label: `Заметки · ${accept.notes}`,
+              extra: accept.picked.length ? <span className="tab-badge is-pick">{accept.picked.length}</span> : undefined,
+            },
           ]}
         />
       )}
@@ -104,17 +124,29 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
       {stale && <span className="code-stale">Есть новые изменения</span>}
       <span className="grow" />
       {at && <span className="code-at">обновлено в {time(at)}</span>}
-      <Button tone={stale ? 'primary' : 'quiet'} icon={<RefreshCw size={14} />} busy={busy} onClick={() => void load()}>Обновить</Button>
+      <Button tone={stale ? 'primary' : 'quiet'} icon={<RefreshCw size={14} />} busy={busy} onClick={() => void load()}>
+        Обновить
+      </Button>
     </>
   );
 
   return (
     <div className="pane pane-code">
       {tools && createPortal(bar, tools)}
-      {error ? <Empty icon={<CircleAlert />} title="Не удалось получить дифф">{error}</Empty>
-        : !diff ? <div className="center"><span className="spinner big" /></div>
-        : !diff.length ? <Empty icon={<FileCode2 />} title="Изменений пока нет">Агент ещё не менял файлы — загляните, когда пойдёт реализация.</Empty>
-        : <>
+      {error ? (
+        <Empty icon={<CircleAlert />} title="Не удалось получить дифф">
+          {error}
+        </Empty>
+      ) : !diff ? (
+        <div className="center">
+          <span className="spinner big" />
+        </div>
+      ) : !diff.length ? (
+        <Empty icon={<FileCode2 />} title="Изменений пока нет">
+          Агент ещё не менял файлы — загляните, когда пойдёт реализация.
+        </Empty>
+      ) : (
+        <>
           {accept?.banner}
           <DiffReview
             files={diff}
@@ -123,10 +155,19 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
             groups={run.taskMap?.groups}
             visualItems={lastVisual ? [...lastVisual.blocking, ...lastVisual.notes] : []}
             {...(accept
-              ? { comments: accept.comments, onComments: accept.onComments, picked: accept.picked, onPicked: accept.onPicked, tab: accept.tab, onTab: accept.onTab, summary: accept.summary }
+              ? {
+                  comments: accept.comments,
+                  onComments: accept.onComments,
+                  picked: accept.picked,
+                  onPicked: accept.onPicked,
+                  tab: accept.tab,
+                  onTab: accept.onTab,
+                  summary: accept.summary,
+                }
               : { comments: [], onComments: () => {}, readOnly: true })}
           />
-        </>}
+        </>
+      )}
     </div>
   );
 }

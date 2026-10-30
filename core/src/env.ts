@@ -51,7 +51,14 @@ export function loadLoginShellEnv(base: NodeJS.ProcessEnv = process.env): NodeJS
 export function stripSessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const inSession = Boolean(env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT || env.CLAUDE_CODE_SESSION_ID);
   for (const k of Object.keys(env)) {
-    if (k === 'CLAUDECODE' || k === 'CLAUDE_AGENT_SDK_VERSION' || k === 'CLAUDE_PID' || k === 'CLAUDE_EFFORT' || k.startsWith('CLAUDE_PREVIEW_')) delete env[k];
+    if (
+      k === 'CLAUDECODE' ||
+      k === 'CLAUDE_AGENT_SDK_VERSION' ||
+      k === 'CLAUDE_PID' ||
+      k === 'CLAUDE_EFFORT' ||
+      k.startsWith('CLAUDE_PREVIEW_')
+    )
+      delete env[k];
     else if (k.startsWith('CLAUDE_CODE_') && !/^CLAUDE_CODE_USE_/.test(k)) delete env[k];
   }
   if (inSession) {
@@ -114,7 +121,9 @@ export function which(name: string, env: NodeJS.ProcessEnv): string | null {
           if (!isWin) fs.accessSync(p, fs.constants.X_OK);
           return p;
         }
-      } catch { /* дальше */ }
+      } catch {
+        /* дальше */
+      }
     }
   }
   return null;
@@ -148,7 +157,10 @@ export async function detectTool(name: ToolName, env: NodeJS.ProcessEnv, manual?
   return { name, path: p, version: m ? m[0] : line };
 }
 
-export async function detectTools(env: NodeJS.ProcessEnv, manual: Partial<Record<ToolName, string>> = {}): Promise<Record<ToolName, ToolInfo>> {
+export async function detectTools(
+  env: NodeJS.ProcessEnv,
+  manual: Partial<Record<ToolName, string>> = {},
+): Promise<Record<ToolName, ToolInfo>> {
   const names: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
   const list = await Promise.all(names.map((n) => detectTool(n, env, manual[n])));
   return Object.fromEntries(list.map((t) => [t.name, t])) as Record<ToolName, ToolInfo>;

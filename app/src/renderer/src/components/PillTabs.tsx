@@ -13,7 +13,12 @@ export interface PillItem<T extends string> {
  * так видно, откуда и куда переключился раздел.
  */
 export function PillTabs<T extends string>({
-  items, value, onChange, className = '', itemClassName = 'tab', role = 'tablist',
+  items,
+  value,
+  onChange,
+  className = '',
+  itemClassName = 'tab',
+  role = 'tablist',
 }: {
   items: PillItem<T>[];
   value: T | null;

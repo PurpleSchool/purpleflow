@@ -8,7 +8,7 @@ import { modeOf } from '../modes.js';
 import type { RunFile } from '../types.js';
 import type { Orchestrator } from '../orchestrator.js';
 /** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
-export function diffBase(h: Orchestrator, run: RunFile) : string {
+export function diffBase(h: Orchestrator, run: RunFile): string {
   return run.prRound && run.roundBase ? run.roundBase : run.baseCommit;
 }
 
@@ -20,7 +20,9 @@ export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
     // Чужие незакоммиченные правки попали бы в коммит прогона — поэтому только с чистой копией.
     const dirty = await git.dirtyFiles(run.projectPath);
     if (dirty.length) {
-      throw new Error(`В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`);
+      throw new Error(
+        `В рабочей копии есть незакоммиченные изменения (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? '…' : ''}). Закоммитьте или спрячьте их (git stash) — или выберите отдельную копию (worktree).`,
+      );
     }
     run.originalBranch = (await git.currentBranch(run.projectPath)) ?? undefined;
     await git.checkoutNewBranch(run.projectPath, run.branch, run.baseCommit);
@@ -31,13 +33,20 @@ export async function prepareWorkspace(h: Orchestrator, run: RunFile) {
   run.workspacePending = undefined;
   h.save(run);
   h.copyEnvFiles(run);
-  await h.cloneDeps(run).catch((e) => h.warn(run, `Не удалось скопировать зависимости — команда подготовки поставит их заново: ${(e as Error).message}`));
+  await h
+    .cloneDeps(run)
+    .catch((e) => h.warn(run, `Не удалось скопировать зависимости — команда подготовки поставит их заново: ${(e as Error).message}`));
   h.save(run);
-  h.log(run, c.dim(`PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`));
+  h.log(
+    run,
+    c.dim(
+      `PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`,
+    ),
+  );
 }
 
 /** Файлы окружения прогона: явный список или найденные в проекте (у прогонов без списка — из команд проекта). */
-export function envFilesOf(h: Orchestrator, run: RunFile) : string[] {
+export function envFilesOf(h: Orchestrator, run: RunFile): string[] {
   if (run.workspace === 'branch') return [];
   return run.envFiles ?? h.getProjectConfig(run.projectPath)?.envFiles ?? [];
 }
@@ -54,7 +63,9 @@ export function copyEnvFiles(h: Orchestrator, run: RunFile) {
       fs.mkdirSync(path.dirname(to), { recursive: true });
       fs.copyFileSync(from, to);
       copied.push(rel);
-    } catch { /* нет доступа — проверки покажут, чего не хватает */ }
+    } catch {
+      /* нет доступа — проверки покажут, чего не хватает */
+    }
   }
   if (copied.length) h.log(run, c.dim(`файлы окружения скопированы в worktree: ${copied.join(', ')}`) + '\n');
 }
@@ -69,7 +80,11 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
   const found: string[] = [];
   const walk = (rel: string, depth: number) => {
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(path.join(run.projectPath, rel), { withFileTypes: true }); } catch { return; }
+    try {
+      entries = fs.readdirSync(path.join(run.projectPath, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const e of entries) {
       if (!e.isDirectory() || e.name === '.git' || e.name.startsWith('.next') || e.name === 'dist' || e.name === 'build') continue;
       const child = rel ? `${rel}/${e.name}` : e.name;
@@ -84,7 +99,10 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
   for (const rel of found) {
     const to = path.join(run.worktreePath, rel);
     if (fs.existsSync(to) || !fs.existsSync(path.dirname(to))) continue;
-    const args = process.platform === 'darwin' ? ['-cR', path.join(run.projectPath, rel), to] : ['-R', '--reflink=auto', path.join(run.projectPath, rel), to];
+    const args =
+      process.platform === 'darwin'
+        ? ['-cR', path.join(run.projectPath, rel), to]
+        : ['-R', '--reflink=auto', path.join(run.projectPath, rel), to];
     const r = await runProc('cp', args, { cwd: run.worktreePath, env: h.opts.env, timeoutMs: 5 * 60_000, group: run.id });
     h.checkStop(run);
     if (r.code === 0) cloned.push(rel);
@@ -96,12 +114,19 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
     const a = path.join(run.projectPath, f);
     const b = path.join(run.worktreePath, f);
     if (!fs.existsSync(a) && !fs.existsSync(b)) return true;
-    try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; }
+    try {
+      return fs.readFileSync(a).equals(fs.readFileSync(b));
+    } catch {
+      return false;
+    }
   });
   const sec = Math.round((Date.now() - t0) / 1000);
   if (same) {
     run.prepared = true;
-    h.log(run, c.dim(`зависимости скопированы из проекта (${cloned.join(', ')}, ${sec} с) — lock-файлы совпадают, установка пропущена`) + '\n');
+    h.log(
+      run,
+      c.dim(`зависимости скопированы из проекта (${cloned.join(', ')}, ${sec} с) — lock-файлы совпадают, установка пропущена`) + '\n',
+    );
   } else {
     h.log(run, c.dim(`зависимости скопированы из проекта (${sec} с); lock-файлы отличаются — команда подготовки доустановит`) + '\n');
   }
@@ -112,7 +137,10 @@ export async function cloneDeps(h: Orchestrator, run: RunFile) {
  * в визуальной проверке, во вкладке «Браузер» и в проверке окружения. Свежая команда из настроек проекта.
  * Упала — ошибка с хвостом вывода: без миграций приложение всё равно не заработает.
  */
-export async function prepareApp(h: Orchestrator, o: { repo: string; cwd: string; group: string; onOutput?: (t: string) => void }): Promise<void> {
+export async function prepareApp(
+  h: Orchestrator,
+  o: { repo: string; cwd: string; group: string; onOutput?: (t: string) => void },
+): Promise<void> {
   const cmd = h.getProjectConfig(o.repo)?.prepareCommand?.trim();
   if (!cmd) return;
   let out = '';
@@ -121,9 +149,22 @@ export async function prepareApp(h: Orchestrator, o: { repo: string; cwd: string
     o.onOutput?.(t);
   };
   o.onOutput?.(`$ ${cmd}\n`);
-  const r = await runProc(cmd, [], { cwd: o.cwd, env: { ...h.opts.env, CI: '1' }, shell: true, group: o.group, timeoutMs: 10 * 60_000, onStdout: take, onStderr: take });
+  const r = await runProc(cmd, [], {
+    cwd: o.cwd,
+    env: { ...h.opts.env, CI: '1' },
+    shell: true,
+    group: o.group,
+    timeoutMs: 10 * 60_000,
+    onStdout: take,
+    onStderr: take,
+  });
   if (r.code !== 0) {
     const why = r.spawnError ?? (r.timedOut ? 'не уложилась в 10 минут' : `завершилась с кодом ${r.code}`);
-    throw new Error(`Подготовка к запуску (${cmd}) ${why}:\n${out.replace(/\x1b\[[0-9;]*m/g, '').trim().slice(-1500)}`);
+    throw new Error(
+      `Подготовка к запуску (${cmd}) ${why}:\n${out
+        .replace(/\x1b\[[0-9;]*m/g, '')
+        .trim()
+        .slice(-1500)}`,
+    );
   }
 }

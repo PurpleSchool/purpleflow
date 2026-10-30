@@ -34,16 +34,30 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
     <div className="scroll">
       <div className="clarify">
         {!waiting && (
-          <p className="muted">{run.clarify?.skipped ? 'Продолжили без ответов — планировщик решал сам.' : given.length ? `Ответы отправлены: ${given.length} из ${qs.length}.` : 'На вопросы не ответили.'}</p>
+          <p className="muted">
+            {run.clarify?.skipped
+              ? 'Продолжили без ответов — планировщик решал сам.'
+              : given.length
+                ? `Ответы отправлены: ${given.length} из ${qs.length}.`
+                : 'На вопросы не ответили.'}
+          </p>
         )}
         {qs.map((q, i) => (
           <section key={i} className="clarify-q">
-            <strong><span className="clarify-n">{i + 1}</span>{q.q}</strong>
+            <strong>
+              <span className="clarify-n">{i + 1}</span>
+              {q.q}
+            </strong>
             {q.why && <p className="muted">{q.why}</p>}
             {q.options?.length ? (
               <div className="clarify-options">
                 {q.options.map((o) => (
-                  <button key={o} className={`clarify-opt ${answers[i] === o ? 'is-on' : ''}`} disabled={!waiting} onClick={() => setAnswers(answers.map((a, j) => (j === i ? (a === o ? '' : o) : a)))}>
+                  <button
+                    key={o}
+                    className={`clarify-opt ${answers[i] === o ? 'is-on' : ''}`}
+                    disabled={!waiting}
+                    onClick={() => setAnswers(answers.map((a, j) => (j === i ? (a === o ? '' : o) : a)))}
+                  >
                     <i aria-hidden />
                     <span>{o}</span>
                   </button>
@@ -55,7 +69,9 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
               value={q.options?.includes(answers[i]) ? '' : answers[i]}
               disabled={!waiting}
               onChange={(e) => setAnswers(answers.map((a, j) => (j === i ? e.target.value : a)))}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && filled) void send(); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && filled) void send();
+              }}
             />
           </section>
         ))}
@@ -63,7 +79,9 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
           <div className="clarify-actions">
             {error && <span className="actionbar-error">{error}</span>}
             <span className="muted">Пустые вопросы планировщик решит сам</span>
-            <Button tone="primary" busy={busy} disabled={!filled} onClick={() => void send()}>Ответить и продолжить</Button>
+            <Button tone="primary" busy={busy} disabled={!filled} onClick={() => void send()}>
+              Ответить и продолжить
+            </Button>
           </div>
         )}
       </div>
@@ -82,10 +100,21 @@ export function ReproView({ run, kind }: { run: RunFile; kind: 'bug' | 'baseline
     <div className={`repro ${ok ? 'is-ok' : 'is-bad'}`}>
       <strong>
         {kind === 'bug'
-          ? (ok ? 'Баг воспроизведён: проверки красные на текущем коде' : 'Тест не воспроизвёл баг — проверки зелёные')
-          : (ok ? 'Проверки зелёные до рефакторинга — эталон зафиксирован' : 'Проверки красные ещё до рефакторинга')}
+          ? ok
+            ? 'Баг воспроизведён: проверки красные на текущем коде'
+            : 'Тест не воспроизвёл баг — проверки зелёные'
+          : ok
+            ? 'Проверки зелёные до рефакторинга — эталон зафиксирован'
+            : 'Проверки красные ещё до рефакторинга'}
       </strong>
-      {(failedCheck ?? r.checks?.[0]) && <pre className="output">{stripAnsi((failedCheck ?? r.checks![0]).output).split('\n').slice(-18).join('\n')}</pre>}
+      {(failedCheck ?? r.checks?.[0]) && (
+        <pre className="output">
+          {stripAnsi((failedCheck ?? r.checks![0]).output)
+            .split('\n')
+            .slice(-18)
+            .join('\n')}
+        </pre>
+      )}
     </div>
   );
 }
@@ -97,7 +126,9 @@ function BaseChecksView({ run }: { run: RunFile }) {
   const red = checks.find((c) => !c.passed);
   return (
     <div className={`repro ${red ? 'is-bad' : 'is-ok'}`}>
-      <strong>{red ? 'Красные ещё до задачи — от агента потребуется не добавлять новых ошибок' : 'Проверки зелёные до правок — эталон снят'}</strong>
+      <strong>
+        {red ? 'Красные ещё до задачи — от агента потребуется не добавлять новых ошибок' : 'Проверки зелёные до правок — эталон снят'}
+      </strong>
       <ul className="base-checks">
         {checks.map((c) => (
           <li key={`${c.kind}:${c.command}`} className={c.passed ? 'is-ok' : 'is-bad'}>
@@ -106,7 +137,12 @@ function BaseChecksView({ run }: { run: RunFile }) {
           </li>
         ))}
       </ul>
-      {run.focusTestCommand && <p className="base-checks-note">Тесты задачи выбрал планировщик (раздел «Checks» плана): они идут на каждой попытке, полный набор <code>{run.testCommand}</code> — один раз перед приёмкой.</p>}
+      {run.focusTestCommand && (
+        <p className="base-checks-note">
+          Тесты задачи выбрал планировщик (раздел «Checks» плана): они идут на каждой попытке, полный набор <code>{run.testCommand}</code> —
+          один раз перед приёмкой.
+        </p>
+      )}
       {red && <pre className="output">{stripAnsi(red.output).split('\n').slice(-18).join('\n')}</pre>}
     </div>
   );
@@ -123,13 +159,19 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
   useEffect(() => {
     let alive = true;
     if (!v) return;
-    void Promise.all(v.shots.map(async (s) => [s.file, await window.purpleflow.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
-      // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
-      if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
-    });
-    return () => { alive = false; };
+    void Promise.all(v.shots.map(async (s) => [s.file, await window.purpleflow.core.getVisualShot(runId, s.file)] as const)).then(
+      (pairs) => {
+        // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
+        if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
+      },
+    );
+    return () => {
+      alive = false;
+    };
   }, [runId, v]);
-  const slice: LogSlice | null = attempt ? { title: 'Визуальная проверка', attempt: attempt.attempt, stage: 'visual', live: running } : null;
+  const slice: LogSlice | null = attempt
+    ? { title: 'Визуальная проверка', attempt: attempt.attempt, stage: 'visual', live: running }
+    : null;
   // Повторить можно последнюю проверку, пока прогон ждёт решения или остановлен (например, после правки команды запуска).
   const canRerun = !running && idx === (run.visuals?.length ?? 0) - 1 && (run.status === 'waiting' || run.status === 'stopped');
   const [rerunning, setRerunning] = useState(false);
@@ -145,8 +187,15 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
       setRerunning(false);
     }
   };
-  if (!v && !slice) return <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">Приложение запустится после ревью.</Empty>;
-  const items = v ? [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [];
+  if (!v && !slice)
+    return (
+      <Empty icon={<Sparkles />} title="Визуальной проверки ещё не было">
+        Приложение запустится после ревью.
+      </Empty>
+    );
+  const items = v
+    ? [...v.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...v.notes.map((x) => ({ ...x, kind: 'note' as const }))]
+    : [];
   const shown = v ? tab : 'log';
   const shotUrls = v ? v.shots.map((s) => urls[s.file]).filter(Boolean) : [];
   return (
@@ -166,73 +215,113 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
         </div>
       )}
       {shown === 'log' && slice ? (
-        <div className="pane-log"><LiveLog runId={runId} slice={slice} /></div>
-      ) : shown === 'server' && v?.serverOutput ? (
-        <div className="agent-result scroll tab-enter"><ServerOutput command={v.command} output={v.serverOutput} /></div>
-      ) : v ? (
-    <div className="agent-result scroll tab-enter">
-      <div className="review">
-        {v.unverified ? (
-          <div className="verdict is-warn">
-            <span className="verdict-mark">!</span>
-            <div>
-              <strong>{/^Нестабильное окружение:/i.test(v.unverified) ? 'Окружение вело себя нестабильно' : 'Проверить не удалось'}</strong>
-              <p>{v.unverified.replace(/^Нестабильное окружение:\s*/i, '')}</p>
-              <p className="muted">
-                {/^Нестабильное окружение:/i.test(v.unverified)
-                  ? 'Интерфейс не реагировал даже после перезагрузки, а ошибок в коде задачи не видно — похоже на сбой dev-сервера или браузера. Задача не вернулась исполнителю: проверьте сами во вкладке «Браузер» или перезапустите проверку.'
-                  : 'Это не ошибка реализации — задача не вернулась исполнителю. Проверьте сами во вкладке «Браузер»; тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в настройках проекта.'}
-              </p>
-            </div>
-          </div>
-        ) : null}
-        {v.unverified && v.serverOutput && /error|Missing script|EADDRINUSE|ECONNREFUSED/i.test(v.serverOutput) && (
-          <button className="link server-link" onClick={() => setTab('server')}>В выводе сервера есть ошибки — открыть</button>
-        )}
-        {canRerun && (
-          <div className="visual-rerun">
-            <Button tone="ghost" icon={<RotateCcw size={14} />} busy={rerunning} onClick={() => void rerun()}>Проверить ещё раз</Button>
-            <span className="muted">Команда запуска и адрес — из настроек проекта: если вы их поправили, проверка возьмёт новые.</span>
-            {rerunErr && <span className="actionbar-error">{rerunErr}</span>}
-          </div>
-        )}
-        {!v.unverified && (
-          <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>
-            <span className="verdict-mark">{v.blocking.length ? v.blocking.length : <CircleCheck size={22} />}</span>
-            <div>
-              <strong>{v.blocking.length ? `Видимых проблем: ${v.blocking.length}` : 'В браузере всё выглядит верно'}</strong>
-              <p>{v.url} · скриншотов: {v.shots.length} · заметок: {v.notes.length}</p>
-            </div>
-          </div>
-        )}
-        <div className="shots">
-          {v.shots.map((s) => (
-            <figure key={s.file} className="shot">
-              <button onClick={() => urls[s.file] && setBig(shotUrls.indexOf(urls[s.file]))}>{urls[s.file] ? <img src={urls[s.file]} alt={s.caption} /> : urls[s.file] === '' ? <span className="muted shot-gone">Скриншот удалён</span> : <span className="spinner" />}</button>
-              <figcaption>{s.caption}</figcaption>
-            </figure>
-          ))}
+        <div className="pane-log">
+          <LiveLog runId={runId} slice={slice} />
         </div>
-        {items.length > 0 && (
-          <ul className="review-list">
-            {items.map((x, i) => (
-              <li key={i} className={`note n-${x.kind}`}>
-                {x.file && <span className="note-loc">{x.file}</span>}
-                <p>{x.message}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+      ) : shown === 'server' && v?.serverOutput ? (
+        <div className="agent-result scroll tab-enter">
+          <ServerOutput command={v.command} output={v.serverOutput} />
+        </div>
+      ) : v ? (
+        <div className="agent-result scroll tab-enter">
+          <div className="review">
+            {v.unverified ? (
+              <div className="verdict is-warn">
+                <span className="verdict-mark">!</span>
+                <div>
+                  <strong>
+                    {/^Нестабильное окружение:/i.test(v.unverified) ? 'Окружение вело себя нестабильно' : 'Проверить не удалось'}
+                  </strong>
+                  <p>{v.unverified.replace(/^Нестабильное окружение:\s*/i, '')}</p>
+                  <p className="muted">
+                    {/^Нестабильное окружение:/i.test(v.unverified)
+                      ? 'Интерфейс не реагировал даже после перезагрузки, а ошибок в коде задачи не видно — похоже на сбой dev-сервера или браузера. Задача не вернулась исполнителю: проверьте сами во вкладке «Браузер» или перезапустите проверку.'
+                      : 'Это не ошибка реализации — задача не вернулась исполнителю. Проверьте сами во вкладке «Браузер»; тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в настройках проекта.'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {v.unverified && v.serverOutput && /error|Missing script|EADDRINUSE|ECONNREFUSED/i.test(v.serverOutput) && (
+              <button className="link server-link" onClick={() => setTab('server')}>
+                В выводе сервера есть ошибки — открыть
+              </button>
+            )}
+            {canRerun && (
+              <div className="visual-rerun">
+                <Button tone="ghost" icon={<RotateCcw size={14} />} busy={rerunning} onClick={() => void rerun()}>
+                  Проверить ещё раз
+                </Button>
+                <span className="muted">Команда запуска и адрес — из настроек проекта: если вы их поправили, проверка возьмёт новые.</span>
+                {rerunErr && <span className="actionbar-error">{rerunErr}</span>}
+              </div>
+            )}
+            {!v.unverified && (
+              <div className={`verdict ${v.blocking.length ? 'is-bad' : 'is-ok'}`}>
+                <span className="verdict-mark">{v.blocking.length ? v.blocking.length : <CircleCheck size={22} />}</span>
+                <div>
+                  <strong>{v.blocking.length ? `Видимых проблем: ${v.blocking.length}` : 'В браузере всё выглядит верно'}</strong>
+                  <p>
+                    {v.url} · скриншотов: {v.shots.length} · заметок: {v.notes.length}
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="shots">
+              {v.shots.map((s) => (
+                <figure key={s.file} className="shot">
+                  <button onClick={() => urls[s.file] && setBig(shotUrls.indexOf(urls[s.file]))}>
+                    {urls[s.file] ? (
+                      <img src={urls[s.file]} alt={s.caption} />
+                    ) : urls[s.file] === '' ? (
+                      <span className="muted shot-gone">Скриншот удалён</span>
+                    ) : (
+                      <span className="spinner" />
+                    )}
+                  </button>
+                  <figcaption>{s.caption}</figcaption>
+                </figure>
+              ))}
+            </div>
+            {items.length > 0 && (
+              <ul className="review-list">
+                {items.map((x, i) => (
+                  <li key={i} className={`note n-${x.kind}`}>
+                    {x.file && <span className="note-loc">{x.file}</span>}
+                    <p>{x.message}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       ) : null}
-      {big !== null && shotUrls[big] && <Lightbox src={shotUrls[big]} caption={v?.shots.find((s) => urls[s.file] === shotUrls[big])?.caption} onClose={() => setBig(null)} onPrev={big > 0 ? () => setBig(big - 1) : undefined} onNext={big < shotUrls.length - 1 ? () => setBig(big + 1) : undefined} />}
+      {big !== null && shotUrls[big] && (
+        <Lightbox
+          src={shotUrls[big]}
+          caption={v?.shots.find((s) => urls[s.file] === shotUrls[big])?.caption}
+          onClose={() => setBig(null)}
+          onPrev={big > 0 ? () => setBig(big - 1) : undefined}
+          onNext={big < shotUrls.length - 1 ? () => setBig(big + 1) : undefined}
+        />
+      )}
     </div>
   );
 }
 
 /** Просмотр изображения на всё окно (через портал — не зависит от прокрутки и анимаций панели). ←/→ — соседние, Esc — закрыть. */
-export function Lightbox({ src, caption, onClose, onPrev, onNext }: { src: string; caption?: string; onClose: () => void; onPrev?: () => void; onNext?: () => void }) {
+export function Lightbox({
+  src,
+  caption,
+  onClose,
+  onPrev,
+  onNext,
+}: {
+  src: string;
+  caption?: string;
+  onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -250,23 +339,74 @@ export function Lightbox({ src, caption, onClose, onPrev, onNext }: { src: strin
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="Изображение">
       <img src={src} alt={caption ?? ''} onClick={(e) => e.stopPropagation()} />
       {caption && <p className="lightbox-caption">{caption}</p>}
-      {onPrev && <button className="lightbox-nav is-prev" onClick={(e) => { e.stopPropagation(); onPrev(); }} aria-label="Предыдущий">‹</button>}
-      {onNext && <button className="lightbox-nav is-next" onClick={(e) => { e.stopPropagation(); onNext(); }} aria-label="Следующий">›</button>}
+      {onPrev && (
+        <button
+          className="lightbox-nav is-prev"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev();
+          }}
+          aria-label="Предыдущий"
+        >
+          ‹
+        </button>
+      )}
+      {onNext && (
+        <button
+          className="lightbox-nav is-next"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}
+          aria-label="Следующий"
+        >
+          ›
+        </button>
+      )}
     </div>,
     document.body,
   );
 }
 
-export function PlanView({ docs, run, comments, onComments, editable }: { docs: ChangeDocs | null; run: RunFile; comments: LineComment[]; onComments: (c: LineComment[]) => void; editable: boolean }) {
+export function PlanView({
+  docs,
+  run,
+  comments,
+  onComments,
+  editable,
+}: {
+  docs: ChangeDocs | null;
+  run: RunFile;
+  comments: LineComment[];
+  onComments: (c: LineComment[]) => void;
+  editable: boolean;
+}) {
   const [specOpen, setSpecOpen] = useState<string | null>(null);
   // Путь от корня рабочей копии — так планировщик сразу найдёт файл.
   const at = (f: string) => `openspec/changes/${run.changeId}/${f}`;
   const doc = (f: string, source: string, className?: string) => (
-    <CommentableMarkdown file={at(f)} source={source} comments={comments} onComments={onComments} editable={editable} className={className} />
+    <CommentableMarkdown
+      file={at(f)}
+      source={source}
+      comments={comments}
+      onComments={onComments}
+      editable={editable}
+      className={className}
+    />
   );
-  if (!docs) return <div className="center"><span className="spinner big" /></div>;
+  if (!docs)
+    return (
+      <div className="center">
+        <span className="spinner big" />
+      </div>
+    );
   if (!docs.proposal && !docs.tasks) {
-    return <Empty icon={<Sparkles />} title="План ещё пишется">Планировщик создаёт изменение <code>{run.changeId}</code>. Ход работы — в логе этой попытки ниже, когда она закончится, здесь появятся файлы.</Empty>;
+    return (
+      <Empty icon={<Sparkles />} title="План ещё пишется">
+        Планировщик создаёт изменение <code>{run.changeId}</code>. Ход работы — в логе этой попытки ниже, когда она закончится, здесь
+        появятся файлы.
+      </Empty>
+    );
   }
   const done = (docs.tasks.match(/- \[x\]/gi) ?? []).length;
   const all = (docs.tasks.match(/- \[[ x]\]/gi) ?? []).length;
@@ -274,7 +414,10 @@ export function PlanView({ docs, run, comments, onComments, editable }: { docs: 
     <div className="scroll">
       <div className="plan">
         <article className="doc bezel">
-          <header className="doc-head"><span>proposal.md</span><span className="mono muted">{run.changeId}</span></header>
+          <header className="doc-head">
+            <span>proposal.md</span>
+            <span className="mono muted">{run.changeId}</span>
+          </header>
           {doc('proposal.md', docs.proposal)}
         </article>
         <article className="doc bezel">
@@ -283,21 +426,35 @@ export function PlanView({ docs, run, comments, onComments, editable }: { docs: 
             {all > 0 && (
               <span className="progress" title={`${done} из ${all}`}>
                 <i style={{ width: `${(done / all) * 100}%` }} />
-                <b>{done}/{all}</b>
+                <b>
+                  {done}/{all}
+                </b>
               </span>
             )}
           </header>
           {doc('tasks.md', docs.tasks, 'tasks')}
         </article>
         {docs.design && (
-          <article className="doc bezel"><header className="doc-head"><span>design.md</span></header>{doc('design.md', docs.design)}</article>
+          <article className="doc bezel">
+            <header className="doc-head">
+              <span>design.md</span>
+            </header>
+            {doc('design.md', docs.design)}
+          </article>
         )}
         {docs.specs.length > 0 && (
           <article className="doc bezel">
-            <header className="doc-head"><span>Дельты спецификаций</span><span className="muted">{docs.specs.length}</span></header>
+            <header className="doc-head">
+              <span>Дельты спецификаций</span>
+              <span className="muted">{docs.specs.length}</span>
+            </header>
             {docs.specs.map((s) => (
               <div key={s.path} className="spec">
-                <button className="spec-toggle" onClick={() => setSpecOpen(specOpen === s.path ? null : s.path)} aria-expanded={specOpen === s.path}>
+                <button
+                  className="spec-toggle"
+                  onClick={() => setSpecOpen(specOpen === s.path ? null : s.path)}
+                  aria-expanded={specOpen === s.path}
+                >
                   <span className="mono">{s.path}</span>
                   <span className="muted">{specOpen === s.path ? 'свернуть' : 'показать'}</span>
                 </button>
@@ -328,7 +485,9 @@ export function InProgress({ stage, attempt }: { stage: StageId; attempt: StageA
   return (
     <div className="in-progress">
       <span className="spinner big" />
-      <h3>{c.title} · попытка #{attempt.attempt}</h3>
+      <h3>
+        {c.title} · попытка #{attempt.attempt}
+      </h3>
       <p>{c.text}</p>
       <small>{sec < 60 ? `${sec} с` : `${Math.floor(sec / 60)} мин ${String(sec % 60).padStart(2, '0')} с`}</small>
     </div>
@@ -338,7 +497,21 @@ export function InProgress({ stage, attempt }: { stage: StageId; attempt: StageA
 export function TestsView({ run, idx }: { run: RunFile; idx: number }) {
   const t = run.tests[idx];
   if (!t) return <Empty icon={<Sparkles />} title="Проверки ещё не запускались" />;
-  const checks = t.checks?.length ? t.checks : t.command ? [{ kind: 'test' as const, command: t.command, passed: t.passed, exitCode: t.exitCode, durationMs: t.durationMs, output: t.output, timedOut: t.timedOut }] : [];
+  const checks = t.checks?.length
+    ? t.checks
+    : t.command
+      ? [
+          {
+            kind: 'test' as const,
+            command: t.command,
+            passed: t.passed,
+            exitCode: t.exitCode,
+            durationMs: t.durationMs,
+            output: t.output,
+            timedOut: t.timedOut,
+          },
+        ]
+      : [];
   return (
     <div className="scroll">
       <div className="tests">
@@ -346,13 +519,19 @@ export function TestsView({ run, idx }: { run: RunFile; idx: number }) {
         {checks.map((c, i) => (
           <section key={i} className="check-block">
             <div className={`tests-head ${c.unstable ? 'is-old' : c.passed ? 'is-ok' : c.preexisting ? 'is-old' : 'is-bad'}`}>
-              <strong>{c.kind === 'lint' ? 'Линтер' : 'Тесты'} · {c.unstable ? 'нестабильные' : c.passed ? 'ok' : c.preexisting ? 'красные и до задачи' : 'красные'}</strong>
+              <strong>
+                {c.kind === 'lint' ? 'Линтер' : 'Тесты'} ·{' '}
+                {c.unstable ? 'нестабильные' : c.passed ? 'ok' : c.preexisting ? 'красные и до задачи' : 'красные'}
+              </strong>
               <span className="mono">{c.command}</span>
-              <span className="muted">код {c.exitCode ?? '—'} · {(c.durationMs / 1000).toFixed(1)} с{c.timedOut ? ' · таймаут' : ''}</span>
+              <span className="muted">
+                код {c.exitCode ?? '—'} · {(c.durationMs / 1000).toFixed(1)} с{c.timedOut ? ' · таймаут' : ''}
+              </span>
             </div>
             {c.preexisting && (
               <p className="check-old">
-                Проверка была красной ещё до правок агента, новых ошибок не появилось ({c.preexisting.before ?? '?'} → {c.preexisting.after ?? '?'}). Не блокирует — старые ошибки лучше чинить отдельной задачей.
+                Проверка была красной ещё до правок агента, новых ошибок не появилось ({c.preexisting.before ?? '?'} →{' '}
+                {c.preexisting.after ?? '?'}). Не блокирует — старые ошибки лучше чинить отдельной задачей.
               </p>
             )}
             {c.unstable && <p className="check-old">{unstableText(c.unstable)}</p>}
@@ -366,7 +545,10 @@ export function TestsView({ run, idx }: { run: RunFile; idx: number }) {
 
 /** Вывод команды запуска: строки с ошибками подсвечены, частые причины — подсказкой. */
 export function ServerOutput({ command, output }: { command?: string; output: string }) {
-  const lines = stripAnsi(output).split(/\r?\n/).filter((l) => l.trim()).slice(-30);
+  const lines = stripAnsi(output)
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .slice(-30);
   const bad = (l: string) => /error|ERR!|Missing script|not found|EADDRINUSE|ECONNREFUSED|Cannot find|failed/i.test(l);
   const missing = output.match(/Missing script: "([^"]+)"/);
   const inUse = /EADDRINUSE|address already in use|Another next dev server/i.test(output);
@@ -376,16 +558,46 @@ export function ServerOutput({ command, output }: { command?: string; output: st
         <strong>Вывод команды запуска</strong>
         {command && <code>{command}</code>}
       </header>
-      {missing && <p className="server-hint">В одном из package.json нет скрипта «{missing[1]}» — исправьте «Запуск приложения» в командах проекта (например, у NestJS это обычно <code>start:dev</code>).</p>}
-      {inUse && <p className="server-hint">Порт или каталог уже заняты другим запущенным сервером — остановите его или смените порт в команде запуска.</p>}
-      <pre className="output">{lines.map((l, i) => <span key={i} className={bad(l) ? 'is-err' : undefined}>{l}{'\n'}</span>)}</pre>
+      {missing && (
+        <p className="server-hint">
+          В одном из package.json нет скрипта «{missing[1]}» — исправьте «Запуск приложения» в командах проекта (например, у NestJS это
+          обычно <code>start:dev</code>).
+        </p>
+      )}
+      {inUse && (
+        <p className="server-hint">
+          Порт или каталог уже заняты другим запущенным сервером — остановите его или смените порт в команде запуска.
+        </p>
+      )}
+      <pre className="output">
+        {lines.map((l, i) => (
+          <span key={i} className={bad(l) ? 'is-err' : undefined}>
+            {l}
+            {'\n'}
+          </span>
+        ))}
+      </pre>
     </section>
   );
 }
 
-export function ReviewView({ run, idx, picked, onPicked }: { run: RunFile; idx: number; picked?: ReviewItem[]; onPicked?: (items: ReviewItem[]) => void }) {
+export function ReviewView({
+  run,
+  idx,
+  picked,
+  onPicked,
+}: {
+  run: RunFile;
+  idx: number;
+  picked?: ReviewItem[];
+  onPicked?: (items: ReviewItem[]) => void;
+}) {
   const r = run.reviews[idx];
-  const items = useMemo(() => r ? [...r.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...r.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [], [r]);
+  const items = useMemo(
+    () =>
+      r ? [...r.blocking.map((x) => ({ ...x, kind: 'blocking' as const })), ...r.notes.map((x) => ({ ...x, kind: 'note' as const }))] : [],
+    [r],
+  );
   if (!r) return <Empty icon={<Sparkles />} title="Ревью ещё не было" />;
   return (
     <div className="scroll">
@@ -394,14 +606,28 @@ export function ReviewView({ run, idx, picked, onPicked }: { run: RunFile; idx: 
           <span className="verdict-mark">{r.blocking.length ? r.blocking.length : <CircleCheck size={22} />}</span>
           <div>
             <strong>{r.blocking.length ? `Блокирующих замечаний: ${r.blocking.length}` : 'Блокирующих замечаний нет'}</strong>
-            <p>{r.blocking.length ? (run.next === 'limit' && idx === run.reviews.length - 1 ? 'Попытки реализации исчерпаны — решение за вами: ещё попытка или дальше как есть.' : 'Задача вернулась исполнителю с этими замечаниями.') : 'Изменение передано вам на приёмку.'} Заметок: {r.notes.length}.{originSummary(r.blocking)}</p>
+            <p>
+              {r.blocking.length
+                ? run.next === 'limit' && idx === run.reviews.length - 1
+                  ? 'Попытки реализации исчерпаны — решение за вами: ещё попытка или дальше как есть.'
+                  : 'Задача вернулась исполнителю с этими замечаниями.'
+                : 'Изменение передано вам на приёмку.'}{' '}
+              Заметок: {r.notes.length}.{originSummary(r.blocking)}
+            </p>
           </div>
-          <span className="muted mono">{run.agents?.reviewer ?? 'codex'} · {run.models.reviewer || 'по умолчанию'}</span>
+          <span className="muted mono">
+            {run.agents?.reviewer ?? 'codex'} · {run.models.reviewer || 'по умолчанию'}
+          </span>
         </div>
         <ul className="review-list">
           {items.map((x, i) => (
             <li key={i} className={`note n-${x.kind}`}>
-              {x.file && <span className="note-loc">{x.file}{x.line ? `:${x.line}` : ''}</span>}
+              {x.file && (
+                <span className="note-loc">
+                  {x.file}
+                  {x.line ? `:${x.line}` : ''}
+                </span>
+              )}
               <OriginTag origin={x.origin} />
               <p>{x.message}</p>
               {picked && onPicked && <PickBox item={x} picked={picked} onPicked={onPicked} />}
@@ -452,7 +678,9 @@ export function AgentOutput({ runId, slice, attempt }: { runId: string; slice: L
           <Markdown source={result} />
         </div>
       ) : (
-        <div className="pane-log"><LiveLog runId={runId} slice={slice} /></div>
+        <div className="pane-log">
+          <LiveLog runId={runId} slice={slice} />
+        </div>
       )}
     </div>
   );

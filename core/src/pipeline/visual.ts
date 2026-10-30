@@ -10,7 +10,7 @@ import type { VisualResult, RunFile } from '../types.js';
 import { expandPorts, freePort, parseReview, parseShots, parseUnverified, portEnv, waitForUrl } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 import { prepareApp } from './workspace.js';
-export function visualDir(h: Orchestrator, run: RunFile, attempt: number) : string {
+export function visualDir(h: Orchestrator, run: RunFile, attempt: number): string {
   return path.join(h.opts.dataDir, 'visual', run.id, String(attempt));
 }
 
@@ -23,7 +23,8 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
   const agent = run.agents?.visual ?? 'claude';
   const tools = await h.tools([agent]);
   // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
-  const model = run.models.visual || (agent === 'claude' ? h.claudeModel(run.agents, run.models) : h.agentModel('codex', run.agents, run.models));
+  const model =
+    run.models.visual || (agent === 'claude' ? h.claudeModel(run.agents, run.models) : h.agentModel('codex', run.agents, run.models));
   const attempt = h.begin(run, 'visual', model || agent);
   const dir = h.visualDir(run, attempt.attempt);
   fs.mkdirSync(dir, { recursive: true });
@@ -34,7 +35,12 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
   let serverOut = '';
 
   // Миграции и сиды ветки — до запуска: иначе приложение поднимется на старой схеме базы.
-  await prepareApp(h, { repo: run.projectPath, cwd: run.worktreePath, group: serverGroup, onOutput: (t) => h.log(run, c.dim(crlf(t)), false) });
+  await prepareApp(h, {
+    repo: run.projectPath,
+    cwd: run.worktreePath,
+    group: serverGroup,
+    onOutput: (t) => h.log(run, c.dim(crlf(t)), false),
+  });
   h.checkStop(run);
   h.log(run, c.sky(`$ ${command}`) + c.dim(`  # приложение на ${url}`) + '\n');
   let exited: number | null | undefined;
@@ -43,18 +49,28 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
     env: { ...h.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
     shell: true,
     group: serverGroup,
-    onStdout: (t) => { serverOut = (serverOut + t).slice(-6000); h.log(run, c.dim(crlf(t)), false); },
-    onStderr: (t) => { serverOut = (serverOut + t).slice(-6000); h.log(run, c.dim(crlf(t)), false); },
+    onStdout: (t) => {
+      serverOut = (serverOut + t).slice(-6000);
+      h.log(run, c.dim(crlf(t)), false);
+    },
+    onStderr: (t) => {
+      serverOut = (serverOut + t).slice(-6000);
+      h.log(run, c.dim(crlf(t)), false);
+    },
   });
-  void server.then((r) => { exited = r.code; });
+  void server.then((r) => {
+    exited = r.code;
+  });
 
   try {
     const ready = await waitForUrl(url, 120_000, () => exited !== undefined || h.stopping.has(run.id));
     h.checkStop(run);
     if (!ready) {
-      throw new Error(exited !== undefined
-        ? `Приложение завершилось с кодом ${exited}, не открыв ${url}. Проверьте команду запуска в командах проекта.`
-        : `За 2 минуты приложение не ответило на ${url}. Проверьте команду запуска и адрес ({port} подставляется автоматически).`);
+      throw new Error(
+        exited !== undefined
+          ? `Приложение завершилось с кодом ${exited}, не открыв ${url}. Проверьте команду запуска в командах проекта.`
+          : `За 2 минуты приложение не ответило на ${url}. Проверьте команду запуска и адрес ({port} подставляется автоматически).`,
+      );
     }
     h.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
 
@@ -64,7 +80,9 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
     if (isWin) {
       fs.writeFileSync(path.join(dir, 'pw.cmd'), `@echo off\r\ncd /d "${dir}"\r\nnpx -y @playwright/cli@latest -s=${session} %*\r\n`);
     } else {
-      fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
+      fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, {
+        mode: 0o755,
+      });
     }
 
     // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
@@ -80,28 +98,40 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
       attachments: h.attachmentsBlock(run),
       proposal: docs.proposal || '(нет плана — быстрая правка, ориентируйся на задачу)',
       specs: docs.specs.map((x) => x.content).join('\n\n') || '(нет)',
-      files: changed.filter((f) => !f.startsWith('openspec/')).map((f) => `- ${f}`).join('\n') || '(нет)',
+      files:
+        changed
+          .filter((f) => !f.startsWith('openspec/'))
+          .map((f) => `- ${f}`)
+          .join('\n') || '(нет)',
       // Свежая инструкция из команд проекта важнее снимка в run.json: её могли дописать после неудачной проверки.
-      notes: h.getProjectConfig(run.projectPath)?.visualNotes || run.visualNotes || '(нет — если нужен вход или данные, которых нет, верни "unverified")',
+      notes:
+        h.getProjectConfig(run.projectPath)?.visualNotes ||
+        run.visualNotes ||
+        '(нет — если нужен вход или данные, которых нет, верни "unverified")',
     });
     const base = {
       ...h.agentBase(run, tools[agent]),
       env: prependPath(h.opts.env, dir),
       prompt,
-      systemPrompt: h.prompts.raw('visual.system.md') + h.modeRules('visual', run)
-        + (live ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.` : ''),
+      systemPrompt:
+        h.prompts.raw('visual.system.md') +
+        h.modeRules('visual', run) +
+        (live
+          ? `\n\nБраузер уже открыт на ${url} и подключён к pw — не вызывай \`pw open\`, переходи командой \`pw goto <url>\`. Человек смотрит на этот экран вживую.`
+          : ''),
       model: model || undefined,
     };
-    const res = agent === 'codex'
-      // pw пишет скриншоты и сессию вне рабочей копии, npx — в свой кэш, браузеру нужна сеть: в песочнице codex это не работает.
-      // Код не меняет — это требование промпта, как и у claude.
-      ? await h.codex({ ...base, sandbox: 'danger-full-access' })
-      : await h.claude({
-        ...base,
-        addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
-        // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
-        tools: ['Bash', 'Read', 'Glob', 'Grep'],
-      });
+    const res =
+      agent === 'codex'
+        ? // pw пишет скриншоты и сессию вне рабочей копии, npx — в свой кэш, браузеру нужна сеть: в песочнице codex это не работает.
+          // Код не меняет — это требование промпта, как и у claude.
+          await h.codex({ ...base, sandbox: 'danger-full-access' })
+        : await h.claude({
+            ...base,
+            addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
+            // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
+            tools: ['Bash', 'Read', 'Glob', 'Grep'],
+          });
     h.afterAgent(run, attempt, res);
 
     const parsed = parseReview(res.text);
@@ -111,27 +141,67 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
       .map((x) => ({ file: path.isAbsolute(x.file) ? x.file : path.join(dir, x.file), caption: x.caption }))
       .filter((x) => x.file.startsWith(dir) && fs.existsSync(x.file));
     // Скриншоты, которые агент снял, но не перечислил, тоже показываем.
-    for (const f of fs.readdirSync(dir).filter((n) => /\.(png|jpe?g|webp)$/i.test(n)).sort()) {
+    for (const f of fs
+      .readdirSync(dir)
+      .filter((n) => /\.(png|jpe?g|webp)$/i.test(n))
+      .sort()) {
       const full = path.join(dir, f);
       if (!shots.some((x) => x.file === full)) shots.push({ file: full, caption: f });
     }
     const unverified = parseUnverified(res.text);
     if (unverified) {
       // Окружение не дало проверить (не поднялся API, нет входа): исполнитель тут не поможет — идём дальше, решает человек.
-      const result: VisualResult = { at: new Date().toISOString(), url, blocking: [], notes: [...parsed.blocking, ...parsed.notes], shots, unverified, command, serverOutput: serverOut.trim() || undefined };
+      const result: VisualResult = {
+        at: new Date().toISOString(),
+        url,
+        blocking: [],
+        notes: [...parsed.blocking, ...parsed.notes],
+        shots,
+        unverified,
+        command,
+        serverOutput: serverOut.trim() || undefined,
+      };
       run.visuals = [...(run.visuals ?? []), result];
-      h.log(run, c.amber(`! визуально проверить не удалось: ${unverified}`) + '\n' + c.dim('Задача не возвращается исполнителю — проверьте сами во вкладке «Браузер». Тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.') + '\n');
+      h.log(
+        run,
+        c.amber(`! визуально проверить не удалось: ${unverified}`) +
+          '\n' +
+          c.dim(
+            'Задача не возвращается исполнителю — проверьте сами во вкладке «Браузер». Тестовый вход и подготовку данных можно описать в «Инструкции для проверки» в командах проекта.',
+          ) +
+          '\n',
+      );
       h.end(run, attempt, 'done', `Не удалось проверить: ${unverified}`);
       run.next = 'gate2';
       h.save(run);
       return;
     }
-    const result: VisualResult = { at: new Date().toISOString(), url, blocking: parsed.blocking, notes: parsed.notes, shots, command, serverOutput: serverOut.trim() || undefined };
+    const result: VisualResult = {
+      at: new Date().toISOString(),
+      url,
+      blocking: parsed.blocking,
+      notes: parsed.notes,
+      shots,
+      command,
+      serverOutput: serverOut.trim() || undefined,
+    };
     run.visuals = [...(run.visuals ?? []), result];
-    if (result.blocking.length) h.log(run, c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) + result.blocking.map((i) => `  • ${formatItem(i)}`).join('\n') + '\n');
+    if (result.blocking.length)
+      h.log(
+        run,
+        c.coral(`✗ визуальные проблемы (${result.blocking.length}):\n`) +
+          result.blocking.map((i) => `  • ${formatItem(i)}`).join('\n') +
+          '\n',
+      );
     h.log(run, c.dim(`скриншотов: ${shots.length}`) + '\n');
-    h.end(run, attempt, result.blocking.length ? 'failed' : 'done',
-      result.blocking.length ? `Проблем: ${result.blocking.length}, скриншотов: ${shots.length}` : `Выглядит верно, скриншотов: ${shots.length}`);
+    h.end(
+      run,
+      attempt,
+      result.blocking.length ? 'failed' : 'done',
+      result.blocking.length
+        ? `Проблем: ${result.blocking.length}, скриншотов: ${shots.length}`
+        : `Выглядит верно, скриншотов: ${shots.length}`,
+    );
 
     if (!result.blocking.length) {
       run.next = 'gate2';
@@ -140,15 +210,20 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
     }
     run.feedback = {
       source: 'review',
-      text: 'Визуальная проверка в браузере нашла проблемы. Исправь каждую; скриншоты можно открыть инструментом Read:\n'
-        + result.blocking.map((i) => `- ${formatItem(i)}`).join('\n')
-        + (shots.length ? '\n\nСкриншоты:\n' + shots.map((x) => `- ${x.file} — ${x.caption}`).join('\n') : ''),
+      text:
+        'Визуальная проверка в браузере нашла проблемы. Исправь каждую; скриншоты можно открыть инструментом Read:\n' +
+        result.blocking.map((i) => `- ${formatItem(i)}`).join('\n') +
+        (shots.length ? '\n\nСкриншоты:\n' + shots.map((x) => `- ${x.file} — ${x.caption}`).join('\n') : ''),
     };
     h.nextImplementOrLimit(run, 'Визуальная проверка снова нашла проблемы, а попытки реализации исчерпаны.');
   } finally {
     cast?.stop();
     h.emit({ type: 'visual.frame', runId: run.id, frame: null });
-    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=purpleflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: h.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=purpleflow-${run.id.slice(0, 8)}`, 'close'], {
+      cwd: dir,
+      env: h.opts.env,
+      timeoutMs: 20_000,
+    }).catch(() => undefined);
     await killGroup(serverGroup);
     // Профиль Chrome (десятки МБ) после проверки не нужен — скриншоты остаются.
     fs.rmSync(path.join(dir, 'chrome-profile'), { recursive: true, force: true });
@@ -159,21 +234,42 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
  * Chrome без окна с портом отладки в группе процессов сервера (гаснет вместе с ним), pw подключается к нему.
  * null — Chrome не найден или не поднялся: агент откроет свой браузер через `pw open`, без трансляции.
  */
-export async function startLiveBrowser(h: Orchestrator, run: RunFile, dir: string, url: string, group: string, session: string) : Promise<{ cast: Screencast } | null> {
+export async function startLiveBrowser(
+  h: Orchestrator,
+  run: RunFile,
+  dir: string,
+  url: string,
+  group: string,
+  session: string,
+): Promise<{ cast: Screencast } | null> {
   const chrome = findChrome(h.opts.env);
   if (!chrome) return null;
   const port = await freePort();
-  void runProc(chrome, [
-    '--headless=new', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1',
-    `--user-data-dir=${path.join(dir, 'chrome-profile')}`, '--no-first-run', '--no-default-browser-check',
-    // Плотность как у Retina: в трансляции и на скриншотах текст чёткий, а не растянутый вдвое.
-    '--window-size=1440,900', '--force-device-scale-factor=2', url,
-  ], { cwd: dir, env: h.opts.env, group }).catch(() => undefined);
+  void runProc(
+    chrome,
+    [
+      '--headless=new',
+      `--remote-debugging-port=${port}`,
+      '--remote-debugging-address=127.0.0.1',
+      `--user-data-dir=${path.join(dir, 'chrome-profile')}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      // Плотность как у Retina: в трансляции и на скриншотах текст чёткий, а не растянутый вдвое.
+      '--window-size=1440,900',
+      '--force-device-scale-factor=2',
+      url,
+    ],
+    { cwd: dir, env: h.opts.env, group },
+  ).catch(() => undefined);
   if (!(await waitForCdp(port))) {
     h.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
     return null;
   }
-  const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], { cwd: dir, env: h.opts.env, timeoutMs: 120_000 });
+  const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], {
+    cwd: dir,
+    env: h.opts.env,
+    timeoutMs: 120_000,
+  });
   if (att.code !== 0) {
     h.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
     return null;
@@ -185,10 +281,16 @@ export async function startLiveBrowser(h: Orchestrator, run: RunFile, dir: strin
 }
 
 /** Скриншот визуальной проверки для окна: data URL (только из каталога прогона). */
-export function getVisualShot(h: Orchestrator, id: string, file: string) : string | null {
+export function getVisualShot(h: Orchestrator, id: string, file: string): string | null {
   if (!fs.existsSync(file)) return null;
   // Сравниваем реальные пути: каталог данных может быть ссылкой.
-  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const real = (p: string) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
   const root = real(path.join(h.opts.dataDir, 'visual', id));
   const full = real(file);
   if (!full.startsWith(root + path.sep)) return null;

@@ -6,7 +6,12 @@ import { STATUS_LABEL } from '../lib/format';
 type Tone = 'primary' | 'ghost' | 'quiet' | 'danger' | 'approve';
 
 export function Button({
-  tone = 'ghost', icon, children, busy, className = '', ...rest
+  tone = 'ghost',
+  icon,
+  children,
+  busy,
+  className = '',
+  ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; icon?: ReactNode; busy?: boolean }) {
   return (
     <button {...rest} className={`btn btn-${tone} ${busy ? 'is-busy' : ''} ${className}`} disabled={rest.disabled || busy}>
@@ -29,17 +34,19 @@ export function Field({ label, hint, children, aside }: { label: string; hint?: 
   );
 }
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(
-  function Input({ mono, className = '', ...rest }, ref) {
-    return <input ref={ref} spellCheck={false} {...rest} className={`input ${mono ? 'mono' : ''} ${className}`} />;
-  },
-);
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(function Input(
+  { mono, className = '', ...rest },
+  ref,
+) {
+  return <input ref={ref} spellCheck={false} {...rest} className={`input ${mono ? 'mono' : ''} ${className}`} />;
+});
 
-export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  function TextArea({ className = '', ...rest }, ref) {
-    return <textarea ref={ref} {...rest} className={`input textarea ${className}`} />;
-  },
-);
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea(
+  { className = '', ...rest },
+  ref,
+) {
+  return <textarea ref={ref} {...rest} className={`input textarea ${className}`} />;
+});
 
 export function StatusPill({ status }: { status: RunStatus }) {
   return (

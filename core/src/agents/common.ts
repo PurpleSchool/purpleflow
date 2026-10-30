@@ -90,8 +90,10 @@ export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export function explainError(agent: string, raw: string, auth: 'proxy' | 'login' | 'env' = 'proxy'): string {
   const t = raw.toLowerCase();
   if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
-    if (auth === 'env') return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
-    if (auth === 'login') return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо войдите в аккаунт PurpleSchool в настройках.`;
+    if (auth === 'env')
+      return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
+    if (auth === 'login')
+      return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо войдите в аккаунт PurpleSchool в настройках.`;
     return `${agent}: прокси PurpleSchool отклонил ключ. Выберите действующий ключ в настройках, во вкладке «Аккаунт».`;
   }
   if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
@@ -107,6 +109,12 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
     return `${agent}: нет соединения с прокси PurpleSchool. Проверьте сеть.`;
   }
   // Длинные строки без пробелов — base64 картинок и прочий бинарный мусор, причину они не объясняют.
-  const line = raw.trim().split('\n').filter((l) => l.trim() && !/^[A-Za-z0-9+/=]{80,}$/.test(l.trim())).slice(-3).join(' ').slice(0, 400);
+  const line = raw
+    .trim()
+    .split('\n')
+    .filter((l) => l.trim() && !/^[A-Za-z0-9+/=]{80,}$/.test(l.trim()))
+    .slice(-3)
+    .join(' ')
+    .slice(0, 400);
   return `${agent}: ${line || 'завершился с ошибкой без сообщения'}`;
 }

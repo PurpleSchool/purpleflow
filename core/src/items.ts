@@ -7,4 +7,5 @@ export function formatItem(i: ReviewItem, code = false): string {
 }
 
 /** Пометка повторного ревью для лога и обратной связи исполнителю. */
-export const originTag = (i: ReviewItem) => (i.origin === 'unfixed' ? '[не исправлено] ' : i.origin === 'from_fix' ? '[из‑за исправления] ' : '');
+export const originTag = (i: ReviewItem) =>
+  i.origin === 'unfixed' ? '[не исправлено] ' : i.origin === 'from_fix' ? '[из‑за исправления] ' : '';

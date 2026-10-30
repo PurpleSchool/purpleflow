@@ -4,8 +4,17 @@ import type { StageId } from '@purpleflow/core';
 import { Button, TextArea } from '../../components/ui';
 
 export function GateBar(props: {
-  gate: StageId; comment: string; setComment: (s: string) => void; lineCount: number; busy: string | null; error: string | null;
-  onApprove: () => void; onReject: () => void; onCancel: () => void; onOpenAccept: () => void; diffShown: boolean;
+  gate: StageId;
+  comment: string;
+  setComment: (s: string) => void;
+  lineCount: number;
+  busy: string | null;
+  error: string | null;
+  onApprove: () => void;
+  onReject: () => void;
+  onCancel: () => void;
+  onOpenAccept: () => void;
+  diffShown: boolean;
   onOpenApp?: () => void;
   onAccept?: () => void;
   /** Куда ведёт «Дальше как есть» с гейта исчерпанных попыток. */
@@ -48,12 +57,22 @@ export function GateBar(props: {
   const needsComment = gate !== 'limit';
   return (
     <div className="gatebar is-gate">
-      <div className="gate-sign" aria-hidden>{gate === 'gate2' ? <ClipboardCheck size={17} /> : <UserRoundCheck size={17} />}</div>
+      <div className="gate-sign" aria-hidden>
+        {gate === 'gate2' ? <ClipboardCheck size={17} /> : <UserRoundCheck size={17} />}
+      </div>
       <div className="gate-text">
         <strong>{title}</strong>
         <span>
-          {gate === 'gate1' && (props.diffShown ? (lineCount ? `Замечаний к плану: ${lineCount}. Они уйдут планировщику при возврате.` : 'Проверьте proposal и tasks. Наведите на пункт и нажмите значок, чтобы оставить замечание.') : 'Откройте план и проверьте proposal и tasks.')}
-          {gate === 'gate2' && (props.diffShown ? `Замечаний на строках: ${lineCount}. Они уйдут исполнителю при возврате.` : 'Посмотрите дифф и замечания ревьюера.')}
+          {gate === 'gate1' &&
+            (props.diffShown
+              ? lineCount
+                ? `Замечаний к плану: ${lineCount}. Они уйдут планировщику при возврате.`
+                : 'Проверьте proposal и tasks. Наведите на пункт и нажмите значок, чтобы оставить замечание.'
+              : 'Откройте план и проверьте proposal и tasks.')}
+          {gate === 'gate2' &&
+            (props.diffShown
+              ? `Замечаний на строках: ${lineCount}. Они уйдут исполнителю при возврате.`
+              : 'Посмотрите дифф и замечания ревьюера.')}
           {gate === 'limit' && 'Можно дать исполнителю ещё одну попытку с вашим комментарием.'}
         </span>
       </div>
@@ -62,31 +81,75 @@ export function GateBar(props: {
           className="gate-comment"
           rows={2}
           autoFocus={open}
-          placeholder={gate === 'limit' ? 'Подсказка исполнителю (необязательно)' : gate === 'gate2' ? 'Что поправить — например: «кнопку сделать синей», «добавить пустое состояние»' : 'Что доработать'}
+          placeholder={
+            gate === 'limit'
+              ? 'Подсказка исполнителю (необязательно)'
+              : gate === 'gate2'
+                ? 'Что поправить — например: «кнопку сделать синей», «добавить пустое состояние»'
+                : 'Что доработать'
+          }
           value={comment}
           onChange={(e) => setComment(e.target.value)}
         />
       )}
       <div className="gate-actions">
         {error && <span className="actionbar-error">{error}</span>}
-        {props.onOpenApp && <Button tone="quiet" icon={<Globe size={14} />} onClick={props.onOpenApp}>Проверить в браузере</Button>}
-        {!props.diffShown && gate !== 'limit' && <Button tone="quiet" onClick={props.onOpenAccept}>{gate === 'gate1' ? 'Открыть план' : 'Открыть дифф'}</Button>}
-        {gate === 'gate1' && <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Отменить задачу</Button>}
+        {props.onOpenApp && (
+          <Button tone="quiet" icon={<Globe size={14} />} onClick={props.onOpenApp}>
+            Проверить в браузере
+          </Button>
+        )}
+        {!props.diffShown && gate !== 'limit' && (
+          <Button tone="quiet" onClick={props.onOpenAccept}>
+            {gate === 'gate1' ? 'Открыть план' : 'Открыть дифф'}
+          </Button>
+        )}
+        {gate === 'gate1' && (
+          <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>
+            Отменить задачу
+          </Button>
+        )}
         {gate === 'limit' ? (
           <>
-            <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>Остановить</Button>
-            {props.onAccept && <Button tone="ghost" icon={<ClipboardCheck size={14} />} busy={busy === 'accept'} onClick={props.onAccept} title={props.acceptTo === 'visual' ? 'Без новых попыток: визуальная проверка, затем приёмка — решение за вами' : 'Посмотреть дифф и решить самому — без новых попыток'}>{props.acceptTo === 'visual' ? 'Дальше: визуальная проверка' : 'К приёмке как есть'}</Button>}
-            <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>Ещё попытка <kbd className="kbd-mini">{mod}↵</kbd></Button>
+            <Button tone="quiet" busy={busy === 'cancel'} onClick={props.onCancel}>
+              Остановить
+            </Button>
+            {props.onAccept && (
+              <Button
+                tone="ghost"
+                icon={<ClipboardCheck size={14} />}
+                busy={busy === 'accept'}
+                onClick={props.onAccept}
+                title={
+                  props.acceptTo === 'visual'
+                    ? 'Без новых попыток: визуальная проверка, затем приёмка — решение за вами'
+                    : 'Посмотреть дифф и решить самому — без новых попыток'
+                }
+              >
+                {props.acceptTo === 'visual' ? 'Дальше: визуальная проверка' : 'К приёмке как есть'}
+              </Button>
+            )}
+            <Button tone="primary" icon={<RotateCcw size={14} />} busy={busy === 'approve'} onClick={props.onApprove}>
+              Ещё попытка <kbd className="kbd-mini">{mod}↵</kbd>
+            </Button>
           </>
         ) : (
           <>
             {gate === 'gate2' && props.onFix && (props.pickedCount ?? 0) > 0 && !open && lineCount === 0 && (
-              <Button tone="ghost" icon={<Wrench size={14} />} busy={busy === 'fix'} onClick={props.onFix} title="Выбранные замечания ревьюера — исполнителю: реализация → проверки → снова приёмка, без нового ревью">
+              <Button
+                tone="ghost"
+                icon={<Wrench size={14} />}
+                busy={busy === 'fix'}
+                onClick={props.onFix}
+                title="Выбранные замечания ревьюера — исполнителю: реализация → проверки → снова приёмка, без нового ревью"
+              >
                 Исправить выбранные ({props.pickedCount}) <kbd className="kbd-mini">{mod}⌥↵</kbd>
               </Button>
             )}
             {needsComment && !open && lineCount === 0 ? (
-              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)} title={`${mod}⇧↵`}>{gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}</Button>
+              <Button tone="ghost" icon={<RotateCcw size={14} />} onClick={() => setOpen(true)} title={`${mod}⇧↵`}>
+                {gate === 'gate2' ? 'Есть замечания' : 'Вернуть с комментарием'}
+              </Button>
             ) : (
               <>
                 {gate === 'gate2' && props.onFix && (
@@ -98,7 +161,8 @@ export function GateBar(props: {
                     onClick={props.onFix}
                     title="Небольшая правка в той же ветке: реализация → проверки → снова приёмка, без ревью и визуальной проверки"
                   >
-                    Поправить{lineCount || props.pickedCount ? ` (+${lineCount + (props.pickedCount ?? 0)})` : ''} <kbd className="kbd-mini">{mod}⌥↵</kbd>
+                    Поправить{lineCount || props.pickedCount ? ` (+${lineCount + (props.pickedCount ?? 0)})` : ''}{' '}
+                    <kbd className="kbd-mini">{mod}⌥↵</kbd>
                   </Button>
                 )}
                 <Button
@@ -109,7 +173,8 @@ export function GateBar(props: {
                   onClick={props.onReject}
                   title={gate === 'gate2' ? 'Полный круг: реализация → проверки → ревью → визуальная проверка' : undefined}
                 >
-                  {gate === 'gate2' ? 'Вернуть на доработку' : `Вернуть${lineCount ? ` (+${lineCount})` : ''}`} <kbd className="kbd-mini">{mod}⇧↵</kbd>
+                  {gate === 'gate2' ? 'Вернуть на доработку' : `Вернуть${lineCount ? ` (+${lineCount})` : ''}`}{' '}
+                  <kbd className="kbd-mini">{mod}⇧↵</kbd>
                 </Button>
               </>
             )}

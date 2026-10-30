@@ -9,14 +9,22 @@ const THEME = {
   cursor: '#8a74ee',
   cursorAccent: '#08090a',
   selectionBackground: 'rgba(138,116,238,0.3)',
-  black: '#1d1e23', brightBlack: '#4d4f57',
-  red: '#df7e8d', brightRed: '#ec9eaa',
-  green: '#74c4a0', brightGreen: '#99d7ba',
-  yellow: '#d6ad66', brightYellow: '#e4c58e',
-  blue: '#84b4d6', brightBlue: '#a7cae3',
-  magenta: '#b2a5f5', brightMagenta: '#cbc2f8',
-  cyan: '#86c3c6', brightCyan: '#a9d6d8',
-  white: '#c9cad0', brightWhite: '#ffffff',
+  black: '#1d1e23',
+  brightBlack: '#4d4f57',
+  red: '#df7e8d',
+  brightRed: '#ec9eaa',
+  green: '#74c4a0',
+  brightGreen: '#99d7ba',
+  yellow: '#d6ad66',
+  brightYellow: '#e4c58e',
+  blue: '#84b4d6',
+  brightBlue: '#a7cae3',
+  magenta: '#b2a5f5',
+  brightMagenta: '#cbc2f8',
+  cyan: '#86c3c6',
+  brightCyan: '#a9d6d8',
+  white: '#c9cad0',
+  brightWhite: '#ffffff',
 };
 
 /** Часть лога: одна попытка одной стадии (по заголовку «━━ Стадия · попытка N»). */
@@ -62,8 +70,10 @@ export function finalMessage(text: string): string {
       else if (c === 2) dim = true;
       else if (c === 22) dim = bold = false;
       else if (c === 39) color = false;
-      else if (c === 38) { color = true; i += codes[i + 1] === 2 ? 4 : 2; }
-      else if (c >= 30 && c <= 37) color = true;
+      else if (c === 38) {
+        color = true;
+        i += codes[i + 1] === 2 ? 4 : 2;
+      } else if (c >= 30 && c <= 37) color = true;
     }
   }
   push(text.slice(last));
@@ -123,7 +133,9 @@ export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
-      } catch { /* терминал скрыт */ }
+      } catch {
+        /* терминал скрыт */
+      }
     });
     ro.observe(host.current!);
     return () => {

@@ -119,10 +119,14 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
   if (!account) {
     return (
       <section className="panel stats-empty">
-        <span className="stats-empty-icon"><BarChart3 size={22} /></span>
+        <span className="stats-empty-icon">
+          <BarChart3 size={22} />
+        </span>
         <h2>Статистика доступна с аккаунтом PurpleSchool</h2>
         <p>Войдите в аккаунт, и здесь появятся остаток токенов, тариф и расход по дням, ключам и моделям — как в личном кабинете.</p>
-        <Button tone="primary" onClick={onSignIn}>Войти или зарегистрироваться</Button>
+        <Button tone="primary" onClick={onSignIn}>
+          Войти или зарегистрироваться
+        </Button>
       </section>
     );
   }
@@ -136,20 +140,32 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
 
   return (
     <>
-      {error && <p className="auth-error stats-error" role="alert">{error}</p>}
+      {error && (
+        <p className="auth-error stats-error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="stats-top">
         <section className="panel stats-balance">
           <span className="stats-label">Суммарный остаток</span>
-          <div className="stats-big">{b ? num(b.remainingUnits) : '—'} <span>токенов</span></div>
+          <div className="stats-big">
+            {b ? num(b.remainingUnits) : '—'} <span>токенов</span>
+          </div>
           {b && (
             <>
               <div className="stats-used">
                 <span>Израсходовано из текущего баланса</span>
-                <strong>{num(b.usedUnits)} из {num(b.totalInitialUnits)} · {b.usedPercentage}%</strong>
+                <strong>
+                  {num(b.usedUnits)} из {num(b.totalInitialUnits)} · {b.usedPercentage}%
+                </strong>
               </div>
-              <div className="stats-bar"><i style={{ width: `${Math.min(100, 100 - b.usedPercentage)}%` }} /></div>
+              <div className="stats-bar">
+                <i style={{ width: `${Math.min(100, 100 - b.usedPercentage)}%` }} />
+              </div>
               {b.estimatedRemainingDays !== null && (
-                <p className="stats-hint">При текущем расходе ({num(b.averageDailyUnitsSpend)} в день) хватит примерно на {num(b.estimatedRemainingDays)} дн.</p>
+                <p className="stats-hint">
+                  При текущем расходе ({num(b.averageDailyUnitsSpend)} в день) хватит примерно на {num(b.estimatedRemainingDays)} дн.
+                </p>
               )}
             </>
           )}
@@ -159,17 +175,24 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
           {plan ? (
             <>
               <strong className="stats-plan-title">{plan.title}</strong>
-              <p>{num(plan.unitsPerMonth)} токенов в месяц · {num(plan.priceMinor)} ₽</p>
-              <p className="stats-hint">{plan.isAutoPaymentEnabled ? 'Следующее списание' : 'Действует до'} {dateRu(plan.nextPaymentAt)}</p>
+              <p>
+                {num(plan.unitsPerMonth)} токенов в месяц · {num(plan.priceMinor)} ₽
+              </p>
+              <p className="stats-hint">
+                {plan.isAutoPaymentEnabled ? 'Следующее списание' : 'Действует до'} {dateRu(plan.nextPaymentAt)}
+              </p>
             </>
           ) : overview ? (
             <>
               <strong className="stats-plan-title">Нет активной подписки</strong>
               <p className="stats-hint">Пакеты токенов можно использовать без подписки.</p>
             </>
-          ) : <span className="spinner" />}
+          ) : (
+            <span className="spinner" />
+          )}
           <a className="btn btn-primary stats-plan-btn" href={PLANS_URL} target="_blank" rel="noreferrer">
-            <ExternalLink size={15} /><span>{plan ? 'Сменить тариф' : 'Выбрать подписку'}</span>
+            <ExternalLink size={15} />
+            <span>{plan ? 'Сменить тариф' : 'Выбрать подписку'}</span>
           </a>
         </section>
       </div>
@@ -192,10 +215,27 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
             />
             <div className="segmented small" role="radiogroup" aria-label="Период">
               {PERIODS.map((p) => (
-                <button key={p.id} role="radio" aria-checked={period === p.id} className={period === p.id ? 'is-on' : ''} onClick={() => setPeriod(p.id)}>{p.label}</button>
+                <button
+                  key={p.id}
+                  role="radio"
+                  aria-checked={period === p.id}
+                  className={period === p.id ? 'is-on' : ''}
+                  onClick={() => setPeriod(p.id)}
+                >
+                  {p.label}
+                </button>
               ))}
             </div>
-            <Button tone="quiet" title="Обновить" icon={<RefreshCw size={14} />} busy={loading} onClick={() => { void loadOverview(); void loadUsage(); }} />
+            <Button
+              tone="quiet"
+              title="Обновить"
+              icon={<RefreshCw size={14} />}
+              busy={loading}
+              onClick={() => {
+                void loadOverview();
+                void loadUsage();
+              }}
+            />
           </div>
         </header>
         <div className="stats-grid">
@@ -212,25 +252,33 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
                     onMouseLeave={() => setHover((h) => (h === i ? null : h))}
                   >
                     <div className="stats-bar-wrap">
-                    {hover === i && (
-                      <div className={`stats-tip ${i > buckets.length / 2 ? 'is-left' : ''}`} style={{ bottom: `calc(${(v / max) * 100}% + 8px)` }} role="tooltip">
-                        <span className="stats-tip-date">{bucketTitle(x.date, period)}</span>
-                        <strong>{num(v)} токенов</strong>
+                      {hover === i && (
+                        <div
+                          className={`stats-tip ${i > buckets.length / 2 ? 'is-left' : ''}`}
+                          style={{ bottom: `calc(${(v / max) * 100}% + 8px)` }}
+                          role="tooltip"
+                        >
+                          <span className="stats-tip-date">{bucketTitle(x.date, period)}</span>
+                          <strong>{num(v)} токенов</strong>
+                          {x.modelUnitsSpend.map((m) => (
+                            <span key={m.modelName} className="stats-tip-row">
+                              <i style={{ background: color(m.modelName) }} />
+                              <code>{m.modelName}</code>
+                              <b>{num(m.unitsSpend)}</b>
+                            </span>
+                          ))}
+                          {x.modelUnitsSpend.length > 0 && (
+                            <span className="stats-tip-req">
+                              {num(x.modelUnitsSpend.reduce((n, m) => n + m.requestsCount, 0))} запросов
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <div className="stats-stack" style={{ height: `${(v / max) * 100}%` }}>
                         {x.modelUnitsSpend.map((m) => (
-                          <span key={m.modelName} className="stats-tip-row">
-                            <i style={{ background: color(m.modelName) }} />
-                            <code>{m.modelName}</code>
-                            <b>{num(m.unitsSpend)}</b>
-                          </span>
+                          <i key={m.modelName} style={{ flexGrow: Number(m.unitsSpend), background: color(m.modelName) }} />
                         ))}
-                        {x.modelUnitsSpend.length > 0 && <span className="stats-tip-req">{num(x.modelUnitsSpend.reduce((n, m) => n + m.requestsCount, 0))} запросов</span>}
                       </div>
-                    )}
-                    <div className="stats-stack" style={{ height: `${(v / max) * 100}%` }}>
-                      {x.modelUnitsSpend.map((m) => (
-                        <i key={m.modelName} style={{ flexGrow: Number(m.unitsSpend), background: color(m.modelName) }} />
-                      ))}
-                    </div>
                     </div>
                     <span>{bucketLabel(x.date, period)}</span>
                   </div>
@@ -251,15 +299,26 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
                     <span className="grow" />
                     <strong>{num(m.unitsSpend)}</strong>
                   </div>
-                  <div className="stats-bar thin"><i style={{ width: `${total ? (Number(m.unitsSpend) / total) * 100 : 0}%`, background: color(m.modelName) }} /></div>
+                  <div className="stats-bar thin">
+                    <i style={{ width: `${total ? (Number(m.unitsSpend) / total) * 100 : 0}%`, background: color(m.modelName) }} />
+                  </div>
                   <span className="stats-hint">{num(m.requestsCount)} запросов</span>
                 </div>
               ))}
             </div>
             <dl className="stats-totals">
-              <div><dt>Всего за период</dt><dd>{num(usage?.modelSummary.totalUnitsSpend ?? 0)} токенов</dd></div>
-              <div><dt>Запросов</dt><dd>{num(usage?.modelSummary.totalRequests ?? 0)}</dd></div>
-              <div><dt>В среднем {bucketWord}</dt><dd>{num(usage?.modelSummary.averageUnitsSpendPerBucket ?? 0)} токенов</dd></div>
+              <div>
+                <dt>Всего за период</dt>
+                <dd>{num(usage?.modelSummary.totalUnitsSpend ?? 0)} токенов</dd>
+              </div>
+              <div>
+                <dt>Запросов</dt>
+                <dd>{num(usage?.modelSummary.totalRequests ?? 0)}</dd>
+              </div>
+              <div>
+                <dt>В среднем {bucketWord}</dt>
+                <dd>{num(usage?.modelSummary.averageUnitsSpendPerBucket ?? 0)} токенов</dd>
+              </div>
             </dl>
           </div>
         </div>

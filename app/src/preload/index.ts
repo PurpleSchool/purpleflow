@@ -2,10 +2,64 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { CoreApi, CoreMethod, PurpleFlowBridge } from '../shared/ipc';
 import type { CoreEvent } from '@purpleflow/core';
 
-const call = (method: CoreMethod) => (...args: unknown[]) => ipcRenderer.invoke('core:call', method, args);
+const call =
+  (method: CoreMethod) =>
+  (...args: unknown[]) =>
+    ipcRenderer.invoke('core:call', method, args);
 
 const methods: CoreMethod[] = [
-  'dispatch', 'listRuns', 'getRun', 'getLog', 'getDiff', 'getChangedFiles', 'getChangeDocs', 'detectTools', 'testConnection', 'detectProject', 'isDriving', 'listBranches', 'getAttachment', 'detectCommandsAI', 'getProjectConfig', 'saveProjectConfig', 'suggestMode', 'getVisualShot', 'startPreview', 'stopPreview', 'getPreview', 'checkCommands', 'getStorage', 'cleanStorage', 'prReady', 'getPrStatus', 'getPrDetails', 'getKnowledge', 'saveKnowledge', 'refreshProfile', 'listProjects', 'projectOverview', 'forgetProject', 'projectBranches', 'cleanWorkingCopy', 'checkEnvironment', 'nextPartDraft', 'projectStats', 'getManagerChat', 'askManager', 'resolveManagerAction', 'listChats', 'getChat', 'createChat', 'updateChat', 'deleteChat', 'sendChat', 'stopChat', 'unqueueChat', 'chatToTask', 'getChatDiff', 'getChatChangedFiles',
+  'dispatch',
+  'listRuns',
+  'getRun',
+  'getLog',
+  'getDiff',
+  'getChangedFiles',
+  'getChangeDocs',
+  'detectTools',
+  'testConnection',
+  'detectProject',
+  'isDriving',
+  'listBranches',
+  'getAttachment',
+  'detectCommandsAI',
+  'getProjectConfig',
+  'saveProjectConfig',
+  'suggestMode',
+  'getVisualShot',
+  'startPreview',
+  'stopPreview',
+  'getPreview',
+  'checkCommands',
+  'getStorage',
+  'cleanStorage',
+  'prReady',
+  'getPrStatus',
+  'getPrDetails',
+  'getKnowledge',
+  'saveKnowledge',
+  'refreshProfile',
+  'listProjects',
+  'projectOverview',
+  'forgetProject',
+  'projectBranches',
+  'cleanWorkingCopy',
+  'checkEnvironment',
+  'nextPartDraft',
+  'projectStats',
+  'getManagerChat',
+  'askManager',
+  'resolveManagerAction',
+  'listChats',
+  'getChat',
+  'createChat',
+  'updateChat',
+  'deleteChat',
+  'sendChat',
+  'stopChat',
+  'unqueueChat',
+  'chatToTask',
+  'getChatDiff',
+  'getChatChangedFiles',
 ];
 
 const bridge: PurpleFlowBridge = {

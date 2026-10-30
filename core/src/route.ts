@@ -8,7 +8,10 @@ import type { ControlAction, RunFile, StageId } from './types.js';
 
 export { stagesOf } from './modes.js';
 
-type RouteRun = Pick<RunFile, 'mode' | 'visual' | 'quickFix' | 'mergeOnly' | 'roundFiles' | 'phase' | 'phases' | 'attempts' | 'status' | 'next'>;
+type RouteRun = Pick<
+  RunFile,
+  'mode' | 'visual' | 'quickFix' | 'mergeOnly' | 'roundFiles' | 'phase' | 'phases' | 'attempts' | 'status' | 'next'
+>;
 
 /** Какой это круг: обычный, быстрая правка с приёмки, слияние базовой ветки, разрешение конфликтов. */
 export type RoundKind = 'normal' | 'quickFix' | 'merge' | 'conflicts';
@@ -29,7 +32,10 @@ export function skippedStages(run: Pick<RunFile, 'visual' | 'quickFix' | 'mergeO
   const skip = new Set<StageId>();
   if (!run.visual) skip.add('visual');
   const round = roundOf(run);
-  if (round !== 'normal') { skip.add('review'); skip.add('visual'); }
+  if (round !== 'normal') {
+    skip.add('review');
+    skip.add('visual');
+  }
   if (round === 'merge') skip.add('gate2');
   return skip;
 }
@@ -62,7 +68,10 @@ export function limitRow(run: Pick<RunFile, 'attempts'>, upTo = run.attempts.len
   let failed: StageId | null = null;
   for (let i = upTo - 1; i >= 0; i--) {
     const a = run.attempts[i];
-    if (a.stage === 'gate2' || a.stage === 'limit') { if (first) break; continue; }
+    if (a.stage === 'gate2' || a.stage === 'limit') {
+      if (first) break;
+      continue;
+    }
     if (a.stage === 'review' || a.stage === 'tests' || a.stage === 'visual' || a.stage === 'implement') {
       first ??= a.stage;
       if (a.status === 'failed' && (!failed || a.stage === 'review')) failed = a.stage;
@@ -104,7 +113,10 @@ export const REPLAN_LIMIT = 2;
 
 const AFTER_IMPLEMENT: StageId[] = ['implement', 'tests', 'review', 'visual', 'limit', 'gate2'];
 
-type ControlRun = Pick<RunFile, 'mode' | 'status' | 'next' | 'attempts' | 'quickFix' | 'mergeOnly' | 'roundFiles' | 'prRound' | 'interventions'>;
+type ControlRun = Pick<
+  RunFile,
+  'mode' | 'status' | 'next' | 'attempts' | 'quickFix' | 'mergeOnly' | 'roundFiles' | 'prRound' | 'interventions'
+>;
 
 /**
  * Какие действия управления доступны сейчас — одна правда для ядра, кнопок и менеджера.

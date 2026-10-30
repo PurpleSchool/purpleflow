@@ -23,7 +23,12 @@ interface ApiKeyView {
 
 const normEmail = (e: string) => e.trim().toLowerCase();
 
-async function request<T>(method: 'GET' | 'POST', route: string, body?: unknown, token?: string): Promise<{ ok: true; data: T } | (Fail & { status?: number })> {
+async function request<T>(
+  method: 'GET' | 'POST',
+  route: string,
+  body?: unknown,
+  token?: string,
+): Promise<{ ok: true; data: T } | (Fail & { status?: number })> {
   let res: Response;
   try {
     res = await fetch(`${API}${route}`, {
@@ -42,7 +47,8 @@ async function request<T>(method: 'GET' | 'POST', route: string, body?: unknown,
   const json = (await res.json().catch(() => null)) as (T & { message?: string | string[] }) | null;
   if (res.ok) return { ok: true, data: json as T };
   const message = Array.isArray(json?.message) ? '' : (json?.message ?? '');
-  if (res.status === 429) return { ok: false, status: 429, code: 'rate', error: 'Слишком много попыток. Подождите минуту и попробуйте снова.' };
+  if (res.status === 429)
+    return { ok: false, status: 429, code: 'rate', error: 'Слишком много попыток. Подождите минуту и попробуйте снова.' };
   if (res.status >= 500) return { ok: false, status: res.status, error: 'Сервер PurpleSchool сейчас не отвечает. Попробуйте чуть позже.' };
   return { ok: false, status: res.status, error: /[а-яё]/i.test(message) ? message : '' };
 }
@@ -91,11 +97,17 @@ async function photoDataUrl(src: string): Promise<string | null> {
 /** Имя и аватар из профиля PurpleSchool (GET /user/profile). from/to — период активности, она нам не нужна: берём один день. */
 export async function profile(): Promise<AccountResult> {
   const today = new Date().toISOString().slice(0, 10);
-  const r = await authed<{ profile?: { name?: string | null; surname?: string | null; photo?: string | null } }>('GET', `/user/profile?from=${today}&to=${today}`);
+  const r = await authed<{ profile?: { name?: string | null; surname?: string | null; photo?: string | null } }>(
+    'GET',
+    `/user/profile?from=${today}&to=${today}`,
+  );
   if (!r.ok) return r;
   const p = r.data?.profile;
   if (!p) return { ok: true, data: null };
-  const name = [p.name, p.surname].map((x) => x?.trim()).filter(Boolean).join(' ');
+  const name = [p.name, p.surname]
+    .map((x) => x?.trim())
+    .filter(Boolean)
+    .join(' ');
   // Фото не скачалось — оставляем прежнее; в профиле его нет — убираем.
   const photo = p.photo ? await photoDataUrl(p.photo) : '';
   setAccountProfile({ name, ...(photo === null ? {} : { photo }) });
@@ -122,7 +134,8 @@ export async function register(p: { name: string; email: string; password: strin
     needAdvertisingMailing: p.mailing,
   });
   if (!r.ok) {
-    if (r.status === 400 && /существует/i.test(r.error)) return { ok: false, code: 'exists', error: 'Пользователь с таким email уже есть — войдите в аккаунт' };
+    if (r.status === 400 && /существует/i.test(r.error))
+      return { ok: false, code: 'exists', error: 'Пользователь с таким email уже есть — войдите в аккаунт' };
     if (r.status === 400) return { ok: false, error: r.error || 'Проверьте имя и email' };
     return { ok: false, code: r.code, error: r.error || 'Не удалось зарегистрироваться' };
   }
@@ -131,7 +144,12 @@ export async function register(p: { name: string; email: string; password: strin
 
 export async function restore(email: string): Promise<AccountResult<string>> {
   const r = await request<{ message?: string }>('POST', '/auth/restore', { email: normEmail(email) });
-  if (!r.ok) return { ok: false, code: r.code, error: r.status === 400 ? 'Проверьте email: похоже, в нём ошибка' : r.error || 'Не удалось отправить письмо' };
+  if (!r.ok)
+    return {
+      ok: false,
+      code: r.code,
+      error: r.status === 400 ? 'Проверьте email: похоже, в нём ошибка' : r.error || 'Не удалось отправить письмо',
+    };
   return { ok: true, data: r.data?.message || 'Если такой аккаунт есть, мы отправили письмо со ссылкой для смены пароля.' };
 }
 
@@ -214,7 +232,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const BUCKETS: UsageBucket[] = ['DAY', 'WEEK', 'MONTH', 'YEAR'];
 
 export function usage(q: { from: string; to: string; bucket: UsageBucket; keyIds: number[] }): Promise<AccountResult<AccountUsage>> {
-  if (!DATE.test(q.from) || !DATE.test(q.to) || !BUCKETS.includes(q.bucket)) return Promise.resolve({ ok: false, error: 'Неверный период' });
+  if (!DATE.test(q.from) || !DATE.test(q.to) || !BUCKETS.includes(q.bucket))
+    return Promise.resolve({ ok: false, error: 'Неверный период' });
   const p = new URLSearchParams({ from: q.from, to: q.to, bucketType: q.bucket });
   for (const id of q.keyIds) if (Number.isInteger(id) && id > 0) p.append('aiProxyApiKeyIds', String(id));
   return authed<AccountUsage>('GET', `/public/ai-proxy/usage?${p}`);

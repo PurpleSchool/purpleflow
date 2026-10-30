@@ -29,11 +29,13 @@ test('merge: чистая копия, грязная копия, ветка вн
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
-  g('add', '-A'); g('commit', '-qm', 'init');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
   g('branch', 'dev');
   g('checkout', '-q', '-b', 'purpleflow/x');
   fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
-  g('add', '-A'); g('commit', '-qm', 'feature');
+  g('add', '-A');
+  g('commit', '-qm', 'feature');
   g('checkout', '-q', 'main');
   const git = new Git('git', process.env);
 
@@ -57,7 +59,8 @@ test('merge: чистая копия, грязная копия, ветка вн
   // 4. Конфликт — слияние отменено, дерево чистое.
   g('checkout', '-q', '-b', 'purpleflow/y', 'main~1');
   fs.writeFileSync(path.join(dir, 'b.txt'), 'other\n');
-  g('add', '-A'); g('commit', '-qm', 'conflict');
+  g('add', '-A');
+  g('commit', '-qm', 'conflict');
   g('checkout', '-q', 'main');
   const headBefore = g('rev-parse', 'HEAD').trim();
   await assert.rejects(git.merge(dir, 'purpleflow/y', 'main', 'm', tmp), /Конфликт[\s\S]*b\.txt/);
@@ -72,7 +75,8 @@ test('commitAll: изменений нет, кроме исключённого 
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
-  g('add', '-A'); g('commit', '-qm', 'init');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
   const base = g('rev-parse', 'HEAD').trim();
   fs.mkdirSync(path.join(dir, 'openspec/changes/x'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'openspec/changes/x/run.json'), '{}');
@@ -86,7 +90,8 @@ test('commitAll: исключение файла из .gitignore не ломае
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q');
   fs.writeFileSync(path.join(dir, '.gitignore'), '.env\n');
-  g('add', '-A'); g('commit', '-qm', 'init');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
   fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1\n');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
   const before = g('rev-parse', 'HEAD').trim();
@@ -110,7 +115,11 @@ test('restoreFromBase: изменённый артефакт — из базы, 
   fs.writeFileSync(path.join(dir, 'app.ts'), 'b\n');
   const git = new Git('git', process.env);
   const changed = await git.changedFiles(dir, base);
-  await git.restoreFromBase(dir, base, changed.filter((f) => f !== 'app.ts'));
+  await git.restoreFromBase(
+    dir,
+    base,
+    changed.filter((f) => f !== 'app.ts'),
+  );
   assert.equal(fs.readFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'utf8'), 'old\n');
   assert.ok(!fs.existsSync(path.join(dir, 'next-env.d.ts')));
   assert.equal(fs.readFileSync(path.join(dir, 'app.ts'), 'utf8'), 'b\n');

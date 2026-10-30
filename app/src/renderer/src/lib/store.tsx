@@ -42,8 +42,19 @@ type Action =
 
 function summarize(r: RunFile, runJsonPath = ''): RunSummary {
   return {
-    id: r.id, title: r.title, changeId: r.changeId, projectPath: r.projectPath, branch: r.branch, status: r.status,
-    next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt, runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals, mode: r.mode,
+    id: r.id,
+    title: r.title,
+    changeId: r.changeId,
+    projectPath: r.projectPath,
+    branch: r.branch,
+    status: r.status,
+    next: r.next,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    runJsonPath,
+    implAttemptsUsed: r.implAttemptsUsed,
+    totals: r.totals,
+    mode: r.mode,
   };
 }
 
@@ -173,7 +184,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Первый запуск: сначала вход в PurpleSchool (можно пропустить), затем настройка инструментов.
       if (!s.onboarded) dispatch({ t: 'view', view: { name: !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
       await refreshRuns();
-      window.purpleflow.core.listChats().then((chats) => dispatch({ t: 'chats', chats })).catch(() => {});
+      window.purpleflow.core
+        .listChats()
+        .then((chats) => dispatch({ t: 'chats', chats }))
+        .catch(() => {});
       await refreshTools();
     })();
     return off;

@@ -10,14 +10,20 @@ function serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const k = path.resolve(key);
   const prev = queues.get(k) ?? Promise.resolve();
   const next = prev.catch(() => {}).then(fn);
-  queues.set(k, next.finally(() => {
-    if (queues.get(k) === next) queues.delete(k);
-  }));
+  queues.set(
+    k,
+    next.finally(() => {
+      if (queues.get(k) === next) queues.delete(k);
+    }),
+  );
   return next;
 }
 
 export class Git {
-  constructor(private bin: string, private env: NodeJS.ProcessEnv) {}
+  constructor(
+    private bin: string,
+    private env: NodeJS.ProcessEnv,
+  ) {}
 
   /** git с повтором, если index.lock держит посторонний процесс (IDE, другой git). */
   private async git(cwd: string, args: string[], timeoutMs?: number): Promise<string> {
@@ -85,10 +91,17 @@ export class Git {
     const before = await this.head(dir);
     const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir, env: this.env })).stdout.trim();
     const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
-    const r = await run(this.bin, [...identity, 'merge', '--no-ff', '--no-edit', '-m', message, ref], { cwd: dir, env: this.env, timeoutMs: 120_000 });
+    const r = await run(this.bin, [...identity, 'merge', '--no-ff', '--no-edit', '-m', message, ref], {
+      cwd: dir,
+      env: this.env,
+      timeoutMs: 120_000,
+    });
     if (r.code === 0) return { conflicts: [], changed: (await this.head(dir)) !== before };
     const u = await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir, env: this.env });
-    const conflicts = u.stdout.split('\n').map((x) => x.trim()).filter(Boolean);
+    const conflicts = u.stdout
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean);
     if (!conflicts.length) throw new Error(`git merge ${ref} не прошёл: ${(r.stderr || r.stdout).trim().split('\n').slice(-3).join(' ')}`);
     return { conflicts, changed: true };
   }
@@ -113,7 +126,10 @@ export class Git {
   /** Незакоммиченные изменения рабочей копии, включая неотслеживаемые файлы. */
   async dirtyFiles(dir: string): Promise<string[]> {
     const out = await this.git(dir, ['status', '--porcelain']);
-    return out.split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+    return out
+      .split('\n')
+      .map((l) => l.slice(3).trim())
+      .filter(Boolean);
   }
 
   /** Спрятать все незакоммиченные изменения, включая неотслеживаемые файлы; вернуть их — git stash pop. */
@@ -128,7 +144,11 @@ export class Git {
   async stashExcept(dir: string, message: string, keep: string[]): Promise<string | null> {
     if (!(await this.dirtyFiles(dir)).length) return null;
     const before = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
-    await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)], 60_000);
+    await this.git(
+      dir,
+      ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)],
+      60_000,
+    );
     const top = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
     return top && top !== before ? top : null;
   }
@@ -157,7 +177,7 @@ export class Git {
     const out = await this.git(repo, ['diff', '--name-status', '-M', '-z', base, head]);
     const parts = out.split('\0').filter(Boolean);
     const files: DiffFile[] = [];
-    for (let i = 0; i < parts.length; ) {
+    for (let i = 0; i < parts.length;) {
       const code = parts[i++];
       const st = code[0] as DiffFile['status'];
       const oldPath = parts[i++];
@@ -180,7 +200,12 @@ export class Git {
   /** Файлы каталога в коммите (пути от корня репозитория). */
   async listAt(repo: string, rev: string, dir: string): Promise<string[]> {
     const r = await run(this.bin, ['ls-tree', '-r', '--name-only', rev, '--', dir], { cwd: repo, env: this.env, timeoutMs: 20_000 });
-    return r.code === 0 ? r.stdout.split('\n').map((x) => x.trim()).filter(Boolean) : [];
+    return r.code === 0
+      ? r.stdout
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean)
+      : [];
   }
 
   /** Убрать worktree прогона (вместе с незакоммиченным в ней). */
@@ -220,7 +245,7 @@ export class Git {
     const out = tracked + (await this.untracked(worktree)).map((f) => `A\0${f}\0`).join('');
     const parts = out.split('\0').filter(Boolean);
     const files: DiffFile[] = [];
-    for (let i = 0; i < parts.length; ) {
+    for (let i = 0; i < parts.length;) {
       const code = parts[i++];
       const st = code[0] as DiffFile['status'];
       let oldPath: string;
@@ -340,7 +365,13 @@ export class Git {
   async branches(repo: string): Promise<{ branches: string[]; current: string | null }> {
     const out = await this.git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
     const cur = (await run(this.bin, ['symbolic-ref', '--short', '-q', 'HEAD'], { cwd: repo, env: this.env })).stdout.trim();
-    return { branches: out.split('\n').map((x) => x.trim()).filter(Boolean), current: cur || null };
+    return {
+      branches: out
+        .split('\n')
+        .map((x) => x.trim())
+        .filter(Boolean),
+      current: cur || null,
+    };
   }
 
   /** Коммит ветки или другой ссылки. */
@@ -349,16 +380,34 @@ export class Git {
   }
 
   /** Локальные ветки и ветки origin без локальной копии, свежие сверху. fetch — сначала обновить origin. */
-  async allBranches(repo: string, fetch = false): Promise<{ branches: { name: string; remote: boolean; at: string }[]; current: string | null }> {
+  async allBranches(
+    repo: string,
+    fetch = false,
+  ): Promise<{ branches: { name: string; remote: boolean; at: string }[]; current: string | null }> {
     if (fetch) await this.git(repo, ['fetch', '--prune', 'origin'], 120_000).catch(() => undefined);
-    const out = await this.git(repo, ['for-each-ref', '--sort=-committerdate', '--format=%(refname)%09%(committerdate:iso-strict)', 'refs/heads', 'refs/remotes/origin']);
+    const out = await this.git(repo, [
+      'for-each-ref',
+      '--sort=-committerdate',
+      '--format=%(refname)%09%(committerdate:iso-strict)',
+      'refs/heads',
+      'refs/remotes/origin',
+    ]);
     const local = new Set<string>();
-    const rows = out.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
-      const [ref, at] = l.split('\t');
-      return { ref, at: at ?? '' };
-    });
+    const rows = out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [ref, at] = l.split('\t');
+        return { ref, at: at ?? '' };
+      });
     const branches: { name: string; remote: boolean; at: string }[] = [];
-    for (const r of rows) if (r.ref.startsWith('refs/heads/')) { const n = r.ref.slice(11); local.add(n); branches.push({ name: n, remote: false, at: r.at }); }
+    for (const r of rows)
+      if (r.ref.startsWith('refs/heads/')) {
+        const n = r.ref.slice(11);
+        local.add(n);
+        branches.push({ name: n, remote: false, at: r.at });
+      }
     for (const r of rows) {
       if (!r.ref.startsWith('refs/remotes/origin/')) continue;
       const n = r.ref.slice(20);
@@ -402,13 +451,19 @@ export class Git {
     try {
       const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir!, env: this.env })).stdout.trim();
       const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
-      const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], { cwd: dir!, env: this.env, timeoutMs: 120_000 });
+      const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], {
+        cwd: dir!,
+        env: this.env,
+        timeoutMs: 120_000,
+      });
       if (r.code !== 0) {
         const conflicts = (await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir!, env: this.env })).stdout.trim();
         await run(this.bin, ['merge', '--abort'], { cwd: dir!, env: this.env });
-        throw new Error(conflicts
-          ? `Конфликт при слиянии в ${target}, слияние отменено. Файлы:\n${conflicts}`
-          : `Слияние в ${target} не удалось: ${(r.stderr || r.stdout).trim().slice(-600)}`);
+        throw new Error(
+          conflicts
+            ? `Конфликт при слиянии в ${target}, слияние отменено. Файлы:\n${conflicts}`
+            : `Слияние в ${target} не удалось: ${(r.stderr || r.stdout).trim().slice(-600)}`,
+        );
       }
       return (await this.git(dir!, ['rev-parse', 'HEAD'])).trim();
     } finally {

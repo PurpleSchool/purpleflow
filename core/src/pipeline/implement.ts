@@ -8,7 +8,6 @@ import type { RunFile } from '../types.js';
 import { firstLine } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 export async function stageImplement(h: Orchestrator, run: RunFile) {
-
   // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
   // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
   if (!run.attempts.some((x) => x.stage === 'implement')) {
@@ -51,7 +50,12 @@ export async function stageImplement(h: Orchestrator, run: RunFile) {
       }
     } else {
       if (onClaude) run.executorSession = crypto.randomUUID();
-      res = await h.runRole(run, 'executor', { prompt, systemPrompt, openspec: true, sessionId: onClaude ? run.executorSession : undefined });
+      res = await h.runRole(run, 'executor', {
+        prompt,
+        systemPrompt,
+        openspec: true,
+        sessionId: onClaude ? run.executorSession : undefined,
+      });
     }
     h.afterAgent(run, attempt, res);
     await h.checkRelatedUntouched(run, related);
@@ -84,6 +88,10 @@ export async function dropArtifacts(h: Orchestrator, run: RunFile) {
   const changed = await git.changedFiles(run.worktreePath, h.diffBase(run)).catch(() => [] as string[]);
   const junk = changed.filter((f) => ARTIFACT_RE.test(f));
   if (!junk.length) return;
-  await git.restoreFromBase(run.worktreePath, h.diffBase(run), junk).catch((e) => h.warn(run, `Не удалось откатить сборочные артефакты (${junk.join(', ')}) — они попадут в дифф: ${(e as Error).message}`));
+  await git
+    .restoreFromBase(run.worktreePath, h.diffBase(run), junk)
+    .catch((e) =>
+      h.warn(run, `Не удалось откатить сборочные артефакты (${junk.join(', ')}) — они попадут в дифф: ${(e as Error).message}`),
+    );
   h.log(run, c.dim(`Откатил сборочные артефакты, которые попали в изменения: ${junk.join(', ')}`) + '\n');
 }

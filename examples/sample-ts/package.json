@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Небольшой TypeScript-проект для проверки PurpleFlow: без зависимостей, тесты на встроенном node:test.",
-  "engines": { "node": ">=22.18" },
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "test": "node --test"
   }

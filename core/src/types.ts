@@ -59,7 +59,8 @@ export interface CoreSettings {
   testTimeoutMin: number;
 }
 
-export type StageId = 'baseline' | 'clarify' | 'gate0' | 'plan' | 'gate1' | 'implement' | 'tests' | 'visual' | 'review' | 'gate2' | 'limit' | 'finish';
+export type StageId =
+  'baseline' | 'clarify' | 'gate0' | 'plan' | 'gate1' | 'implement' | 'tests' | 'visual' | 'review' | 'gate2' | 'limit' | 'finish';
 
 /** Режим работы: какие стадии и правила применяются к задаче. */
 export type RunMode = 'quick' | 'bug' | 'task' | 'epic' | 'refactor';
@@ -329,7 +330,15 @@ export interface RunFile {
   /** Доработка по замечаниям PR: номер текущего круга (первый — исходная реализация) и коммит, от которого считается дифф круга. */
   prRound?: number;
   roundBase?: string;
-  prRounds?: { round: number; at: string; items: PrFollowupItem[]; note?: string; commit?: string; kind?: 'comments' | 'update'; conflicts?: string[] }[];
+  prRounds?: {
+    round: number;
+    at: string;
+    items: PrFollowupItem[];
+    note?: string;
+    commit?: string;
+    kind?: 'comments' | 'update';
+    conflicts?: string[];
+  }[];
   /** Круг «Обновить ветку» без конфликтов: после зелёных проверок — сразу push, без приёмки. */
   mergeOnly?: boolean;
   /** Файлы, по которым показывать дифф круга (разрешённые конфликты), — не весь влитый код базовой ветки. */

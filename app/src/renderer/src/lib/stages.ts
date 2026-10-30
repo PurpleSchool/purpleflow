@@ -30,14 +30,31 @@ export const MODES: ModeDef[] = [
 ];
 
 const BASE: Record<StageId, StageDef> = {
-  baseline: { id: 'baseline', title: 'Базовые проверки', actor: 'оркестратор', hint: 'Линтер и тесты зелёные до начала — эталон поведения' },
-  clarify: { id: 'clarify', title: 'Уточнение', actor: 'claude', role: 'planner', hint: 'Вопросы по задаче, если она неоднозначна — иначе сразу к плану' },
+  baseline: {
+    id: 'baseline',
+    title: 'Базовые проверки',
+    actor: 'оркестратор',
+    hint: 'Линтер и тесты зелёные до начала — эталон поведения',
+  },
+  clarify: {
+    id: 'clarify',
+    title: 'Уточнение',
+    actor: 'claude',
+    role: 'planner',
+    hint: 'Вопросы по задаче, если она неоднозначна — иначе сразу к плану',
+  },
   gate0: { id: 'gate0', title: 'Ответы на вопросы', actor: 'человек', gate: true, hint: '' },
   plan: { id: 'plan', title: 'План', actor: 'claude', role: 'planner', hint: 'Изменение OpenSpec: proposal, tasks, дельты спецификаций' },
   gate1: { id: 'gate1', title: 'Утверждение плана', actor: 'человек', gate: true, hint: 'Принять, вернуть с комментарием или отменить' },
   implement: { id: 'implement', title: 'Реализация', actor: 'claude', role: 'executor', hint: 'Выполняет tasks.md на ветке прогона' },
   tests: { id: 'tests', title: 'Проверки', actor: 'оркестратор', hint: 'Линтер и тесты проекта' },
-  visual: { id: 'visual', title: 'Визуальная проверка', actor: 'claude', role: 'executor', hint: 'Запускает приложение, проходит сценарии в браузере, снимает скриншоты' },
+  visual: {
+    id: 'visual',
+    title: 'Визуальная проверка',
+    actor: 'claude',
+    role: 'executor',
+    hint: 'Запускает приложение, проходит сценарии в браузере, снимает скриншоты',
+  },
   review: { id: 'review', title: 'Ревью', actor: 'codex', role: 'reviewer', hint: 'Другая модель сверяет дифф с планом' },
   gate2: { id: 'gate2', title: 'Приёмка', actor: 'человек', gate: true, hint: 'Дифф, замечания ревью и ваши замечания' },
   limit: { id: 'limit', title: 'Нужно решение', actor: 'человек', gate: true, hint: '' },
@@ -78,7 +95,10 @@ export const runStages = (run: Pick<RunFile, 'mode' | 'visual'> & { attempts?: R
   const rows = old ? all.filter((s) => s.id !== 'clarify') : all;
   // Исходные проверки идут в фоне с уточнения — строка появляется, когда они запущены.
   if (rows[0]?.id !== 'baseline' && run.attempts?.some((a) => a.stage === 'baseline')) {
-    return [{ ...BASE.baseline, hint: 'Код до правок: подготовка и линтер — пока идёт уточнение, тесты задачи — пока вы смотрите план' }, ...rows];
+    return [
+      { ...BASE.baseline, hint: 'Код до правок: подготовка и линтер — пока идёт уточнение, тесты задачи — пока вы смотрите план' },
+      ...rows,
+    ];
   }
   return rows;
 };
@@ -90,8 +110,6 @@ export const stageTitle = (run: Pick<RunFile, 'mode' | 'visual'>, id: StageId) =
   runStages(run).find((s) => s.id === id)?.title ?? BASE[id]?.title ?? id;
 
 export type NodeState = 'idle' | 'active' | 'waiting' | 'done' | 'failed' | 'stopped' | 'stale';
-
-
 
 function order(run: RunFile, id: StageId): number {
   const ids = runStages(run).map((s) => s.id);
@@ -126,7 +144,6 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   if (a.status === 'stopped') return 'stopped';
   return 'done';
 }
-
 
 export function attemptsOf(run: RunFile, stage: StageId): StageAttempt[] {
   return run.attempts.filter((a) => a.stage === stage);

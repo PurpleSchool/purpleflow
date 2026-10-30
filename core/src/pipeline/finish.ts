@@ -32,16 +32,19 @@ export async function stageFinish(h: Orchestrator, run: RunFile) {
   try {
     // Быстрая правка идёт без OpenSpec: run.json остаётся в данных прогона, но не в коммите проекта.
     const exclude = [
-      ...(modeOf(run) === 'quick' && RunStore.inProject(run) ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')] : []),
+      ...(modeOf(run) === 'quick' && RunStore.inProject(run)
+        ? [path.relative(run.worktreePath, RunStore.runJsonPath(run)).split(path.sep).join('/')]
+        : []),
       // Скопированные файлы окружения — секреты разработчика, в коммит не попадают даже без .gitignore.
       ...h.envFilesOf(run),
     ];
     const round = run.prRound && run.pr ? run.prRounds?.at(-1) : undefined;
-    const message = round?.kind === 'update'
-      ? `Merge ${run.pr!.base} в ${run.branch}${round.conflicts?.length ? `\n\nРазрешены конфликты:\n${round.conflicts.map((f) => `- ${f}`).join('\n')}` : ''}\n\nPurpleFlow run: ${run.id}`
-      : round
-      ? `purpleflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
-      : `purpleflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
+    const message =
+      round?.kind === 'update'
+        ? `Merge ${run.pr!.base} в ${run.branch}${round.conflicts?.length ? `\n\nРазрешены конфликты:\n${round.conflicts.map((f) => `- ${f}`).join('\n')}` : ''}\n\nPurpleFlow run: ${run.id}`
+        : round
+          ? `purpleflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
+          : `purpleflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
     sha = await git.commitAll(run.worktreePath, message, exclude);
   } catch (e) {
     // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.
@@ -68,11 +71,19 @@ export async function stageFinish(h: Orchestrator, run: RunFile) {
       h.log(run, c.amber(`! ${run.message}`) + '\n');
     }
   }
-  h.log(run, sha === run.baseCommit
-    ? c.amber(`! изменений нет — коммит в ${run.branch} не создан`) + '\n'
-    : c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n');
+  h.log(
+    run,
+    sha === run.baseCommit
+      ? c.amber(`! изменений нет — коммит в ${run.branch} не создан`) + '\n'
+      : c.mint(`✓ коммит ${sha.slice(0, 8)} в ветке ${run.branch}. Слияние — за вами.`) + '\n',
+  );
   if (run.workspace === 'branch') {
-    h.log(run, c.dim(`Проект остался на ветке ${run.branch} — можно посмотреть результат.${run.originalBranch ? ` Вернуться: git checkout ${run.originalBranch}` : ''}`) + '\n');
+    h.log(
+      run,
+      c.dim(
+        `Проект остался на ветке ${run.branch} — можно посмотреть результат.${run.originalBranch ? ` Вернуться: git checkout ${run.originalBranch}` : ''}`,
+      ) + '\n',
+    );
   }
   h.emit({ type: 'run.updated', run });
   h.emit({ type: 'run.finished', runId: run.id, status: 'finished' });

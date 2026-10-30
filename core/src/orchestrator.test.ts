@@ -27,7 +27,9 @@ test('planTitle: подчёркивания в идентификаторах с
 });
 
 test('parseReview: origin повторного ревью сохраняется, неизвестный и null — отбрасываются', () => {
-  const r = parseReview('{"blocking":[{"file":"a.ts","line":3,"message":"x","origin":"unfixed"},{"file":null,"line":null,"message":"z","origin":"weird"}],"notes":[{"file":null,"line":null,"message":"y","origin":null}]}');
+  const r = parseReview(
+    '{"blocking":[{"file":"a.ts","line":3,"message":"x","origin":"unfixed"},{"file":null,"line":null,"message":"z","origin":"weird"}],"notes":[{"file":null,"line":null,"message":"y","origin":null}]}',
+  );
   assert.equal(r?.blocking[0].origin, 'unfixed');
   assert.equal(r?.blocking[1].origin, undefined);
   assert.equal(r?.notes[0].origin, undefined);

@@ -55,7 +55,13 @@ export function activeClock(run: RunFile, now = Date.now(), opts: { compressGate
   // Ожидание человека на шкале — фиксированный слот: час на приёмке не должен сплющивать работу агентов.
   const gateSpans = run.attempts
     .filter((a) => GATES.includes(a.stage))
-    .map((a) => [Date.parse(a.startedAt), a.endedAt ? Date.parse(a.endedAt) : a.status === 'running' ? now : Date.parse(a.startedAt)] as [number, number])
+    .map(
+      (a) =>
+        [Date.parse(a.startedAt), a.endedAt ? Date.parse(a.endedAt) : a.status === 'running' ? now : Date.parse(a.startedAt)] as [
+          number,
+          number,
+        ],
+    )
     .filter(([s, e]) => e > s);
   const gateMs = gateSpans.reduce((n, [s, e]) => n + (map(e) - map(s)), 0);
   const slot = Math.max(2000, (total - gateMs) * 0.05);

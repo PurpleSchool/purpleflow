@@ -15,7 +15,9 @@ try {
     if (localStorage.getItem(next) === null) localStorage.setItem(next, localStorage.getItem(key)!);
     localStorage.removeItem(key);
   }
-} catch { /* хранилище недоступно — настройки окна просто начнутся с нуля */ }
+} catch {
+  /* хранилище недоступно — настройки окна просто начнутся с нуля */
+}
 
 // Нативное стекло окна: CSS убирает непрозрачный фон и кладёт тонировку поверх обоев.
 document.documentElement.dataset.material = window.purpleflow.material;

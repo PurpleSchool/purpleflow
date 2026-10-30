@@ -20,7 +20,8 @@ const ACTION_TITLE: Record<ControlAction['kind'], string> = {
 export async function control(h: Orchestrator, id: string, action: ControlAction) {
   const before = h.mustLoad(id);
   if (!availableActions(before).includes(action.kind)) {
-    if (action.kind === 'replan' && replansLeft(before) <= 0) throw new Error('Возвращаться к плану можно не больше двух раз за прогон — отмените задачу или начните новую');
+    if (action.kind === 'replan' && replansLeft(before) <= 0)
+      throw new Error('Возвращаться к плану можно не больше двух раз за прогон — отмените задачу или начните новую');
     throw new Error(`Сейчас нельзя: ${ACTION_TITLE[action.kind]}`);
   }
   const text = 'text' in action ? action.text.trim() : '';
@@ -28,9 +29,17 @@ export async function control(h: Orchestrator, id: string, action: ControlAction
   const now = new Date().toISOString();
 
   if (action.kind === 'note' || action.kind === 'pause') {
-    before.pending = [...(before.pending ?? []).filter((p) => !(p.kind === 'pause' && action.kind === 'pause')), { ...action, ...(text ? { text } : {}), at: now } as ControlAction & { at: string }];
+    before.pending = [
+      ...(before.pending ?? []).filter((p) => !(p.kind === 'pause' && action.kind === 'pause')),
+      { ...action, ...(text ? { text } : {}), at: now } as ControlAction & { at: string },
+    ];
     before.interventions = [...(before.interventions ?? []), { at: now, kind: action.kind, text: text || undefined }];
-    h.log(before, c.violet(action.kind === 'pause' ? '⏸ пауза перед следующей стадией' : `✎ заметка человека — уйдёт агенту при следующем запуске:\n${text}`) + '\n');
+    h.log(
+      before,
+      c.violet(
+        action.kind === 'pause' ? '⏸ пауза перед следующей стадией' : `✎ заметка человека — уйдёт агенту при следующем запуске:\n${text}`,
+      ) + '\n',
+    );
     h.save(before);
     return;
   }
@@ -49,7 +58,10 @@ export async function control(h: Orchestrator, id: string, action: ControlAction
   if (action.kind === 'restart') {
     r.next = 'implement';
     r.implAttemptsLimit = Math.max(r.implAttemptsLimit, r.implAttemptsUsed + 1);
-    r.feedback = merge(r.feedback?.source === 'human' ? undefined : r.feedback, `Человек прервал попытку и просит переделать так:\n${text}`);
+    r.feedback = merge(
+      r.feedback?.source === 'human' ? undefined : r.feedback,
+      `Человек прервал попытку и просит переделать так:\n${text}`,
+    );
     r.interventions = [...(r.interventions ?? []), { at: now, kind: 'restart', text, appliedAt: now }];
     h.log(r, c.violet(`↻ человек прервал попытку: переделать — ${text}`) + '\n');
   } else {
@@ -76,9 +88,12 @@ async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boo
     h.warn(r, `Не удалось сохранить снимок работы перед возвратом к плану: ${(e as Error).message}`);
   }
   // Файлы плана (openspec/) правит планировщик — их не откатываем.
-  const code = (await git.changedFiles(r.worktreePath, base).catch(() => [] as string[])).filter((f) => !f.startsWith('openspec/') && !h.envFilesOf(r).includes(f));
+  const code = (await git.changedFiles(r.worktreePath, base).catch(() => [] as string[])).filter(
+    (f) => !f.startsWith('openspec/') && !h.envFilesOf(r).includes(f),
+  );
   if (!keepCode && code.length) {
-    if (!snapshot) throw new Error('Снимок работы не сохранился — откатывать код без него не буду. Попробуйте вернуться к плану с сохранением кода.');
+    if (!snapshot)
+      throw new Error('Снимок работы не сохранился — откатывать код без него не буду. Попробуйте вернуться к плану с сохранением кода.');
     await git.restoreFromBase(r.worktreePath, base, code);
     r.executorSession = undefined;
   }
@@ -87,10 +102,17 @@ async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boo
     source: 'human',
     text: h.prompts.render('replan.md', {
       reason,
-      files: code.length ? code.slice(0, 80).map((f) => `- \`${f}\``).join('\n') : '(код ещё не менялся)',
-      code: !code.length ? '' : keepCode
-        ? 'Код этих попыток остался в рабочей копии — исполнитель продолжит с него. Если что-то из сделанного больше не нужно, явно напиши об этом в tasks.md.'
-        : `Код этих попыток откачен к исходному состоянию — исполнитель начнёт заново по новому плану (снимок сохранён в \`${ref}\`).`,
+      files: code.length
+        ? code
+            .slice(0, 80)
+            .map((f) => `- \`${f}\``)
+            .join('\n')
+        : '(код ещё не менялся)',
+      code: !code.length
+        ? ''
+        : keepCode
+          ? 'Код этих попыток остался в рабочей копии — исполнитель продолжит с него. Если что-то из сделанного больше не нужно, явно напиши об этом в tasks.md.'
+          : `Код этих попыток откачен к исходному состоянию — исполнитель начнёт заново по новому плану (снимок сохранён в \`${ref}\`).`,
       report: (impl?.output ?? impl?.summary ?? '(исполнитель не оставил отчёта)').slice(0, 4000),
     }),
   };
@@ -124,7 +146,10 @@ export function applyPending(h: Orchestrator, run: RunFile): boolean {
   const applied = new Set(list.filter((p) => taken.has(p)).map((p) => p.at));
   for (const i of run.interventions ?? []) if (applied.has(i.at) && !i.appliedAt) i.appliedAt = now;
   if (notes.length) {
-    run.feedback = merge(run.feedback, `Заметки человека, оставленные во время работы, — учти их:\n${notes.map((p) => `- ${'text' in p ? p.text : ''}`).join('\n')}`);
+    run.feedback = merge(
+      run.feedback,
+      `Заметки человека, оставленные во время работы, — учти их:\n${notes.map((p) => `- ${'text' in p ? p.text : ''}`).join('\n')}`,
+    );
     h.log(run, c.violet(`✎ заметки человека переданы: ${STAGE_TITLES[run.next]}`) + '\n');
   }
   h.save(run);

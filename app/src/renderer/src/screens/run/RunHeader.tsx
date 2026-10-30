@@ -36,17 +36,30 @@ export function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
           <div className="pop delete-pop" role="dialog" aria-label="Удалить прогон">
             <strong>Удалить прогон?</strong>
             <p>
-              {run.status === 'running' ? 'Прогон ещё идёт — он будет остановлен. ' : run.status === 'waiting' ? 'Прогон ждёт вашего решения — он будет закрыт без него. ' : ''}
-              {run.workspace === 'branch' ? 'Удалятся лог, скриншоты и запись в истории. Файлы проекта не трогаем.' : 'Удалятся рабочая копия прогона (worktree), лог, скриншоты и запись в истории. Ваш проект не изменится.'}
+              {run.status === 'running'
+                ? 'Прогон ещё идёт — он будет остановлен. '
+                : run.status === 'waiting'
+                  ? 'Прогон ждёт вашего решения — он будет закрыт без него. '
+                  : ''}
+              {run.workspace === 'branch'
+                ? 'Удалятся лог, скриншоты и запись в истории. Файлы проекта не трогаем.'
+                : 'Удалятся рабочая копия прогона (worktree), лог, скриншоты и запись в истории. Ваш проект не изменится.'}
             </p>
             <label className="check">
               <input type="checkbox" checked={withBranch} onChange={(e) => setWithBranch(e.target.checked)} />
-              <span>Удалить и ветку <code>{run.branch}</code>{run.merged ? ' (уже влита)' : run.commit ? ' — в ней коммит с результатом' : ''}</span>
+              <span>
+                Удалить и ветку <code>{run.branch}</code>
+                {run.merged ? ' (уже влита)' : run.commit ? ' — в ней коммит с результатом' : ''}
+              </span>
             </label>
             {error && <p className="pop-error">{error}</p>}
             <div className="pop-actions">
-              <Button tone="quiet" disabled={busy} onClick={() => setOpen(false)}>Отмена</Button>
-              <Button tone="danger" icon={<Trash2 size={14} />} busy={busy} onClick={() => void remove()}>Удалить</Button>
+              <Button tone="quiet" disabled={busy} onClick={() => setOpen(false)}>
+                Отмена
+              </Button>
+              <Button tone="danger" icon={<Trash2 size={14} />} busy={busy} onClick={() => void remove()}>
+                Удалить
+              </Button>
             </div>
           </div>
         </>
@@ -63,12 +76,23 @@ export function Banner({ run }: { run: RunFile }) {
         <Clock3 size={18} />
         <div>
           <strong>В очереди</strong>
-          <p>Начнётся сам, когда освободится место — лимит одновременных прогонов задаётся в «Настройки → Модели». «Запустить сейчас» — без очереди.</p>
+          <p>
+            Начнётся сам, когда освободится место — лимит одновременных прогонов задаётся в «Настройки → Модели». «Запустить сейчас» — без
+            очереди.
+          </p>
         </div>
       </div>
     );
   }
-  if (run.status === 'cancelled') return <div className="banner b-quiet"><X size={18} /><div><strong>Прогон отменён</strong></div></div>;
+  if (run.status === 'cancelled')
+    return (
+      <div className="banner b-quiet">
+        <X size={18} />
+        <div>
+          <strong>Прогон отменён</strong>
+        </div>
+      </div>
+    );
   if (run.status === 'stopped' && run.message) {
     const failed = run.attempts.some((a) => a.status === 'failed' && a.error === run.message);
     return (
@@ -112,14 +136,25 @@ export function LongRunBanner({ run, limitMin }: { run: RunFile; limitMin: numbe
     <div className="banner b-amber">
       <Clock3 size={18} />
       <div>
-        <strong>{STAGE_TITLES_RU[a.stage] ?? 'Агент'} идёт уже {min} мин — дольше обычного</strong>
-        <p>Агент не завис: его останавливают, только если он молчит {limitMin} мин, или через {limitMin * 4} мин. Посмотрите «Лог» — если он ходит по кругу, нажмите «Стоп» и дайте подсказку при продолжении; иначе можно подождать.</p>
+        <strong>
+          {STAGE_TITLES_RU[a.stage] ?? 'Агент'} идёт уже {min} мин — дольше обычного
+        </strong>
+        <p>
+          Агент не завис: его останавливают, только если он молчит {limitMin} мин, или через {limitMin * 4} мин. Посмотрите «Лог» — если он
+          ходит по кругу, нажмите «Стоп» и дайте подсказку при продолжении; иначе можно подождать.
+        </p>
       </div>
     </div>
   );
 }
 
-export const STAGE_TITLES_RU: Partial<Record<StageId, string>> = { clarify: 'Уточнение', plan: 'План', implement: 'Реализация', review: 'Ревью', visual: 'Визуальная проверка' };
+export const STAGE_TITLES_RU: Partial<Record<StageId, string>> = {
+  clarify: 'Уточнение',
+  plan: 'План',
+  implement: 'Реализация',
+  review: 'Ревью',
+  visual: 'Визуальная проверка',
+};
 
 /** Готовый прогон: влить ветку purpleflow/<id> в выбранную ветку — прямо в строке статуса. */
 export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
@@ -132,18 +167,28 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
 
   useEffect(() => {
     if (run.merged || run.pr) return;
-    void window.purpleflow.core.listBranches(runId).then((b) => {
-      setBranches(b.branches);
-      setTarget((t) => t || b.suggested || b.current || b.branches[0] || '');
-    }).catch((e) => setError(cleanErr(e)));
-    void window.purpleflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
+    void window.purpleflow.core
+      .listBranches(runId)
+      .then((b) => {
+        setBranches(b.branches);
+        setTarget((t) => t || b.suggested || b.current || b.branches[0] || '');
+      })
+      .catch((e) => setError(cleanErr(e)));
+    void window.purpleflow.core
+      .prReady(runId)
+      .then(setPrWhy)
+      .catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
   }, [runId, run.merged, run.pr]);
 
   // Открытый PR: статус проверок CI — при открытии прогона и после обновления на вкладке «Pull Request», без фонового опроса.
   useEffect(() => {
     if (!run.pr) return;
     let alive = true;
-    const load = () => void window.purpleflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
+    const load = () =>
+      void window.purpleflow.core
+        .getPrStatus(runId)
+        .then((x) => alive && setPr(x))
+        .catch((e) => alive && setError(cleanErr(e)));
     load();
     const off = onPrRefreshed(runId, (st) => alive && setPr(st));
     return () => {
@@ -172,7 +217,15 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   if (run.pr) {
     const c = pr?.checks;
     const ciState = !pr ? 'loading' : !c?.total ? 'none' : c.failed ? 'failed' : c.pending ? 'pending' : 'ok';
-    const ciText = !pr ? '…' : !c?.total ? 'без проверок CI' : c.failed ? `проверки: ${c.failed} упало` : c.pending ? `проверки идут ${c.passed}/${c.total}` : `проверки ✓ ${c.passed}/${c.total}`;
+    const ciText = !pr
+      ? '…'
+      : !c?.total
+        ? 'без проверок CI'
+        : c.failed
+          ? `проверки: ${c.failed} упало`
+          : c.pending
+            ? `проверки идут ${c.passed}/${c.total}`
+            : `проверки ✓ ${c.passed}/${c.total}`;
     const merged = pr?.state === 'MERGED' || Boolean(run.merged);
     return (
       <span className="merge-inline">
@@ -181,7 +234,9 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
           {!merged && <span className="pr-ci">· {ciText}</span>}
         </a>
         {merged ? (
-          <span className="chip merged"><GitMerge size={12} /> PR влит</span>
+          <span className="chip merged">
+            <GitMerge size={12} /> PR влит
+          </span>
         ) : pr?.state === 'CLOSED' ? (
           <span className="chip">PR закрыт</span>
         ) : (
@@ -191,13 +246,27 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
             icon={<GitMerge size={14} />}
             busy={busy === 'prMerge'}
             disabled={!pr || pr.conflicts || ciState === 'failed' || ciState === 'pending'}
-            title={pr?.conflicts ? 'Конфликт с базовой веткой — разрешите на GitHub' : ciState === 'failed' ? 'Проверки CI упали' : ciState === 'pending' ? 'Ждём проверки CI' : pr?.blocked ? 'GitHub может потребовать ревью или обязательные проверки' : 'gh pr merge --merge'}
+            title={
+              pr?.conflicts
+                ? 'Конфликт с базовой веткой — разрешите на GitHub'
+                : ciState === 'failed'
+                  ? 'Проверки CI упали'
+                  : ciState === 'pending'
+                    ? 'Ждём проверки CI'
+                    : pr?.blocked
+                      ? 'GitHub может потребовать ревью или обязательные проверки'
+                      : 'gh pr merge --merge'
+            }
             onClick={() => void act('prMerge')}
           >
             Влить PR
           </Button>
         )}
-        {error && <span className="merge-error" title={error}>{error}</span>}
+        {error && (
+          <span className="merge-error" title={error}>
+            {error}
+          </span>
+        )}
       </span>
     );
   }
@@ -236,10 +305,22 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
       >
         Создать PR
       </Button>
-      <Button tone="approve" className="merge-btn" icon={<GitMerge size={14} />} busy={busy === 'merge'} disabled={!target || busy !== null} onClick={() => void act('merge')} title="Влить локально, без GitHub">
+      <Button
+        tone="approve"
+        className="merge-btn"
+        icon={<GitMerge size={14} />}
+        busy={busy === 'merge'}
+        disabled={!target || busy !== null}
+        onClick={() => void act('merge')}
+        title="Влить локально, без GitHub"
+      >
         Влить
       </Button>
-      {error && <span className="merge-error" title={error}>{error}</span>}
+      {error && (
+        <span className="merge-error" title={error}>
+          {error}
+        </span>
+      )}
     </span>
   );
 }
@@ -251,19 +332,28 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
   useEffect(() => {
     let alive = true;
     void Promise.all(files.map((_, i) => window.purpleflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [runId, files.length]);
   return (
     <>
       <div className="desc-images">
-        {files.map((f, i) => urls[i] ? (
-          <button key={i} className="imgdrop-thumb" onClick={() => setBig(urls[i])} title="Открыть"><img src={urls[i]!} alt={`Изображение ${i + 1}`} /></button>
-        ) : (
-          <button key={i} className="file-chip" onClick={() => void window.purpleflow.openPath(f)} title={f}>
-            <FileText size={16} />
-            <span className="file-chip-text"><strong>{f.split(/[\\/]/).pop()!.replace(/^\d+-/, '')}</strong><small>открыть</small></span>
-          </button>
-        ))}
+        {files.map((f, i) =>
+          urls[i] ? (
+            <button key={i} className="imgdrop-thumb" onClick={() => setBig(urls[i])} title="Открыть">
+              <img src={urls[i]!} alt={`Изображение ${i + 1}`} />
+            </button>
+          ) : (
+            <button key={i} className="file-chip" onClick={() => void window.purpleflow.openPath(f)} title={f}>
+              <FileText size={16} />
+              <span className="file-chip-text">
+                <strong>{f.split(/[\\/]/).pop()!.replace(/^\d+-/, '')}</strong>
+                <small>открыть</small>
+              </span>
+            </button>
+          ),
+        )}
       </div>
       {big && <Lightbox src={big} onClose={() => setBig(null)} />}
     </>
@@ -277,10 +367,31 @@ export function MetricsInline({ run }: { run: RunFile }) {
   const total = usageTotal(run.totals);
   return (
     <dl className="metrics-inline">
-      <div title="Сколько работали агенты и проверки — без ожидания вашего решения и пауз"><dt>Время агентов</dt><dd><Num animate={false} text={ms(agentTime(run, now))} /></dd></div>
-      <div><dt>Запусков стадий</dt><dd><Num text={String(runs)} /></dd></div>
-      <div title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}><dt>Токены</dt><dd><Num text={total ? tokens(total) : '—'} /></dd></div>
-      <div><dt>Попытки</dt><dd><Num text={`${run.implAttemptsUsed}`} /><small>/ {run.implAttemptsLimit}</small></dd></div>
+      <div title="Сколько работали агенты и проверки — без ожидания вашего решения и пауз">
+        <dt>Время агентов</dt>
+        <dd>
+          <Num animate={false} text={ms(agentTime(run, now))} />
+        </dd>
+      </div>
+      <div>
+        <dt>Запусков стадий</dt>
+        <dd>
+          <Num text={String(runs)} />
+        </dd>
+      </div>
+      <div title={`вход ${run.totals.input}, выход ${run.totals.output}, кэш ${run.totals.cacheRead + run.totals.cacheWrite}`}>
+        <dt>Токены</dt>
+        <dd>
+          <Num text={total ? tokens(total) : '—'} />
+        </dd>
+      </div>
+      <div>
+        <dt>Попытки</dt>
+        <dd>
+          <Num text={`${run.implAttemptsUsed}`} />
+          <small>/ {run.implAttemptsLimit}</small>
+        </dd>
+      </div>
     </dl>
   );
 }
@@ -291,9 +402,13 @@ export function Num({ text, animate = true }: { text: string; animate?: boolean 
   return (
     <>
       {parts.map((p, i) =>
-        /^[\d$]/.test(p)
-          ? <span key={animate ? `${i}:${p}` : i} className={animate ? 'num-in' : undefined}>{p}</span>
-          : <small key={i}>{p}</small>,
+        /^[\d$]/.test(p) ? (
+          <span key={animate ? `${i}:${p}` : i} className={animate ? 'num-in' : undefined}>
+            {p}
+          </span>
+        ) : (
+          <small key={i}>{p}</small>
+        ),
       )}
     </>
   );
@@ -309,9 +424,13 @@ export function Warnings({ run }: { run: RunFile }) {
       <TriangleAlert size={18} />
       <div>
         <strong>{list.length === 1 ? 'Предупреждение' : `Предупреждений: ${list.length}`}</strong>
-        {list.slice(-3).map((w, i) => <p key={i}>{w.text}</p>)}
+        {list.slice(-3).map((w, i) => (
+          <p key={i}>{w.text}</p>
+        ))}
       </div>
-      <button className="link" onClick={() => setHidden(run.warnings?.length ?? 0)}>Скрыть</button>
+      <button className="link" onClick={() => setHidden(run.warnings?.length ?? 0)}>
+        Скрыть
+      </button>
     </div>
   );
 }

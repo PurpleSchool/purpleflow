@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 const web = args.includes('--web');
-const target = path.resolve(args.find((a) => !a.startsWith('--')) ?? path.join(os.homedir(), web ? 'purpleflow-sample-web' : 'purpleflow-sample'));
+const target = path.resolve(
+  args.find((a) => !a.startsWith('--')) ?? path.join(os.homedir(), web ? 'purpleflow-sample-web' : 'purpleflow-sample'),
+);
 if (fs.existsSync(target) && fs.readdirSync(target).length) {
   console.error(`Папка ${target} не пуста`);
   process.exit(1);

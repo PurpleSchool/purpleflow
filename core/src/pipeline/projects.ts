@@ -10,28 +10,52 @@ import { parseJsonReply } from '../json.js';
 import { ARTIFACT_RE } from '../reviewdiff.js';
 import { killGroup, run as runProc } from '../proc.js';
 import { projectStats as computeProjectStats } from '../stats.js';
-import type { NextPartDraft, EnvCheck, ProjectListItem, ProjectOverview, ProjectStats, ProjectBranches, ProjectKnowledge, AiCommands, ModeSuggestion, ProjectConfig, RelatedRepo, RunMode, RunFile, StageAttempt } from '../types.js';
+import type {
+  NextPartDraft,
+  EnvCheck,
+  ProjectListItem,
+  ProjectOverview,
+  ProjectStats,
+  ProjectBranches,
+  ProjectKnowledge,
+  AiCommands,
+  ModeSuggestion,
+  ProjectConfig,
+  RelatedRepo,
+  RunMode,
+  RunFile,
+  StageAttempt,
+} from '../types.js';
 import { expandPorts, parseNextParts, portEnv, waitForUrl } from '../shared.js';
 import type { Orchestrator } from '../orchestrator.js';
 import { prepareApp } from './workspace.js';
-export function knowledgeOf(h: Orchestrator, repo: string) : ProjectKnowledge {
+export function knowledgeOf(h: Orchestrator, repo: string): ProjectKnowledge {
   return h.getProjectConfig(repo)?.knowledge ?? {};
 }
 
 export function updateKnowledge(h: Orchestrator, repo: string, fn: (k: ProjectKnowledge) => ProjectKnowledge) {
   const all = h.store.readProjects();
   const key = path.resolve(repo);
-  const cfg: ProjectConfig = all[key] ?? { setupCommand: '', lintCommand: '', testCommand: '', notes: { setup: '', lint: '', test: '' }, updatedAt: new Date().toISOString() };
+  const cfg: ProjectConfig = all[key] ?? {
+    setupCommand: '',
+    lintCommand: '',
+    testCommand: '',
+    notes: { setup: '', lint: '', test: '' },
+    updatedAt: new Date().toISOString(),
+  };
   h.store.writeProject(key, { ...cfg, knowledge: fn(cfg.knowledge ?? {}) });
 }
 
 /** Блок для системного промпта агентов. */
-export function knowledgeBlock(h: Orchestrator, run: RunFile) : string {
+export function knowledgeBlock(h: Orchestrator, run: RunFile): string {
   const k = h.knowledgeOf(run.projectPath);
   const lessons = k.lessons?.map((l) => `- ${l.text}`).join('\n');
   const related = relatedBlock(h, run.projectPath);
   if (!k.profile && !lessons) return related;
-  return related + `\n\n## Знания о проекте\n\nСобраны в прошлых прогонах — опирайся на них, но если код говорит иное, верь коду.${k.profile ? `\n\n### Профиль\n\n${k.profile.trim()}` : ''}${lessons ? `\n\n### Уроки прошлых прогонов\n\n${lessons}` : ''}`;
+  return (
+    related +
+    `\n\n## Знания о проекте\n\nСобраны в прошлых прогонах — опирайся на них, но если код говорит иное, верь коду.${k.profile ? `\n\n### Профиль\n\n${k.profile.trim()}` : ''}${lessons ? `\n\n### Уроки прошлых прогонов\n\n${lessons}` : ''}`
+  );
 }
 
 /** Соседние репозитории проекта, которые есть на диске. */
@@ -66,10 +90,20 @@ export async function checkRelatedUntouched(h: Orchestrator, run: RunFile, befor
   if (!before.size) return;
   const after = await relatedState(h, run.projectPath);
   const changed = [...before].filter(([p, f]) => after.has(p) && after.get(p) !== f).map(([p]) => p);
-  if (changed.length) h.warn(run, `Пока работал исполнитель, изменились соседние репозитории: ${changed.join(', ')}. Агентам туда писать нельзя — проверьте git status в них, если меняли не вы.`);
+  if (changed.length)
+    h.warn(
+      run,
+      `Пока работал исполнитель, изменились соседние репозитории: ${changed.join(', ')}. Агентам туда писать нельзя — проверьте git status в них, если меняли не вы.`,
+    );
 }
 
-export async function profileFor(h: Orchestrator, repo: string, cwd: string, onOutput: (t: string) => void, group: string) : Promise<AgentResult> {
+export async function profileFor(
+  h: Orchestrator,
+  repo: string,
+  cwd: string,
+  onOutput: (t: string) => void,
+  group: string,
+): Promise<AgentResult> {
   return h.service({ prompt: h.prompts.raw('profile.md'), cwd, group, onOutput, timeoutMs: 10 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
 }
 
@@ -90,14 +124,14 @@ export async function ensureProfile(h: Orchestrator, run: RunFile, attempt: Stag
 }
 
 /** Пересобрать профиль по кнопке в «Знаниях о проекте». */
-export async function refreshProfile(h: Orchestrator, repo: string) : Promise<ProjectKnowledge> {
+export async function refreshProfile(h: Orchestrator, repo: string): Promise<ProjectKnowledge> {
   const res = await h.profileFor(repo, repo, () => {}, `profile-${Date.now()}`);
   if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Нейросеть вернула пустой профиль');
   h.updateKnowledge(repo, (k) => ({ ...k, profile: res.text.trim(), profileAt: new Date().toISOString() }));
   return h.knowledgeOf(repo);
 }
 
-export function saveKnowledge(h: Orchestrator, repo: string, k: ProjectKnowledge) : ProjectKnowledge {
+export function saveKnowledge(h: Orchestrator, repo: string, k: ProjectKnowledge): ProjectKnowledge {
   h.updateKnowledge(repo, () => ({
     profile: k.profile?.trim() || undefined,
     profileAt: k.profileAt,
@@ -106,37 +140,72 @@ export function saveKnowledge(h: Orchestrator, repo: string, k: ProjectKnowledge
   return h.knowledgeOf(repo);
 }
 
-export function getKnowledge(h: Orchestrator, repo: string) : ProjectKnowledge {
+export function getKnowledge(h: Orchestrator, repo: string): ProjectKnowledge {
   return h.knowledgeOf(repo);
 }
 
 export async function learn(h: Orchestrator, run: RunFile) {
   // Круг по PR: уроки только из его замечаний — прошлые круги уже разобраны.
-  const since = run.prRound ? run.prRounds?.at(-1)?.at ?? '' : '';
-  const prItems = run.prRound ? (run.prRounds?.at(-1)?.items ?? []).filter((i) => i.kind !== 'check').map((i) => `- ревьюер PR @${i.author}: ${i.path ? `${i.path} — ` : ''}${i.body.slice(0, 400)}`) : [];
-  const human = run.gates.filter((g) => g.at >= since && (g.decision === 'reject' || g.decision === 'fix') && (g.comment || g.lineComments?.length))
-    .map((g) => `- человек (${g.gate === 'gate1' ? 'план' : 'приёмка'}): ${g.comment ?? ''}${g.lineComments?.length ? ' ' + g.lineComments.map((l) => `[${l.file}:${l.line}] ${l.text}`).join('; ') : ''}`);
-  const review = run.reviews.filter((r) => r.at >= since).flatMap((r) => [...r.blocking, ...r.notes]).slice(0, 12).map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
-  const visual = (run.visuals ?? []).flatMap((v) => [...(v.unverified ? [`- визуальная проверка не смогла проверить: ${v.unverified}`] : []), ...v.blocking.map((b) => `- визуальная проверка: ${b.message}`)]);
-  const failed = run.tests.filter((t) => !t.passed).slice(0, 3).map((t) => `- проверки упали: ${(t.checks ?? []).filter((x) => !x.passed && !x.preexisting && !x.unstable).map((x) => x.command).join(', ')}`);
+  const since = run.prRound ? (run.prRounds?.at(-1)?.at ?? '') : '';
+  const prItems = run.prRound
+    ? (run.prRounds?.at(-1)?.items ?? [])
+        .filter((i) => i.kind !== 'check')
+        .map((i) => `- ревьюер PR @${i.author}: ${i.path ? `${i.path} — ` : ''}${i.body.slice(0, 400)}`)
+    : [];
+  const human = run.gates
+    .filter((g) => g.at >= since && (g.decision === 'reject' || g.decision === 'fix') && (g.comment || g.lineComments?.length))
+    .map(
+      (g) =>
+        `- человек (${g.gate === 'gate1' ? 'план' : 'приёмка'}): ${g.comment ?? ''}${g.lineComments?.length ? ' ' + g.lineComments.map((l) => `[${l.file}:${l.line}] ${l.text}`).join('; ') : ''}`,
+    );
+  const review = run.reviews
+    .filter((r) => r.at >= since)
+    .flatMap((r) => [...r.blocking, ...r.notes])
+    .slice(0, 12)
+    .map((i) => `- ревью: ${i.file ? `${i.file} — ` : ''}${i.message}`);
+  const visual = (run.visuals ?? []).flatMap((v) => [
+    ...(v.unverified ? [`- визуальная проверка не смогла проверить: ${v.unverified}`] : []),
+    ...v.blocking.map((b) => `- визуальная проверка: ${b.message}`),
+  ]);
+  const failed = run.tests
+    .filter((t) => !t.passed)
+    .slice(0, 3)
+    .map(
+      (t) =>
+        `- проверки упали: ${(t.checks ?? [])
+          .filter((x) => !x.passed && !x.preexisting && !x.unstable)
+          .map((x) => x.command)
+          .join(', ')}`,
+    );
   const digest = [...prItems, ...human, ...review, ...visual, ...failed].join('\n').slice(0, 6000);
   if (!digest.trim()) return;
   const known = h.knowledgeOf(run.projectPath).lessons ?? [];
-    const res = await h.service({ prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }), group: `${run.id}:learn`, timeoutMs: 3 * 60_000 }).catch(() => null);
+  const res = await h
+    .service({
+      prompt: h.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }),
+      group: `${run.id}:learn`,
+      timeoutMs: 3 * 60_000,
+    })
+    .catch(() => null);
   if (!res?.ok) return;
   const j = parseJsonReply<{ lessons?: unknown }>(res.text) ?? {};
-  const lessons: string[] = Array.isArray(j.lessons) ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5) : [];
+  const lessons: string[] = Array.isArray(j.lessons)
+    ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5)
+    : [];
   const seen = new Set(known.map((l) => l.text.toLowerCase()));
   const fresh = lessons.map((t) => t.trim()).filter((t) => !seen.has(t.toLowerCase()));
   if (!fresh.length) return;
   const at = new Date().toISOString();
   // Не больше 40 уроков: старые уходят первыми.
-  h.updateKnowledge(run.projectPath, (k) => ({ ...k, lessons: [...(k.lessons ?? []), ...fresh.map((text) => ({ text, at, runId: run.id }))].slice(-40) }));
+  h.updateKnowledge(run.projectPath, (k) => ({
+    ...k,
+    lessons: [...(k.lessons ?? []), ...fresh.map((text) => ({ text, at, runId: run.id }))].slice(-40),
+  }));
   h.log(run, c.violet(`✦ уроки для следующих прогонов (+${fresh.length}):\n`) + fresh.map((t) => `  • ${t}`).join('\n') + '\n');
 }
 
 /** Проекты, с которыми работали: настроенные и те, где были прогоны. Сначала недавние. */
-export function listProjects(h: Orchestrator) : ProjectListItem[] {
+export function listProjects(h: Orchestrator): ProjectListItem[] {
   const map = new Map<string, ProjectListItem>();
   for (const [p, cfg] of Object.entries(h.store.readProjects())) {
     map.set(p, { path: p, configured: true, exists: fs.existsSync(p), updatedAt: cfg.updatedAt, runs: 0, active: 0, lastRunAt: null });
@@ -154,7 +223,7 @@ export function listProjects(h: Orchestrator) : ProjectListItem[] {
 }
 
 /** Следующая часть большой задачи: из «Next Parts» плана — текст задачи и вложения для нового прогона. */
-export async function nextPartDraft(h: Orchestrator, id: string) : Promise<NextPartDraft | null> {
+export async function nextPartDraft(h: Orchestrator, id: string): Promise<NextPartDraft | null> {
   const r = h.mustLoad(id);
   const docs = await h.getChangeDocs(id).catch(() => null);
   const parts = parseNextParts(docs?.proposal ?? '');
@@ -171,25 +240,37 @@ export async function nextPartDraft(h: Orchestrator, id: string) : Promise<NextP
     '',
     r.task,
   ].join('\n');
-  return { projectPath: r.projectPath, task, attachments: r.attachments ?? [], baseBranch: r.merged?.into || r.pr?.base || r.baseBranch, rest };
+  return {
+    projectPath: r.projectPath,
+    task,
+    attachments: r.attachments ?? [],
+    baseBranch: r.merged?.into || r.pr?.base || r.baseBranch,
+    rest,
+  };
 }
 
 /**
  * Проверка окружения перед задачами: команда запуска поднимает приложение в папке проекта, агент в браузере
  * пробует вход и разделы из инструкции для проверки. Сборочные артефакты, которые поменял dev-сервер, откатываются.
  */
-export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<EnvCheck> {
+export async function checkEnvironment(h: Orchestrator, repo: string): Promise<EnvCheck> {
   const key = path.resolve(repo);
   const at = new Date().toISOString();
   const cfg = h.getProjectConfig(key);
-  if (!cfg?.runCommand?.trim() || !cfg.appUrl?.trim()) return { ready: false, steps: [], fix: 'Задайте команду запуска приложения и адрес в командах проекта.', at };
+  if (!cfg?.runCommand?.trim() || !cfg.appUrl?.trim())
+    return { ready: false, steps: [], fix: 'Задайте команду запуска приложения и адрес в командах проекта.', at };
   if (h.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
   h.envChecks.add(key);
   const s = h.opts.getSettings();
   const agent = s.agents?.visual ?? 'claude';
   if (!(await h.hasTool(agent))) {
     h.envChecks.delete(key);
-    return { ready: false, steps: [], fix: `Проверка окружения управляет браузером через ${agent} (агент визуальной проверки), а он не найден. Установите его или выберите другого агента в настройках моделей.`, at };
+    return {
+      ready: false,
+      steps: [],
+      fix: `Проверка окружения управляет браузером через ${agent} (агент визуальной проверки), а он не найден. Установите его или выберите другого агента в настройках моделей.`,
+      at,
+    };
   }
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
@@ -202,10 +283,25 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
   const { port, url, command } = await expandPorts(cfg.appUrl.trim(), cfg.runCommand.trim());
   let out = '';
   try {
-    await prepareApp(h, { repo: key, cwd: key, group, onOutput: (t) => { out = (out + t).slice(-8000); } });
+    await prepareApp(h, {
+      repo: key,
+      cwd: key,
+      group,
+      onOutput: (t) => {
+        out = (out + t).slice(-8000);
+      },
+    });
   } catch (e) {
     h.envChecks.delete(key);
-    return { ready: false, url, command, at, serverOutput: out.trim(), steps: [{ title: 'Подготовка к запуску', ok: false, detail: (e as Error).message }], fix: 'Поправьте команду «Подготовка к запуску» в командах проекта.' };
+    return {
+      ready: false,
+      url,
+      command,
+      at,
+      serverOutput: out.trim(),
+      steps: [{ title: 'Подготовка к запуску', ok: false, detail: (e as Error).message }],
+      fix: 'Поправьте команду «Подготовка к запуску» в командах проекта.',
+    };
   }
   let exited: number | null | undefined;
   const server = runProc(command, [], {
@@ -213,36 +309,89 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
     env: { ...h.opts.env, ...portEnv(cfg.runCommand, port), BROWSER: 'none', CI: '1' },
     shell: true,
     group,
-    onStdout: (t) => { out = (out + t).slice(-8000); },
-    onStderr: (t) => { out = (out + t).slice(-8000); },
+    onStdout: (t) => {
+      out = (out + t).slice(-8000);
+    },
+    onStderr: (t) => {
+      out = (out + t).slice(-8000);
+    },
   });
-  void server.then((r) => { exited = r.code; });
+  void server.then((r) => {
+    exited = r.code;
+  });
   const session = `purpleflow-env-${id}`;
   try {
     const ready = await waitForUrl(url, 150_000, () => exited !== undefined);
     if (!ready) {
       return {
-        ready: false, url, command, at, serverOutput: out.trim(),
-        steps: [{ title: 'Приложение запускается', ok: false, detail: exited !== undefined ? `Команда завершилась с кодом ${exited}, не открыв ${url}` : `За 2,5 минуты ${url} не ответил` }],
+        ready: false,
+        url,
+        command,
+        at,
+        serverOutput: out.trim(),
+        steps: [
+          {
+            title: 'Приложение запускается',
+            ok: false,
+            detail: exited !== undefined ? `Команда завершилась с кодом ${exited}, не открыв ${url}` : `За 2,5 минуты ${url} не ответил`,
+          },
+        ],
         fix: 'Посмотрите вывод сервера: обычно не хватает базы, переменных в .env или порт задан не через {port}.',
       };
     }
-    fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'pw'), `#!/bin/sh\ncd "${dir}" && exec npx -y @playwright/cli@latest -s=${session} "$@"\n`, {
+      mode: 0o755,
+    });
     const res = await h.service({
-      prompt: h.prompts.render('env-check.md', { url, notes: cfg.visualNotes?.trim() || '(нет)', server: out.replace(/\x1b\[[0-9;]*m/g, '').slice(-4000) || '(пусто)' }),
-      cwd: key, env: prependPath(h.opts.env, dir), group, addDirs: [dir], tools: ['Bash', 'Read', 'Glob', 'Grep'],
-      model: s.models.visual || undefined, agent, fullAccess: true, userConfig: s.userConfig ?? true, timeoutMs: 20 * 60_000, idleTimeoutMs: 6 * 60_000,
+      prompt: h.prompts.render('env-check.md', {
+        url,
+        notes: cfg.visualNotes?.trim() || '(нет)',
+        server: out.replace(/\x1b\[[0-9;]*m/g, '').slice(-4000) || '(пусто)',
+      }),
+      cwd: key,
+      env: prependPath(h.opts.env, dir),
+      group,
+      addDirs: [dir],
+      tools: ['Bash', 'Read', 'Glob', 'Grep'],
+      model: s.models.visual || undefined,
+      agent,
+      fullAccess: true,
+      userConfig: s.userConfig ?? true,
+      timeoutMs: 20 * 60_000,
+      idleTimeoutMs: 6 * 60_000,
     });
     const j = parseJsonReply<{ ready?: boolean; steps?: { title?: string; ok?: boolean; detail?: string }[]; fix?: string }>(res.text);
     if (!res.ok || !j) {
-      return { ready: false, url, command, at, serverOutput: out.trim(), steps: [{ title: 'Приложение запускается', ok: true, detail: `${url} отвечает` }, { title: 'Проверка в браузере', ok: false, detail: res.error ?? 'Агент ответил не в формате JSON' }] };
+      return {
+        ready: false,
+        url,
+        command,
+        at,
+        serverOutput: out.trim(),
+        steps: [
+          { title: 'Приложение запускается', ok: true, detail: `${url} отвечает` },
+          { title: 'Проверка в браузере', ok: false, detail: res.error ?? 'Агент ответил не в формате JSON' },
+        ],
+      };
     }
     return {
-      ready: Boolean(j.ready), url, command, at, serverOutput: out.trim(), fix: j.fix?.trim() || undefined,
-      steps: [{ title: 'Приложение запускается', ok: true, detail: `${url} отвечает` }, ...(j.steps ?? []).map((x) => ({ title: String(x.title ?? ''), ok: Boolean(x.ok), detail: String(x.detail ?? '') }))],
+      ready: Boolean(j.ready),
+      url,
+      command,
+      at,
+      serverOutput: out.trim(),
+      fix: j.fix?.trim() || undefined,
+      steps: [
+        { title: 'Приложение запускается', ok: true, detail: `${url} отвечает` },
+        ...(j.steps ?? []).map((x) => ({ title: String(x.title ?? ''), ok: Boolean(x.ok), detail: String(x.detail ?? '') })),
+      ],
     };
   } finally {
-    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'close'], { cwd: dir, env: h.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'close'], {
+      cwd: dir,
+      env: h.opts.env,
+      timeoutMs: 20_000,
+    }).catch(() => undefined);
     await killGroup(group);
     // Dev-сервер мог переписать отслеживаемые артефакты (next-env.d.ts, tsbuildinfo) — рабочая копия остаётся как была.
     const touched = (await git.dirtyFiles(key).catch(() => [] as string[])).filter((f) => !dirtyBefore.has(f) && ARTIFACT_RE.test(f));
@@ -252,7 +401,7 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
 }
 
 /** Незакоммиченные изменения в рабочей копии проекта — по кнопке человека перед стартом в режиме «Ветка». */
-export async function cleanWorkingCopy(h: Orchestrator, repo: string, how: 'stash' | 'discard') : Promise<{ files: number }> {
+export async function cleanWorkingCopy(h: Orchestrator, repo: string, how: 'stash' | 'discard'): Promise<{ files: number }> {
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
   const dirty = await git.dirtyFiles(repo);
@@ -263,22 +412,28 @@ export async function cleanWorkingCopy(h: Orchestrator, repo: string, how: 'stas
 }
 
 /** Состояние репозитория проекта для страницы «Обзор». */
-export async function projectOverview(h: Orchestrator, repo: string) : Promise<ProjectOverview> {
+export async function projectOverview(h: Orchestrator, repo: string): Promise<ProjectOverview> {
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
   const [branch, dirty, remote, pr] = await Promise.all([
     git.currentBranch(repo).catch(() => null),
-    git.dirtyFiles(repo).then((f) => f.length).catch(() => 0),
-    runProc(tools.git, ['remote', 'get-url', 'origin'], { cwd: repo, env: h.opts.env, timeoutMs: 10_000 }).then((x) => (x.code === 0 ? x.stdout.trim() : null)).catch(() => null),
+    git
+      .dirtyFiles(repo)
+      .then((f) => f.length)
+      .catch(() => 0),
+    runProc(tools.git, ['remote', 'get-url', 'origin'], { cwd: repo, env: h.opts.env, timeoutMs: 10_000 })
+      .then((x) => (x.code === 0 ? x.stdout.trim() : null))
+      .catch(() => null),
     prReadiness(h.ghBin(), tools.git, repo, h.opts.env).catch((e) => String((e as Error).message)),
   ]);
   return { branch, dirty, remote, prReady: pr };
 }
 
 /** Статистика по прогонам проекта. */
-export function projectStats(h: Orchestrator, repo: string) : ProjectStats {
+export function projectStats(h: Orchestrator, repo: string): ProjectStats {
   const root = path.resolve(repo);
-  const runs = h.listRuns()
+  const runs = h
+    .listRuns()
     .filter((r) => !r.missing && path.resolve(r.projectPath) === root)
     .map((r) => h.store.load(r.id))
     .filter((r): r is RunFile => Boolean(r));
@@ -286,7 +441,7 @@ export function projectStats(h: Orchestrator, repo: string) : ProjectStats {
 }
 
 /** Ветки проекта для «От ветки» в новой задаче. fetch — сначала подтянуть ветки origin. */
-export async function projectBranches(h: Orchestrator, repo: string, fetch = false) : Promise<ProjectBranches> {
+export async function projectBranches(h: Orchestrator, repo: string, fetch = false): Promise<ProjectBranches> {
   const tools = await h.tools(['git']);
   const all = await new Git(tools.git, h.opts.env).allBranches(repo, fetch);
   // Ветки прогонов PurpleFlow — в конец: от них новые задачи начинают редко.
@@ -295,16 +450,16 @@ export async function projectBranches(h: Orchestrator, repo: string, fetch = fal
 }
 
 /** Убрать проект из списка: команды и знания удаляются, прогоны остаются. */
-export function forgetProject(h: Orchestrator, repo: string) : void {
+export function forgetProject(h: Orchestrator, repo: string): void {
   h.store.removeProject(path.resolve(repo));
 }
 
 /** Сохранённые команды проекта (null — ещё не настраивали). */
-export function getProjectConfig(h: Orchestrator, repo: string) : ProjectConfig | null {
+export function getProjectConfig(h: Orchestrator, repo: string): ProjectConfig | null {
   return h.store.readProjects()[path.resolve(repo)] ?? null;
 }
 
-export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>) : ProjectConfig {
+export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<ProjectConfig, 'updatedAt'>): ProjectConfig {
   const full: ProjectConfig = {
     setupCommand: cfg.setupCommand.trim(),
     lintCommand: cfg.lintCommand.trim(),
@@ -332,8 +487,14 @@ export function saveProjectConfig(h: Orchestrator, repo: string, cfg: Omit<Proje
  * Нейросеть осматривает проект (только чтение: Read/Glob/Grep) и предлагает команды
  * подготовки, линтера и тестов. Работает в папке проекта, ничего не меняя.
  */
-export async function detectCommandsAI(h: Orchestrator, dir: string) : Promise<AiCommands> {
-  const res = await h.service({ prompt: h.prompts.raw('detect-commands.md'), cwd: dir, group: `detect-${Date.now()}`, timeoutMs: 3 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
+export async function detectCommandsAI(h: Orchestrator, dir: string): Promise<AiCommands> {
+  const res = await h.service({
+    prompt: h.prompts.raw('detect-commands.md'),
+    cwd: dir,
+    group: `detect-${Date.now()}`,
+    timeoutMs: 3 * 60_000,
+    tools: ['Read', 'Glob', 'Grep'],
+  });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить команды');
   try {
     const j = parseJsonReply<Record<string, unknown>>(res.text);
@@ -355,7 +516,7 @@ export async function detectCommandsAI(h: Orchestrator, dir: string) : Promise<A
 }
 
 /** Режим по тексту задачи — подсказка человеку, решение за ним. */
-export async function suggestMode(h: Orchestrator, task: string) : Promise<ModeSuggestion> {
+export async function suggestMode(h: Orchestrator, task: string): Promise<ModeSuggestion> {
   const res = await h.service({ prompt: h.prompts.render('suggest-mode.md', { task }), group: `mode-${Date.now()}`, timeoutMs: 90_000 });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить режим');
   try {

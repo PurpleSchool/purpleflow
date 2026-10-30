@@ -105,8 +105,14 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
         : spawn(cmd, args, { cwd: opts.cwd, env: opts.env, windowsHide: true });
     } catch (e) {
       resolve({
-        code: null, signal: null, stdout: '', stderr: '', timedOut: false, killed: false,
-        durationMs: 0, spawnError: (e as Error).message,
+        code: null,
+        signal: null,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        killed: false,
+        durationMs: 0,
+        spawnError: (e as Error).message,
       });
       return;
     }
@@ -157,7 +163,9 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
       opts.onStderr?.(chunk);
     });
 
-    child.stdin?.on('error', () => { /* процесс мог закрыть stdin раньше */ });
+    child.stdin?.on('error', () => {
+      /* процесс мог закрыть stdin раньше */
+    });
     if (opts.input != null) child.stdin?.end(opts.input);
     else child.stdin?.end();
 
@@ -179,7 +187,12 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
       if (pid != null) tracker?.remove(group, pid);
       if (pending && opts.onStdoutLine) opts.onStdoutLine(pending);
       resolve({
-        code, signal, stdout, stderr, timedOut, idle: idle || undefined,
+        code,
+        signal,
+        stdout,
+        stderr,
+        timedOut,
+        idle: idle || undefined,
         killed: killedByUs.has(child) && !timedOut,
         durationMs: Date.now() - started,
         spawnError,

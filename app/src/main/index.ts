@@ -1,7 +1,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, safeStorage, session, shell, utilityProcess, webContents, type UtilityProcess } from 'electron';
+import {
+  BrowserWindow,
+  Notification,
+  app,
+  dialog,
+  ipcMain,
+  nativeTheme,
+  safeStorage,
+  session,
+  shell,
+  utilityProcess,
+  webContents,
+  type UtilityProcess,
+} from 'electron';
 import type { CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
@@ -37,7 +50,11 @@ const promptsDir = () =>
 // ——— Уведомления: прогон ждёт решения, остановился с ошибкой или готов ———
 
 const runInfo = new Map<string, { title: string; status: string }>();
-const GATE_WORD: Record<string, string> = { gate1: 'утвердите план', gate2: 'примите результат', limit: 'попытки исчерпаны — решите, что дальше' };
+const GATE_WORD: Record<string, string> = {
+  gate1: 'утвердите план',
+  gate2: 'примите результат',
+  limit: 'попытки исчерпаны — решите, что дальше',
+};
 
 function updateBadge() {
   const waiting = [...runInfo.values()].filter((r) => r.status === 'waiting').length;
@@ -77,7 +94,8 @@ function attention(e: CoreEvent) {
   const title = () => runInfo.get((e as { runId: string }).runId)?.title ?? 'Прогон';
   if (e.type === 'gate.waiting') notify(e.runId, 'Нужно ваше решение', `${title()}: ${GATE_WORD[e.gate] ?? 'ждёт решения'}`);
   else if (e.type === 'run.finished' && e.status === 'finished') notify(e.runId, 'Прогон готов', `${title()}: коммит в ветке, можно влить`);
-  else if (e.type === 'run.finished' && e.status === 'stopped' && e.message && !/пользовател/.test(e.message)) notify(e.runId, 'Прогон остановлен', `${title()}: ${e.message.slice(0, 160)}`);
+  else if (e.type === 'run.finished' && e.status === 'stopped' && e.message && !/пользовател/.test(e.message))
+    notify(e.runId, 'Прогон остановлен', `${title()}: ${e.message.slice(0, 160)}`);
 }
 
 function startHost(): Promise<void> {
@@ -88,8 +106,7 @@ function startHost(): Promise<void> {
       else if (m.kind === 'event') {
         win?.webContents.send('core:event', m.event);
         attention(m.event);
-      }
-      else if (m.kind === 'reply') {
+      } else if (m.kind === 'reply') {
         const p = pending.get(m.id);
         if (!p) return;
         pending.delete(m.id);
@@ -213,7 +230,8 @@ const pushSettings = () => host?.postMessage({ kind: 'settings', settings: coreS
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 ipcMain.handle('account:login', (_e, email: unknown, password: unknown) => account.login(str(email), str(password)));
 ipcMain.handle('account:register', (_e, p: { name?: unknown; email?: unknown; password?: unknown; mailing?: unknown }) =>
-  account.register({ name: str(p?.name), email: str(p?.email), password: str(p?.password), mailing: p?.mailing === true }));
+  account.register({ name: str(p?.name), email: str(p?.email), password: str(p?.password), mailing: p?.mailing === true }),
+);
 ipcMain.handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
 ipcMain.handle('account:logout', () => account.logout());
 ipcMain.handle('account:profile', () => account.profile());
@@ -235,10 +253,19 @@ ipcMain.handle('account:autoKey', async () => {
 });
 ipcMain.handle('account:overview', () => account.overview());
 ipcMain.handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown; keyIds?: unknown }) =>
-  account.usage({ from: str(q?.from), to: str(q?.to), bucket: str(q?.bucket) as never, keyIds: Array.isArray(q?.keyIds) ? q.keyIds.map(Number) : [] }));
+  account.usage({
+    from: str(q?.from),
+    to: str(q?.to),
+    bucket: str(q?.bucket) as never,
+    keyIds: Array.isArray(q?.keyIds) ? q.keyIds.map(Number) : [],
+  }),
+);
 ipcMain.handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
 ipcMain.handle('dialog:folder', async (_e, title?: string) => {
-  const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'], title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)' });
+  const r = await dialog.showOpenDialog(win!, {
+    properties: ['openDirectory'],
+    title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)',
+  });
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('dialog:file', async () => {
@@ -288,9 +315,11 @@ ipcMain.handle('preview:emulate', (e, id: number, mobile: boolean) => {
   // Только webview нашего окна.
   if (!wc || wc.getType() !== 'webview' || wc.hostWebContents !== e.sender) return;
   // Ширину 390 задаёт рамка во вкладке; enableDeviceEmulation в webview ломает отрисовку — меняем только user agent.
-  wc.setUserAgent(mobile
-    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
-    : app.userAgentFallback);
+  wc.setUserAgent(
+    mobile
+      ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+      : app.userAgentFallback,
+  );
   wc.reload();
 });
 
@@ -329,14 +358,28 @@ app.on('before-quit', (e) => {
     app.quit();
   };
   const t = setTimeout(done, 5000);
-  pending.set(id, { resolve: () => { clearTimeout(t); done(); }, reject: () => { clearTimeout(t); done(); } });
+  pending.set(id, {
+    resolve: () => {
+      clearTimeout(t);
+      done();
+    },
+    reject: () => {
+      clearTimeout(t);
+      done();
+    },
+  });
   host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
 });
 
 ipcMain.handle('notify:test', () => {
   const s = publicSettings();
   if (s.sound) win?.webContents.send('app:chime');
-  if (s.notify && Notification.isSupported()) new Notification({ title: 'PurpleFlow', body: 'Так будут выглядеть уведомления, когда прогону нужно ваше внимание.', silent: true }).show();
+  if (s.notify && Notification.isSupported())
+    new Notification({
+      title: 'PurpleFlow',
+      body: 'Так будут выглядеть уведомления, когда прогону нужно ваше внимание.',
+      silent: true,
+    }).show();
 });
 
 app.whenReady().then(() => {

@@ -21,21 +21,34 @@ type Slot = Role | 'visual' | 'manager';
 /** Уровень модели по ролям. Все роли — на основном агенте; ревьюер — на другой модели, чем исполнитель. */
 const PRESETS: { id: PresetId; title: string; text: string; icon: ReactNode; tiers: Record<Slot, Tier> }[] = [
   {
-    id: 'economy', title: 'Экономный', text: 'Быстрые недорогие модели. Подходит для простых задач и правок.', icon: <Leaf size={18} />,
+    id: 'economy',
+    title: 'Экономный',
+    text: 'Быстрые недорогие модели. Подходит для простых задач и правок.',
+    icon: <Leaf size={18} />,
     tiers: { planner: 'mid', executor: 'mid', reviewer: 'low', visual: 'low', manager: 'low' },
   },
   {
-    id: 'optimal', title: 'Оптимальный', text: 'Сильная модель планирует, рабочая — пишет код. Баланс цены и качества.', icon: <Gauge size={18} />,
+    id: 'optimal',
+    title: 'Оптимальный',
+    text: 'Сильная модель планирует, рабочая — пишет код. Баланс цены и качества.',
+    icon: <Gauge size={18} />,
     tiers: { planner: 'high', executor: 'mid', reviewer: 'high', visual: 'mid', manager: 'low' },
   },
   {
-    id: 'max', title: 'Максимальное качество', text: 'Самые сильные модели на всех ключевых ролях. Дороже и медленнее.', icon: <Sparkles size={18} />,
+    id: 'max',
+    title: 'Максимальное качество',
+    text: 'Самые сильные модели на всех ключевых ролях. Дороже и медленнее.',
+    icon: <Sparkles size={18} />,
     tiers: { planner: 'max', executor: 'high', reviewer: 'max', visual: 'mid', manager: 'mid' },
   },
 ];
 
 const ROLE_TITLE: Record<Slot, string> = {
-  planner: 'Планировщик', executor: 'Исполнитель', reviewer: 'Ревьюер', visual: 'Визуальная проверка', manager: 'Менеджер прогона',
+  planner: 'Планировщик',
+  executor: 'Исполнитель',
+  reviewer: 'Ревьюер',
+  visual: 'Визуальная проверка',
+  manager: 'Менеджер прогона',
 };
 
 /** Все роли — на основном агенте: claude — только модели Anthropic, codex — только OpenAI. */
@@ -59,13 +72,24 @@ export function buildPreset(main: AgentKind, preset: PresetId): { agents: Agents
 }
 
 /** Поп-ап быстрой настройки: основной агент и пресет — роли и модели расставляются сами. */
-export function QuickSetup({ installed, initialMain, onApply, onClose }: {
+export function QuickSetup({
+  installed,
+  initialMain,
+  onApply,
+  onClose,
+}: {
   installed: Record<AgentKind, boolean>;
   initialMain: AgentKind;
   onApply: (v: { agents: Agents; models: Models }) => Promise<void>;
   onClose: () => void;
 }) {
-  const [main, setMain] = useState<AgentKind>(installed[initialMain] || !installed[initialMain === 'claude' ? 'codex' : 'claude'] ? initialMain : initialMain === 'claude' ? 'codex' : 'claude');
+  const [main, setMain] = useState<AgentKind>(
+    installed[initialMain] || !installed[initialMain === 'claude' ? 'codex' : 'claude']
+      ? initialMain
+      : initialMain === 'claude'
+        ? 'codex'
+        : 'claude',
+  );
   const [preset, setPreset] = useState<PresetId>('optimal');
   const [busy, setBusy] = useState(false);
   const plan = buildPreset(main, preset);
@@ -94,7 +118,9 @@ export function QuickSetup({ installed, initialMain, onApply, onClose }: {
             <h2 id="qs-title">Быстрая настройка</h2>
             <p>Выберите основного агента и уровень — роли и модели расставятся сами. Потом любую роль можно поправить вручную.</p>
           </div>
-          <button className="qs-close" aria-label="Закрыть" onClick={onClose}><X size={16} /></button>
+          <button className="qs-close" aria-label="Закрыть" onClick={onClose}>
+            <X size={16} />
+          </button>
         </header>
 
         <div className="qs-section">
@@ -102,7 +128,8 @@ export function QuickSetup({ installed, initialMain, onApply, onClose }: {
           <div className="segmented qs-agents" role="radiogroup" aria-label="Основной агент">
             {(['claude', 'codex'] as AgentKind[]).map((a) => (
               <button key={a} role="radio" aria-checked={main === a} className={main === a ? 'is-on' : ''} onClick={() => setMain(a)}>
-                {a}{!installed[a] && <em> · не найден</em>}
+                {a}
+                {!installed[a] && <em> · не найден</em>}
               </button>
             ))}
           </div>
@@ -110,7 +137,13 @@ export function QuickSetup({ installed, initialMain, onApply, onClose }: {
 
         <div className="qs-presets" role="radiogroup" aria-label="Пресет">
           {PRESETS.map((p) => (
-            <button key={p.id} role="radio" aria-checked={preset === p.id} className={`qs-preset ${preset === p.id ? 'is-on' : ''}`} onClick={() => setPreset(p.id)}>
+            <button
+              key={p.id}
+              role="radio"
+              aria-checked={preset === p.id}
+              className={`qs-preset ${preset === p.id ? 'is-on' : ''}`}
+              onClick={() => setPreset(p.id)}
+            >
               <span className="qs-preset-icon">{p.icon}</span>
               <strong>{p.title}</strong>
               <span>{p.text}</span>
@@ -128,13 +161,19 @@ export function QuickSetup({ installed, initialMain, onApply, onClose }: {
             </div>
           ))}
           <p className="qs-note">
-            Все роли — на {main}{main === 'claude' ? ', модели Anthropic' : ', модели OpenAI'}. Ревьюер работает на другой модели, чем исполнитель: так он находит больше ошибок.
+            Все роли — на {main}
+            {main === 'claude' ? ', модели Anthropic' : ', модели OpenAI'}. Ревьюер работает на другой модели, чем исполнитель: так он
+            находит больше ошибок.
           </p>
         </div>
 
         <footer className="qs-foot">
-          <Button tone="quiet" onClick={onClose}>Отмена</Button>
-          <Button tone="primary" busy={busy} onClick={() => void apply()}>Применить</Button>
+          <Button tone="quiet" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button tone="primary" busy={busy} onClick={() => void apply()}>
+            Применить
+          </Button>
         </footer>
       </div>
     </div>,

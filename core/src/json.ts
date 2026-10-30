@@ -13,7 +13,9 @@ export function parseJsonReply<T = Record<string, unknown>>(text: string): T | n
     try {
       const j = JSON.parse(c) as unknown;
       if (j && typeof j === 'object' && !Array.isArray(j)) return j as T;
-    } catch { /* следующий кандидат */ }
+    } catch {
+      /* следующий кандидат */
+    }
   }
   return null;
 }

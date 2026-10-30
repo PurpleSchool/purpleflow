@@ -9,12 +9,12 @@ import { isRunBranch } from '../ids.js';
 import { modeOf } from '../modes.js';
 import type { PrStatus, PrDetails, PrFollowupItem, RunFile } from '../types.js';
 import type { Orchestrator } from '../orchestrator.js';
-export function ghBin(h: Orchestrator) : string | null {
+export function ghBin(h: Orchestrator): string | null {
   return which('gh', h.opts.env);
 }
 
 /** null — PR создать можно; иначе причина, почему нет (нет gh, origin не на GitHub…). */
-export async function prReady(h: Orchestrator, id: string) : Promise<string | null> {
+export async function prReady(h: Orchestrator, id: string): Promise<string | null> {
   const r = h.mustLoad(id);
   const tools = await h.tools(['git']);
   return prReadiness(h.ghBin(), tools.git, r.projectPath, h.opts.env);
@@ -44,7 +44,7 @@ export async function openPr(h: Orchestrator, id: string, base: string) {
 }
 
 /** Описание PR: задача, итог исполнителя, план, проверки, ревью и визуальная проверка — из прогона. */
-export async function prBody(h: Orchestrator, r: RunFile) : Promise<string> {
+export async function prBody(h: Orchestrator, r: RunFile): Promise<string> {
   const docs = await h.getChangeDocs(r.id).catch(() => null);
   const impl = [...r.attempts].reverse().find((a) => a.stage === 'implement' && a.output)?.output;
   const lastTest = r.tests.at(-1);
@@ -54,20 +54,26 @@ export async function prBody(h: Orchestrator, r: RunFile) : Promise<string> {
   if (impl) parts.push(`## Что сделано\n\n${impl.slice(0, 4000)}`);
   if (docs?.proposal) parts.push(`## План (OpenSpec \`${r.changeId}\`)\n\n${docs.proposal.replace(/^#\s+.*\n+/, '').slice(0, 4000)}`);
   if (lastTest?.checks?.length) {
-    parts.push(`## Проверки\n\n${lastTest.checks.map((x) => `- ${x.kind === 'lint' ? 'Линтер' : 'Тесты'}: ${x.unstable ? '⚠️ нестабильные, не из‑за задачи' : x.passed ? '✅' : x.preexisting ? '⚠️ красные и до задачи, новых ошибок нет' : '❌'} \`${x.command}\``).join('\n')}`);
+    parts.push(
+      `## Проверки\n\n${lastTest.checks.map((x) => `- ${x.kind === 'lint' ? 'Линтер' : 'Тесты'}: ${x.unstable ? '⚠️ нестабильные, не из‑за задачи' : x.passed ? '✅' : x.preexisting ? '⚠️ красные и до задачи, новых ошибок нет' : '❌'} \`${x.command}\``).join('\n')}`,
+    );
   }
   if (review) {
     const notes = review.notes.map((n) => `- ${n.file ? `\`${n.file}${n.line ? ':' + n.line : ''}\` — ` : ''}${n.message}`).join('\n');
-    parts.push(`## Ревью (${r.agents?.reviewer ?? 'codex'})\n\n${review.blocking.length ? `Блокирующих: ${review.blocking.length}` : 'Блокирующих замечаний нет.'}${notes ? `\n\nЗаметки:\n${notes}` : ''}`);
+    parts.push(
+      `## Ревью (${r.agents?.reviewer ?? 'codex'})\n\n${review.blocking.length ? `Блокирующих: ${review.blocking.length}` : 'Блокирующих замечаний нет.'}${notes ? `\n\nЗаметки:\n${notes}` : ''}`,
+    );
   }
   if (visual) {
-    parts.push(`## Визуальная проверка\n\n${visual.unverified ? `⚠️ Проверить не удалось: ${visual.unverified}` : visual.blocking.length ? `Проблем: ${visual.blocking.length}` : '✅ В браузере всё выглядит верно'}${visual.shots.length ? `\n\nСкриншоты (${visual.shots.length}) — в PurpleFlow:\n${visual.shots.map((s) => `- ${s.caption}`).join('\n')}` : ''}`);
+    parts.push(
+      `## Визуальная проверка\n\n${visual.unverified ? `⚠️ Проверить не удалось: ${visual.unverified}` : visual.blocking.length ? `Проблем: ${visual.blocking.length}` : '✅ В браузере всё выглядит верно'}${visual.shots.length ? `\n\nСкриншоты (${visual.shots.length}) — в PurpleFlow:\n${visual.shots.map((s) => `- ${s.caption}`).join('\n')}` : ''}`,
+    );
   }
   parts.push(`---\nСделано в PurpleFlow · режим «${modeOf(r)}» · прогон \`${r.id.slice(0, 8)}\``);
   return parts.join('\n\n');
 }
 
-export async function getPrStatus(h: Orchestrator, id: string) : Promise<PrStatus | null> {
+export async function getPrStatus(h: Orchestrator, id: string): Promise<PrStatus | null> {
   const r = h.mustLoad(id);
   const gh = h.ghBin();
   if (!r.pr || !gh) return null;
@@ -81,14 +87,19 @@ export async function getPrStatus(h: Orchestrator, id: string) : Promise<PrStatu
 }
 
 /** PR с замечаниями — по запросу со вкладки «Pull Request» (без фонового опроса). */
-export async function getPrDetails(h: Orchestrator, id: string) : Promise<PrDetails | null> {
+export async function getPrDetails(h: Orchestrator, id: string): Promise<PrDetails | null> {
   const r = h.mustLoad(id);
   const gh = h.ghBin();
   if (!r.pr || !gh) return null;
   const [status, c] = await Promise.all([h.getPrStatus(id), prComments(gh, r.projectPath, h.opts.env, r.pr.url)]);
   if (!status) return null;
   const checks = (status.failedChecks ?? []).map((x, i) => ({
-    id: `check:${x.name}:${i}`, kind: 'check' as const, author: 'CI', body: x.name, at: new Date().toISOString(), url: x.url ?? undefined,
+    id: `check:${x.name}:${i}`,
+    kind: 'check' as const,
+    author: 'CI',
+    body: x.name,
+    at: new Date().toISOString(),
+    url: x.url ?? undefined,
   }));
   return { title: c.title, status, comments: [...checks, ...c.comments], fetchedAt: new Date().toISOString() };
 }
@@ -128,21 +139,33 @@ export async function prFollowup(h: Orchestrator, id: string, items: PrFollowupI
       'Если замечание — вопрос или с ним нельзя согласиться, не меняй код, а объясни это в отчёте.',
       lines.length ? `Замечания:\n${lines.join('\n')}` : '',
       note?.trim() ? `Комментарий человека:\n${note.trim()}` : '',
-    ].filter(Boolean).join('\n\n'),
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
   };
   r.status = 'running';
   r.next = 'implement';
   r.finishedAt = undefined;
   r.message = undefined;
   r.implAttemptsLimit = r.implAttemptsUsed + 3;
-  h.log(r, '\n' + c.violet(c.bold(`━━ Доработка по PR #${r.pr.number} · круг ${round}`)) + '\n' + c.dim(`замечаний: ${items.length}${pulled === 'updated' ? ' · подтянуты новые коммиты из ветки PR' : ''}`) + '\n');
+  h.log(
+    r,
+    '\n' +
+      c.violet(c.bold(`━━ Доработка по PR #${r.pr.number} · круг ${round}`)) +
+      '\n' +
+      c.dim(`замечаний: ${items.length}${pulled === 'updated' ? ' · подтянуты новые коммиты из ветки PR' : ''}`) +
+      '\n',
+  );
   h.save(r);
   h.emit({ type: 'run.updated', run: r });
   void h.drive(r);
 }
 
 /** Рабочая копия завершённого прогона для нового круга: worktree могли удалить, проект в режиме «ветка» — переключить. */
-export async function reopenWorkspace(h: Orchestrator, r: RunFile) : Promise<{ git: Git; pulled: 'updated' | 'same' | 'diverged' | 'no-remote' }> {
+export async function reopenWorkspace(
+  h: Orchestrator,
+  r: RunFile,
+): Promise<{ git: Git; pulled: 'updated' | 'same' | 'diverged' | 'no-remote' }> {
   const tools = await h.tools(['git']);
   const git = new Git(tools.git, h.opts.env);
 
@@ -151,7 +174,10 @@ export async function reopenWorkspace(h: Orchestrator, r: RunFile) : Promise<{ g
     const cur = await git.currentBranch(r.projectPath);
     if (cur !== r.branch) {
       const dirty = await git.dirtyFiles(r.projectPath);
-      if (dirty.length) throw new Error(`В проекте есть незакоммиченные изменения (${dirty.length}) — закоммитьте или уберите их, чтобы переключиться на ${r.branch}`);
+      if (dirty.length)
+        throw new Error(
+          `В проекте есть незакоммиченные изменения (${dirty.length}) — закоммитьте или уберите их, чтобы переключиться на ${r.branch}`,
+        );
       await git.checkout(r.projectPath, r.branch);
     }
   } else if (r.worktreeRemoved || !fs.existsSync(r.worktreePath)) {
@@ -160,7 +186,8 @@ export async function reopenWorkspace(h: Orchestrator, r: RunFile) : Promise<{ g
     h.copyEnvFiles(r);
   }
   const pulled = await git.pullFastForward(r.worktreePath, r.branch);
-  if (pulled === 'diverged') throw new Error(`Ветка ${r.branch} на GitHub разошлась с локальной — подтяните изменения вручную (git pull) и повторите`);
+  if (pulled === 'diverged')
+    throw new Error(`Ветка ${r.branch} на GitHub разошлась с локальной — подтяните изменения вручную (git pull) и повторите`);
   return { git, pulled };
 }
 
@@ -184,7 +211,17 @@ export async function updateBranch(h: Orchestrator, id: string) {
     throw new Error(`Ветка уже содержит всё из ${base}`);
   }
   r.prRound = round;
-  r.prRounds = [...(r.prRounds ?? []), { round, at: new Date().toISOString(), items: [], kind: 'update', conflicts: m.conflicts.length ? m.conflicts : undefined, note: `Обновление из ${base}` }];
+  r.prRounds = [
+    ...(r.prRounds ?? []),
+    {
+      round,
+      at: new Date().toISOString(),
+      items: [],
+      kind: 'update',
+      conflicts: m.conflicts.length ? m.conflicts : undefined,
+      note: `Обновление из ${base}`,
+    },
+  ];
   r.status = 'running';
   r.finishedAt = undefined;
   r.message = undefined;
@@ -225,7 +262,10 @@ export async function mergePrOf(h: Orchestrator, id: string) {
 }
 
 /** Ветки репозитория пользователя для слияния результата. */
-export async function listBranches(h: Orchestrator, id: string) : Promise<{ branches: string[]; current: string | null; suggested: string | null }> {
+export async function listBranches(
+  h: Orchestrator,
+  id: string,
+): Promise<{ branches: string[]; current: string | null; suggested: string | null }> {
   const r = h.mustLoad(id);
   const tools = await h.tools(['git']);
   const b = await new Git(tools.git, h.opts.env).branches(r.projectPath);

@@ -27,14 +27,29 @@ export function useNow(run: RunFile): number {
 
 /** Большой гант: строка на стадию, полоска на попытку; ожидание человека — штриховкой. */
 const WORD: Record<string, string> = {
-  idle: 'впереди', active: 'работает', waiting: 'ждёт вас', done: 'готово', failed: 'ошибка', stopped: 'остановлено', stale: 'будет повторено',
+  idle: 'впереди',
+  active: 'работает',
+  waiting: 'ждёт вас',
+  done: 'готово',
+  failed: 'ошибка',
+  stopped: 'остановлено',
+  stale: 'будет повторено',
 };
 
 /** Сколько символов влезает в полоску: ширина трека ~ 1100px, моноширинный 11px ≈ 7px на символ. */
 const fits = (widthPct: number, text: string) => (widthPct / 100) * 1100 > text.length * 7 + 18;
 
-export function Timeline({ run, onSelect, selected = null, current = null, compact = false }: {
-  run: RunFile; onSelect?: (s: StageId) => void; selected?: StageId | null; current?: StageId | null;
+export function Timeline({
+  run,
+  onSelect,
+  selected = null,
+  current = null,
+  compact = false,
+}: {
+  run: RunFile;
+  onSelect?: (s: StageId) => void;
+  selected?: StageId | null;
+  current?: StageId | null;
   /** Свёрнутый вид в левой колонке, пока справа открыты детали стадии. */
   compact?: boolean;
 }) {
@@ -44,7 +59,9 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
   const ticks = [0, 0.25, 0.5, 0.75, 1];
   const plan = plannedRoute(run);
   // Шаги маршрута — лесенкой справа от «сейчас»: реальная шкала сжимается, освобождая место под них.
-  const steps = runStages(run).map((s) => s.id).filter((id) => plan[id] === 'planned');
+  const steps = runStages(run)
+    .map((s) => s.id)
+    .filter((id) => plan[id] === 'planned');
   // Место справа под шаги: по 20px на шаг (18px пунктир + зазор 2px); реальная шкала — левее.
   const reserve = steps.length ? steps.length * 20 + 8 : 0;
   const at = (pct: number) => (reserve ? `calc((100% - ${reserve}px) * ${pct / 100})` : `${pct}%`);
@@ -52,12 +69,18 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
   return (
     <div className={`gantt is-large ${compact ? 'is-compact' : ''}`} aria-label="Время по стадиям">
       <div className="gantt-grid" aria-hidden>
-        {ticks.map((f) => <i key={f} style={{ left: at(f * 100) }} />)}
+        {ticks.map((f) => (
+          <i key={f} style={{ left: at(f * 100) }} />
+        ))}
       </div>
       {clock.gaps.length > 0 && (
         <div className="gantt-gaps">
           {clock.gaps.map((g, i) => (
-            <i key={i} style={{ left: at((g.at / span) * 100) }} title={`Прогон стоял ${ms(g.ms)} — после ошибки или остановки. Это время не учитывается.`} />
+            <i
+              key={i}
+              style={{ left: at((g.at / span) * 100) }}
+              title={`Прогон стоял ${ms(g.ms)} — после ошибки или остановки. Это время не учитывается.`}
+            />
           ))}
         </div>
       )}
@@ -81,8 +104,13 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
                 {state === 'active' ? <span className="node-spin" /> : STAGE_ICON[st.id]}
               </span>
               <span className="gantt-name">
-                <span>{st.title}{tries > 1 && <em> ×{tries}</em>}</span>
-                <small className={`w-${planned === 'skip' ? 'skip' : state}`}>{planned === 'skip' ? 'пропустится' : planned && state === 'stale' ? 'пройдёт снова' : WORD[state]}</small>
+                <span>
+                  {st.title}
+                  {tries > 1 && <em> ×{tries}</em>}
+                </span>
+                <small className={`w-${planned === 'skip' ? 'skip' : state}`}>
+                  {planned === 'skip' ? 'пропустится' : planned && state === 'stale' ? 'пройдёт снова' : WORD[state]}
+                </small>
               </span>
             </span>
             <span className="gantt-track">
@@ -97,7 +125,14 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
               {bars.map((b, i) => {
                 const full = `${bars.length > 1 ? `#${b.attempt.attempt} · ` : ''}${b.took}`;
                 // Ожидание человека — фиксированный слот без времени (точное время — в подсказке).
-                const label = compact || b.kind === 'wait' || b.kind === 'wait-live' ? '' : fits(b.width, full) ? full : fits(b.width, b.took) ? b.took : '';
+                const label =
+                  compact || b.kind === 'wait' || b.kind === 'wait-live'
+                    ? ''
+                    : fits(b.width, full)
+                      ? full
+                      : fits(b.width, b.took)
+                        ? b.took
+                        : '';
                 return (
                   <i key={i} className={`gantt-bar g-${b.kind}`} style={{ left: at(b.left), width: at(b.width) }} title={b.tip}>
                     {label && <b>{label}</b>}
@@ -113,11 +148,23 @@ export function Timeline({ run, onSelect, selected = null, current = null, compa
         );
       })}
       <div className="gantt-axis" style={reserve ? { marginRight: reserve } : undefined}>
-        {ticks.map((f) => <span key={f}>{f === 0 ? '0' : ms(span * f)}</span>)}
+        {ticks.map((f) => (
+          <span key={f}>{f === 0 ? '0' : ms(span * f)}</span>
+        ))}
       </div>
       <ul className="gantt-legend">
-        {LEGEND.map((l) => <li key={l.kind}><i className={`gantt-bar g-${l.kind}`} />{l.label}</li>)}
-        {clock.gaps.length > 0 && <li><i className="gantt-gap-sample" />Пауза после ошибки или остановки — вырезана, {ms(clock.paused)}</li>}
+        {LEGEND.map((l) => (
+          <li key={l.kind}>
+            <i className={`gantt-bar g-${l.kind}`} />
+            {l.label}
+          </li>
+        ))}
+        {clock.gaps.length > 0 && (
+          <li>
+            <i className="gantt-gap-sample" />
+            Пауза после ошибки или остановки — вырезана, {ms(clock.paused)}
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -131,8 +178,14 @@ export function TimelinePanel({ run, onSelect }: { run: RunFile; onSelect: (s: S
     <div className="scroll">
       <div className="timeline-panel">
         <dl className="timeline-sum">
-          <div><dt>Время агентов</dt><dd>{ms(agentTime(run, now))}</dd></div>
-          <div><dt>Запусков стадий</dt><dd>{runs}</dd></div>
+          <div>
+            <dt>Время агентов</dt>
+            <dd>{ms(agentTime(run, now))}</dd>
+          </div>
+          <div>
+            <dt>Запусков стадий</dt>
+            <dd>{runs}</dd>
+          </div>
         </dl>
         <Timeline run={run} onSelect={onSelect} />
       </div>

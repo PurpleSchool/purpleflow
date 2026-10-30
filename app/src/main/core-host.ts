@@ -1,7 +1,15 @@
 // Ядро оркестратора в отдельном utilityProcess: окно не подвисает ни от агентов, ни от git.
 import path from 'node:path';
 import {
-  Git, Orchestrator, checkCommand, detectProjectCommands, findEnvFiles, killAll, loadLoginShellEnv, which, type CoreSettings,
+  Git,
+  Orchestrator,
+  checkCommand,
+  detectProjectCommands,
+  findEnvFiles,
+  killAll,
+  loadLoginShellEnv,
+  which,
+  type CoreSettings,
 } from '@purpleflow/core';
 import type { CoreApi, HostMessage, HostRequest } from '../shared/ipc';
 

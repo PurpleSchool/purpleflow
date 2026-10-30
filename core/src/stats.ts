@@ -25,7 +25,11 @@ export function projectStats(runs: RunFile[], now = Date.now(), days = 28): Proj
   let waitMs = 0;
   for (const r of runs) {
     for (const a of r.attempts) {
-      const ms = Math.max(0, (a.endedAt ? Date.parse(a.endedAt) : r.status === 'running' || r.status === 'waiting' ? now : Date.parse(r.updatedAt)) - Date.parse(a.startedAt));
+      const ms = Math.max(
+        0,
+        (a.endedAt ? Date.parse(a.endedAt) : r.status === 'running' || r.status === 'waiting' ? now : Date.parse(r.updatedAt)) -
+          Date.parse(a.startedAt),
+      );
       if (GATES.has(a.stage)) waitMs += ms;
       else agentMs += ms;
     }
@@ -67,7 +71,10 @@ export function projectStats(runs: RunFile[], now = Date.now(), days = 28): Proj
     avgImplAttempts: finished.length ? finished.reduce((n, r) => n + Math.max(1, r.implAttemptsUsed), 0) / finished.length : null,
     returns: {
       plan: runs.reduce((n, r) => n + r.gates.filter((g) => g.gate === 'gate1' && g.decision === 'reject').length, 0),
-      acceptance: runs.reduce((n, r) => n + r.gates.filter((g) => g.gate === 'gate2' && (g.decision === 'reject' || g.decision === 'fix')).length, 0),
+      acceptance: runs.reduce(
+        (n, r) => n + r.gates.filter((g) => g.gate === 'gate2' && (g.decision === 'reject' || g.decision === 'fix')).length,
+        0,
+      ),
       tests: runs.reduce((n, r) => n + r.tests.filter((t) => !t.passed).length, 0),
       review: runs.reduce((n, r) => n + r.reviews.filter((x) => x.blocking.length > 0).length, 0),
       visual: runs.reduce((n, r) => n + (r.visuals ?? []).filter((v) => v.blocking.length > 0).length, 0),

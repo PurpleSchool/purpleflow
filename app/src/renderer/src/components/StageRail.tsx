@@ -1,4 +1,15 @@
-import { Archive, ClipboardCheck, MessageCircleQuestion, FlaskConical, Hammer, Map as MapIcon, MonitorCheck, ScanEye, ShieldCheck, UserRoundCheck } from 'lucide-react';
+import {
+  Archive,
+  ClipboardCheck,
+  MessageCircleQuestion,
+  FlaskConical,
+  Hammer,
+  Map as MapIcon,
+  MonitorCheck,
+  ScanEye,
+  ShieldCheck,
+  UserRoundCheck,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { StageId } from '@purpleflow/core';
 

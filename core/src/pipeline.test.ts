@@ -12,7 +12,12 @@ import type { AgentResult } from './agents/common.js';
 import { parseReply } from './pipeline/manager.js';
 import type { RunFile, StageAttempt } from './types.js';
 
-const at = (stage: StageAttempt['stage'], status: StageAttempt['status'] = 'done'): StageAttempt => ({ stage, attempt: 1, startedAt: '2026-01-01T00:00:00Z', status });
+const at = (stage: StageAttempt['stage'], status: StageAttempt['status'] = 'done'): StageAttempt => ({
+  stage,
+  attempt: 1,
+  startedAt: '2026-01-01T00:00:00Z',
+  status,
+});
 const runOf = (p: Partial<RunFile>) => ({ mode: 'task', visual: false, attempts: [], status: 'running', next: 'tests', ...p }) as RunFile;
 
 test('route: куда после проверок и что пропускается в каждом круге', () => {
@@ -48,7 +53,13 @@ test('route: какие действия управления доступны �
   // Быстрая правка с приёмки и быстрый режим — без возврата к плану; после двух возвратов — тоже.
   assert.ok(!availableActions({ ...impl, quickFix: true }).includes('restart'));
   assert.ok(!availableActions({ ...impl, mode: 'quick' }).includes('replan'));
-  const twice = { ...impl, interventions: [{ at: '1', kind: 'replan' as const }, { at: '2', kind: 'replan' as const }] };
+  const twice = {
+    ...impl,
+    interventions: [
+      { at: '1', kind: 'replan' as const },
+      { at: '2', kind: 'replan' as const },
+    ],
+  };
   assert.ok(!availableActions(twice).includes('replan'));
   assert.deepEqual(availableActions({ ...impl, status: 'finished' }), []);
 });
@@ -57,8 +68,18 @@ test('route: какие действия управления доступны �
 
 const PROMPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
 // openspec — devDependency ядра: интеграционные тесты не зависят от глобальной установки.
-const env = prependPath(loadLoginShellEnv(), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin'));
-const hasOpenspec = (() => { try { execFileSync('openspec', ['--version'], { env, stdio: 'ignore' }); return true; } catch { return false; } })();
+const env = prependPath(
+  loadLoginShellEnv(),
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin'),
+);
+const hasOpenspec = (() => {
+  try {
+    execFileSync('openspec', ['--version'], { env, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 function makeRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-pipe-'));
@@ -68,7 +89,10 @@ function makeRepo(): string {
   fs.mkdirSync(path.join(dir, 'test'));
   fs.writeFileSync(path.join(dir, 'package.json'), '{ "name": "p", "type": "module" }\n');
   fs.writeFileSync(path.join(dir, 'src/math.js'), 'export const add = (a, b) => a + b;\n');
-  fs.writeFileSync(path.join(dir, 'test/math.test.js'), "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/math.js';\ntest('add', () => assert.equal(add(2, 3), 5));\n");
+  fs.writeFileSync(
+    path.join(dir, 'test/math.test.js'),
+    "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/math.js';\ntest('add', () => assert.equal(add(2, 3), 5));\n",
+  );
   g('add', '-A');
   g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init');
   return dir;
@@ -77,7 +101,12 @@ function makeRepo(): string {
 const ok = (text: string): AgentResult => ({ ok: true, text, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } });
 
 /** Фейковый claude: отвечает по роли (видно по промпту) и пишет файлы, как настоящий агент. */
-function fakeClaude(script: { implement: (n: number, cwd: string, prompt: string) => void; review: (n: number) => object; manager?: (prompt: string) => string; checks?: string }) {
+function fakeClaude(script: {
+  implement: (n: number, cwd: string, prompt: string) => void;
+  review: (n: number) => object;
+  manager?: (prompt: string) => string;
+  checks?: string;
+}) {
   let impl = 0;
   let rev = 0;
   const prompts: string[] = [];
@@ -88,15 +117,25 @@ function fakeClaude(script: { implement: (n: number, cwd: string, prompt: string
     if (/Ты — менеджер прогона/.test(p)) return ok(script.manager?.(p) ?? '{"reply": "Всё идёт по плану.", "action": null}');
     if (/Перед планом проверь/.test(p)) return ok('{"questions": []}');
     if (/второй, независимый ревьюер/.test(p)) return ok('{"items":[{"index":1,"verdict":"confirmed","reason":"сценарий есть"}]}');
-    if (/ревьюер в конвейере PurpleFlow/.test(p)) { rev++; return ok(JSON.stringify(script.review(rev))); }
+    if (/ревьюер в конвейере PurpleFlow/.test(p)) {
+      rev++;
+      return ok(JSON.stringify(script.review(rev)));
+    }
     if (/планировщик/.test(sys)) {
       plans.push(p);
       const id = p.match(/используй ровно его\): `([^`]+)`/)![1];
       const d = path.join(o.cwd, 'openspec', 'changes', id);
       fs.mkdirSync(path.join(d, 'specs', 'calc'), { recursive: true });
-      fs.writeFileSync(path.join(d, 'proposal.md'), '# Умножение\n\n## Why\nНужно умножать два числа, сейчас есть только сложение, и это неудобно.\n\n## What Changes\n- mul\n\n## Impact\n- `src/math.js`\n\n## Invariants\n- add работает\n' + (script.checks ? `\n## Checks\n- \`${script.checks}\`\n` : ''));
+      fs.writeFileSync(
+        path.join(d, 'proposal.md'),
+        '# Умножение\n\n## Why\nНужно умножать два числа, сейчас есть только сложение, и это неудобно.\n\n## What Changes\n- mul\n\n## Impact\n- `src/math.js`\n\n## Invariants\n- add работает\n' +
+          (script.checks ? `\n## Checks\n- \`${script.checks}\`\n` : ''),
+      );
       fs.writeFileSync(path.join(d, 'tasks.md'), '## 1. Код\n- [ ] 1.1 mul в src/math.js\n- [ ] 1.2 тест\n');
-      fs.writeFileSync(path.join(d, 'specs', 'calc', 'spec.md'), '## ADDED Requirements\n### Requirement: Умножение\nКалькулятор SHALL умножать.\n\n#### Scenario: Два числа\n- **WHEN** mul(2, 3)\n- **THEN** 6\n');
+      fs.writeFileSync(
+        path.join(d, 'specs', 'calc', 'spec.md'),
+        '## ADDED Requirements\n### Requirement: Умножение\nКалькулятор SHALL умножать.\n\n#### Scenario: Два числа\n- **WHEN** mul(2, 3)\n- **THEN** 6\n',
+      );
       return ok('План готов.');
     }
     if (/исполнитель/.test(sys) || /Реализуй изменение|Продолжаем то же изменение/.test(p)) {
@@ -116,203 +155,351 @@ async function untilGate(core: Orchestrator, runId: string, gate: string, timeou
   for (;;) {
     const r = core.getRun(runId)!;
     if (r.status === 'waiting' && r.next === gate) return r;
-    if (r.status === 'stopped' || r.status === 'finished' || r.status === 'cancelled') throw new Error(`прогон остановился: ${r.message ?? r.status} (next=${r.next})`);
+    if (r.status === 'stopped' || r.status === 'finished' || r.status === 'cancelled')
+      throw new Error(`прогон остановился: ${r.message ?? r.status} (next=${r.next})`);
     if (Date.now() - t0 > timeoutMs) throw new Error(`не дождались ${gate}, сейчас ${r.next}/${r.status}`);
     await new Promise((res) => setTimeout(res, 100));
   }
 }
 
 function makeCore(fake: ReturnType<typeof fakeClaude>) {
-  const settings = { toolPaths: {}, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
+  const settings = {
+    toolPaths: {},
+    proxy: { baseUrl: '', apiKey: '' },
+    models: { planner: '', executor: '', reviewer: '' },
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' },
+    agentTimeoutMin: 5,
+    testTimeoutMin: 2,
+    maxParallel: 2,
+  } as unknown as CoreSettings;
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-'));
   return new Orchestrator({ dataDir, promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: fake.fn as never } });
 }
 
-test('конвейер: красные тесты и блокирующее ревью — один возврат, затем зелёное и приёмка', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = makeRepo();
-  const fake = fakeClaude({
-    implement: (n, cwd) => {
-      // Первая попытка: mul с ошибкой и тест, который её ловит; вторая — исправление.
-      fs.writeFileSync(path.join(cwd, 'src/math.js'), `export const add = (a, b) => a + b;\nexport const mul = (a, b) => ${n === 1 ? 'a + b' : 'a * b'};\n`);
-      fs.writeFileSync(path.join(cwd, 'test/mul.test.js'), "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { mul } from '../src/math.js';\ntest('mul', () => assert.equal(mul(2, 3), 6));\n");
-    },
-    review: (n) => (n === 1 ? { blocking: [{ file: 'src/math.js', line: 2, message: 'mul складывает вместо умножения', origin: null }], notes: [] } : { blocking: [], notes: [] }),
-  });
-  const core = makeCore(fake);
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js и тест.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
-  await untilGate(core, runId, 'gate1');
-  await core.dispatch({ type: 'gate.approve', runId });
-  const r = await untilGate(core, runId, 'gate2');
+test(
+  'конвейер: красные тесты и блокирующее ревью — один возврат, затем зелёное и приёмка',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const fake = fakeClaude({
+      implement: (n, cwd) => {
+        // Первая попытка: mul с ошибкой и тест, который её ловит; вторая — исправление.
+        fs.writeFileSync(
+          path.join(cwd, 'src/math.js'),
+          `export const add = (a, b) => a + b;\nexport const mul = (a, b) => ${n === 1 ? 'a + b' : 'a * b'};\n`,
+        );
+        fs.writeFileSync(
+          path.join(cwd, 'test/mul.test.js'),
+          "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { mul } from '../src/math.js';\ntest('mul', () => assert.equal(mul(2, 3), 6));\n",
+        );
+      },
+      review: (n) =>
+        n === 1
+          ? { blocking: [{ file: 'src/math.js', line: 2, message: 'mul складывает вместо умножения', origin: null }], notes: [] }
+          : { blocking: [], notes: [] },
+    });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js и тест.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    await core.dispatch({ type: 'gate.approve', runId });
+    const r = await untilGate(core, runId, 'gate2');
 
-  const seq = r.attempts.filter((a) => a.stage !== 'gate1').map((a) => `${a.stage}:${a.status}`);
-  assert.deepEqual(seq, ['clarify:done', 'plan:done', 'baseline:done', 'implement:done', 'tests:failed', 'review:failed', 'implement:done', 'tests:done', 'review:done', 'gate2:running']);
-  // Вторая попытка получила и упавшие тесты, и замечание ревью — одним возвратом.
-  const second = fake.prompts()[1];
-  assert.match(second, /Тесты не прошли/);
-  assert.match(second, /mul складывает вместо умножения/);
-  // Первое ревью — с проверкой найденного вторым проходом: замечание подтверждено со сценарием.
-  assert.match(r.reviews[0].blocking[0].message, /Сценарий: сценарий есть/);
-  assert.equal(fake.reviews(), 2);
-});
+    const seq = r.attempts.filter((a) => a.stage !== 'gate1').map((a) => `${a.stage}:${a.status}`);
+    assert.deepEqual(seq, [
+      'clarify:done',
+      'plan:done',
+      'baseline:done',
+      'implement:done',
+      'tests:failed',
+      'review:failed',
+      'implement:done',
+      'tests:done',
+      'review:done',
+      'gate2:running',
+    ]);
+    // Вторая попытка получила и упавшие тесты, и замечание ревью — одним возвратом.
+    const second = fake.prompts()[1];
+    assert.match(second, /Тесты не прошли/);
+    assert.match(second, /mul складывает вместо умножения/);
+    // Первое ревью — с проверкой найденного вторым проходом: замечание подтверждено со сценарием.
+    assert.match(r.reviews[0].blocking[0].message, /Сценарий: сценарий есть/);
+    assert.equal(fake.reviews(), 2);
+  },
+);
 
-test('эталон в фоне: линтер — с уточнения, тесты задачи из «## Checks» — пока человек смотрит план; полный набор — один раз перед приёмкой', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = makeRepo();
-  const focus = 'node --test test/';
-  const fake = fakeClaude({
-    checks: focus,
-    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
-    review: () => ({ blocking: [], notes: [] }),
-  });
-  const base = fake.fn;
-  let planSawLint: boolean | undefined;
-  // eslint-disable-next-line prefer-const -- присваивается ниже, а читается в замыкании выше
-  let core: Orchestrator;
-  fake.fn = async (o) => {
-    if (/Перед планом проверь/.test(o.prompt)) {
-      await new Promise((r) => setTimeout(r, 50));
-      return ok('{"questions": [{"q": "Какие числа поддерживать?"}]}');
-    }
-    if (/планировщик/.test(o.systemPrompt ?? '')) planSawLint = Boolean(core.getRun(runId)?.baseChecks?.some((b) => b.kind === 'lint'));
-    return base(o);
-  };
-  core = makeCore(fake);
-  const lint = 'node -e "setTimeout(() => {}, 400)"';
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', lintCommand: lint, testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
-  const until = async (pred: (r: RunFile) => boolean) => {
-    for (let i = 0; i < 150; i++) {
-      const r = core.getRun(runId)!;
-      if (pred(r)) return r;
-      await new Promise((res) => setTimeout(res, 100));
-    }
-    throw new Error('не дождались');
-  };
-  const waiting = await untilGate(core, runId, 'gate0');
-  // Уточнение не ждало линтер: оно закончилось раньше него.
-  const [b, cl] = ['baseline', 'clarify'].map((st) => waiting.attempts.find((a) => a.stage === st)!);
-  assert.ok(b.startedAt <= cl.startedAt);
-  // Пока человек думает над вопросами, линтер до правок уже в эталоне, а его вывод — в логе одним куском. Тестов в эталоне ещё нет.
-  let r = await until((x) => x.attempts[0].status === 'done');
-  assert.equal(r.status, 'waiting');
-  assert.deepEqual(r.baseChecks?.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`]);
-  assert.match(core.getLog(runId), /Базовые проверки · в фоне[\s\S]*✓ линтер: ok/);
+test(
+  'эталон в фоне: линтер — с уточнения, тесты задачи из «## Checks» — пока человек смотрит план; полный набор — один раз перед приёмкой',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const focus = 'node --test test/';
+    const fake = fakeClaude({
+      checks: focus,
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const base = fake.fn;
+    let planSawLint: boolean | undefined;
+    // eslint-disable-next-line prefer-const -- присваивается ниже, а читается в замыкании выше
+    let core: Orchestrator;
+    fake.fn = async (o) => {
+      if (/Перед планом проверь/.test(o.prompt)) {
+        await new Promise((r) => setTimeout(r, 50));
+        return ok('{"questions": [{"q": "Какие числа поддерживать?"}]}');
+      }
+      if (/планировщик/.test(o.systemPrompt ?? '')) planSawLint = Boolean(core.getRun(runId)?.baseChecks?.some((b) => b.kind === 'lint'));
+      return base(o);
+    };
+    core = makeCore(fake);
+    const lint = 'node -e "setTimeout(() => {}, 400)"';
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        lintCommand: lint,
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    const until = async (pred: (r: RunFile) => boolean) => {
+      for (let i = 0; i < 150; i++) {
+        const r = core.getRun(runId)!;
+        if (pred(r)) return r;
+        await new Promise((res) => setTimeout(res, 100));
+      }
+      throw new Error('не дождались');
+    };
+    const waiting = await untilGate(core, runId, 'gate0');
+    // Уточнение не ждало линтер: оно закончилось раньше него.
+    const [b, cl] = ['baseline', 'clarify'].map((st) => waiting.attempts.find((a) => a.stage === st)!);
+    assert.ok(b.startedAt <= cl.startedAt);
+    // Пока человек думает над вопросами, линтер до правок уже в эталоне, а его вывод — в логе одним куском. Тестов в эталоне ещё нет.
+    let r = await until((x) => x.attempts[0].status === 'done');
+    assert.equal(r.status, 'waiting');
+    assert.deepEqual(
+      r.baseChecks?.map((x) => `${x.kind}:${x.command}`),
+      [`lint:${lint}`],
+    );
+    assert.match(core.getLog(runId), /Базовые проверки · в фоне[\s\S]*✓ линтер: ok/);
 
-  await core.dispatch({ type: 'gate.answer', runId, answers: [{ q: 'Какие числа поддерживать?', a: 'целые' }] } as never);
-  await untilGate(core, runId, 'gate1');
-  assert.equal(planSawLint, true);
-  // Пока план ждёт утверждения, тесты задачи из «## Checks» снимаются на коде до правок.
-  r = await until((x) => x.attempts.filter((a) => a.stage === 'baseline').every((a) => a.status === 'done') && x.attempts.filter((a) => a.stage === 'baseline').length === 2);
-  assert.equal(r.focusTestCommand, focus);
-  assert.deepEqual(r.baseChecks?.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`, `test:${focus}`]);
+    await core.dispatch({ type: 'gate.answer', runId, answers: [{ q: 'Какие числа поддерживать?', a: 'целые' }] } as never);
+    await untilGate(core, runId, 'gate1');
+    assert.equal(planSawLint, true);
+    // Пока план ждёт утверждения, тесты задачи из «## Checks» снимаются на коде до правок.
+    r = await until(
+      (x) =>
+        x.attempts.filter((a) => a.stage === 'baseline').every((a) => a.status === 'done') &&
+        x.attempts.filter((a) => a.stage === 'baseline').length === 2,
+    );
+    assert.equal(r.focusTestCommand, focus);
+    assert.deepEqual(
+      r.baseChecks?.map((x) => `${x.kind}:${x.command}`),
+      [`lint:${lint}`, `test:${focus}`],
+    );
 
-  await core.dispatch({ type: 'gate.approve', runId });
-  const done = await untilGate(core, runId, 'gate2');
-  const log = core.getLog(runId);
-  // На попытке — тесты задачи, полный набор — один раз, перед приёмкой.
-  assert.equal(log.match(/полный набор перед приёмкой/g)?.length, 1);
-  assert.deepEqual(done.tests.at(-1)!.checks!.map((x) => `${x.kind}:${x.command}`), [`lint:${lint}`, 'test:node --test']);
-  assert.ok(done.tests.at(-1)!.passed);
-});
+    await core.dispatch({ type: 'gate.approve', runId });
+    const done = await untilGate(core, runId, 'gate2');
+    const log = core.getLog(runId);
+    // На попытке — тесты задачи, полный набор — один раз, перед приёмкой.
+    assert.equal(log.match(/полный набор перед приёмкой/g)?.length, 1);
+    assert.deepEqual(
+      done.tests.at(-1)!.checks!.map((x) => `${x.kind}:${x.command}`),
+      [`lint:${lint}`, 'test:node --test'],
+    );
+    assert.ok(done.tests.at(-1)!.passed);
+  },
+);
 
-test('конвейер: «Поправить» с приёмки — правка и проверки, без ревью, снова приёмка', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = makeRepo();
-  const fake = fakeClaude({
-    implement: (n, cwd) => {
-      const extra = n >= 2 ? 'export const sub = (a, b) => a - b;\n' : '';
-      fs.writeFileSync(path.join(cwd, 'src/math.js'), `export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n${extra}`);
-    },
-    review: () => ({ blocking: [], notes: [] }),
-  });
-  const core = makeCore(fake);
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', autopilot: true } as never });
-  // Автопилот принимает план сам — сразу ждём приёмку.
-  await untilGate(core, runId, 'gate2');
-  await core.dispatch({ type: 'gate.fix', runId, comment: 'добавь sub' });
-  const r = await untilGate(core, runId, 'gate2');
-  const tail = r.attempts.slice(r.attempts.findIndex((a) => a.stage === 'gate2')).map((a) => `${a.stage}:${a.status}`);
-  assert.deepEqual(tail, ['gate2:done', 'implement:done', 'tests:done', 'gate2:running']);
-  assert.equal(fake.reviews(), 1);
-  assert.match(fake.prompts()[1], /добавь sub/);
-});
+test(
+  'конвейер: «Поправить» с приёмки — правка и проверки, без ревью, снова приёмка',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const fake = fakeClaude({
+      implement: (n, cwd) => {
+        const extra = n >= 2 ? 'export const sub = (a, b) => a - b;\n' : '';
+        fs.writeFileSync(
+          path.join(cwd, 'src/math.js'),
+          `export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n${extra}`,
+        );
+      },
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+        autopilot: true,
+      } as never,
+    });
+    // Автопилот принимает план сам — сразу ждём приёмку.
+    await untilGate(core, runId, 'gate2');
+    await core.dispatch({ type: 'gate.fix', runId, comment: 'добавь sub' });
+    const r = await untilGate(core, runId, 'gate2');
+    const tail = r.attempts.slice(r.attempts.findIndex((a) => a.stage === 'gate2')).map((a) => `${a.stage}:${a.status}`);
+    assert.deepEqual(tail, ['gate2:done', 'implement:done', 'tests:done', 'gate2:running']);
+    assert.equal(fake.reviews(), 1);
+    assert.match(fake.prompts()[1], /добавь sub/);
+  },
+);
 
-test('управление: заметка на плане уходит исполнителю, возврат к плану откатывает код и сохраняет снимок', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = makeRepo();
-  const fake = fakeClaude({
-    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
-    review: () => ({ blocking: [], notes: [] }),
-  });
-  const core = makeCore(fake);
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
-  await untilGate(core, runId, 'gate1');
-  await core.dispatch({ type: 'run.control', runId, action: { kind: 'note', text: 'назови параметры x и y' } });
-  await core.dispatch({ type: 'gate.approve', runId });
-  let r = await untilGate(core, runId, 'gate2');
-  assert.match(fake.prompts()[0], /назови параметры x и y/);
-  assert.equal(r.pending, undefined);
-  assert.ok(r.interventions?.[0].appliedAt);
+test(
+  'управление: заметка на плане уходит исполнителю, возврат к плану откатывает код и сохраняет снимок',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const fake = fakeClaude({
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    await core.dispatch({ type: 'run.control', runId, action: { kind: 'note', text: 'назови параметры x и y' } });
+    await core.dispatch({ type: 'gate.approve', runId });
+    let r = await untilGate(core, runId, 'gate2');
+    assert.match(fake.prompts()[0], /назови параметры x и y/);
+    assert.equal(r.pending, undefined);
+    assert.ok(r.interventions?.[0].appliedAt);
 
-  await core.dispatch({ type: 'run.control', runId, action: { kind: 'replan', text: 'mul не нужен, сделай pow', keepCode: false } });
-  r = await untilGate(core, runId, 'gate1');
-  // Код откачен к базе, план остался; работа до отката — в снимке.
-  assert.equal(fs.readFileSync(path.join(r.worktreePath, 'src/math.js'), 'utf8'), 'export const add = (a, b) => a + b;\n');
-  assert.ok(fs.existsSync(path.join(r.worktreePath, 'openspec', 'changes', r.changeId, 'tasks.md')));
-  const snap = execFileSync('git', ['show', `${r.interventions!.at(-1)!.snapshot}:src/math.js`], { cwd: r.worktreePath }).toString();
-  assert.match(snap, /mul/);
-  assert.match(fake.plans().at(-1)!, /mul не нужен, сделай pow/);
-  assert.match(fake.plans().at(-1)!, /src\/math\.js/);
-  assert.equal(r.implAttemptsLimit, r.implAttemptsUsed + 3);
-  // Исполнитель после нового плана узнаёт, почему план поменялся.
-  await core.dispatch({ type: 'gate.approve', runId });
-  await untilGate(core, runId, 'gate2');
-  assert.match(fake.prompts().at(-1)!, /План обновлён.*сделай pow/s);
-});
+    await core.dispatch({ type: 'run.control', runId, action: { kind: 'replan', text: 'mul не нужен, сделай pow', keepCode: false } });
+    r = await untilGate(core, runId, 'gate1');
+    // Код откачен к базе, план остался; работа до отката — в снимке.
+    assert.equal(fs.readFileSync(path.join(r.worktreePath, 'src/math.js'), 'utf8'), 'export const add = (a, b) => a + b;\n');
+    assert.ok(fs.existsSync(path.join(r.worktreePath, 'openspec', 'changes', r.changeId, 'tasks.md')));
+    const snap = execFileSync('git', ['show', `${r.interventions!.at(-1)!.snapshot}:src/math.js`], { cwd: r.worktreePath }).toString();
+    assert.match(snap, /mul/);
+    assert.match(fake.plans().at(-1)!, /mul не нужен, сделай pow/);
+    assert.match(fake.plans().at(-1)!, /src\/math\.js/);
+    assert.equal(r.implAttemptsLimit, r.implAttemptsUsed + 3);
+    // Исполнитель после нового плана узнаёт, почему план поменялся.
+    await core.dispatch({ type: 'gate.approve', runId });
+    await untilGate(core, runId, 'gate2');
+    assert.match(fake.prompts().at(-1)!, /План обновлён.*сделай pow/s);
+  },
+);
 
 test('менеджер: разбор ответа модели — JSON с действием, JSON в блоке кода, просто текст', () => {
-  assert.deepEqual(parseReply('{"reply": "Верну к плану.", "action": {"kind": "replan", "text": "без mul"}}'), { reply: 'Верну к плану.', action: { kind: 'replan', text: 'без mul', keepCode: true } });
-  assert.deepEqual(parseReply('Вот:\n```json\n{"reply": "Ок", "action": {"kind": "pause"}}\n```'), { reply: 'Ок', action: { kind: 'pause' } });
+  assert.deepEqual(parseReply('{"reply": "Верну к плану.", "action": {"kind": "replan", "text": "без mul"}}'), {
+    reply: 'Верну к плану.',
+    action: { kind: 'replan', text: 'без mul', keepCode: true },
+  });
+  assert.deepEqual(parseReply('Вот:\n```json\n{"reply": "Ок", "action": {"kind": "pause"}}\n```'), {
+    reply: 'Ок',
+    action: { kind: 'pause' },
+  });
   // Действие без текста указания не принимаем.
   assert.deepEqual(parseReply('{"reply": "Ок", "action": {"kind": "note", "text": " "}}'), { reply: 'Ок', action: undefined });
   assert.deepEqual(parseReply('Просто ответ'), { reply: 'Просто ответ' });
   // Блок кода внутри reply — не сам JSON (так ломалось: брали ```bash за ответ).
-  const withCode = JSON.stringify({ reply: 'Сделайте так:\n```bash\ngit tag v1\n```', action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' } });
-  assert.deepEqual(parseReply(withCode), { reply: 'Сделайте так:\n```bash\ngit tag v1\n```', action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' } });
+  const withCode = JSON.stringify({
+    reply: 'Сделайте так:\n```bash\ngit tag v1\n```',
+    action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' },
+  });
+  assert.deepEqual(parseReply(withCode), {
+    reply: 'Сделайте так:\n```bash\ngit tag v1\n```',
+    action: { kind: 'command', command: 'git tag v1.0.1', text: 'тег', cwd: 'project' },
+  });
   assert.deepEqual(parseReply('```json\n{"reply": "Ок", "action": null}\n```'), { reply: 'Ок', action: undefined });
 });
 
-test('менеджер: видит факты прогона, предлагает действие, человек применяет кнопкой', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = makeRepo();
-  let seen = '';
-  const fake = fakeClaude({
-    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
-    review: () => ({ blocking: [], notes: [] }),
-    manager: (p) => { seen = p; return '{"reply": "Верну на план.", "action": {"kind": "replan", "text": "сделай pow вместо mul"}}'; },
-  });
-  const core = makeCore(fake);
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', autopilot: true } as never });
-  await untilGate(core, runId, 'gate2');
-  const chat = await core.askManager(runId, 'Давай лучше pow');
-  assert.match(seen, /mul в src\/math\.js/); // tasks.md в фактах
-  assert.match(seen, /src\/math\.js/);
-  assert.match(seen, /`replan`/);
-  const proposal = chat.at(-1)!;
-  assert.equal(proposal.actionState, 'proposed');
-  assert.equal(core.getRun(runId)!.next, 'gate2'); // само ничего не применилось
-  await core.resolveManagerAction(runId, proposal.id, true);
-  const r = await untilGate(core, runId, 'gate1'); // автопилот после возврата к плану ждёт человека
-  assert.equal(r.interventions?.at(-1)?.kind, 'replan');
-  assert.equal(core.getManagerChat(runId).messages.at(-1)!.actionState, 'applied');
-});
+test(
+  'менеджер: видит факты прогона, предлагает действие, человек применяет кнопкой',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    let seen = '';
+    const fake = fakeClaude({
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+      manager: (p) => {
+        seen = p;
+        return '{"reply": "Верну на план.", "action": {"kind": "replan", "text": "сделай pow вместо mul"}}';
+      },
+    });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+        autopilot: true,
+      } as never,
+    });
+    await untilGate(core, runId, 'gate2');
+    const chat = await core.askManager(runId, 'Давай лучше pow');
+    assert.match(seen, /mul в src\/math\.js/); // tasks.md в фактах
+    assert.match(seen, /src\/math\.js/);
+    assert.match(seen, /`replan`/);
+    const proposal = chat.at(-1)!;
+    assert.equal(proposal.actionState, 'proposed');
+    assert.equal(core.getRun(runId)!.next, 'gate2'); // само ничего не применилось
+    await core.resolveManagerAction(runId, proposal.id, true);
+    const r = await untilGate(core, runId, 'gate1'); // автопилот после возврата к плану ждёт человека
+    assert.equal(r.interventions?.at(-1)?.kind, 'replan');
+    assert.equal(core.getManagerChat(runId).messages.at(-1)!.actionState, 'applied');
+  },
+);
 
 test('менеджер: команда выполняется только по кнопке, вывод возвращается в чат', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
   const repo = makeRepo();
   execFileSync('git', ['tag', 'v1.0.0'], { cwd: repo });
   let seen = '';
   const fake = fakeClaude({
-    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+    implement: (_n, cwd) =>
+      fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
     review: () => ({ blocking: [], notes: [] }),
-    manager: (p) => { seen = p; return JSON.stringify({ reply: 'Поставлю тег.', action: { kind: 'command', command: 'git tag v1.0.1 && git tag --list', text: 'тег v1.0.1', cwd: 'project' } }); },
+    manager: (p) => {
+      seen = p;
+      return JSON.stringify({
+        reply: 'Поставлю тег.',
+        action: { kind: 'command', command: 'git tag v1.0.1 && git tag --list', text: 'тег v1.0.1', cwd: 'project' },
+      });
+    },
   });
   const core = makeCore(fake);
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', autopilot: true } as never });
+  const { runId } = await core.dispatch({
+    type: 'run.start',
+    input: {
+      projectPath: repo,
+      task: 'Добавь функцию mul(a, b) в src/math.js.',
+      testCommand: 'node --test',
+      mode: 'task',
+      workspace: 'worktree',
+      autopilot: true,
+    } as never,
+  });
   await untilGate(core, runId, 'gate2');
   const chat = await core.askManager(runId, 'Поставь тег на следующую fix-версию');
   assert.match(seen, /v1\.0\.0/); // теги проекта в фактах
@@ -323,57 +510,121 @@ test('менеджер: команда выполняется только по 
   assert.match(execFileSync('git', ['tag', '--list'], { cwd: repo }).toString(), /v1\.0\.1/);
 });
 
-test('соседние репозитории: агенты видят их на чтение, запись исполнителя туда — предупреждение', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  // Прогон хранит настоящий путь проекта (/private/var… на macOS) — настройки сохраняем по нему же.
-  const repo = fs.realpathSync(makeRepo());
-  const api = fs.realpathSync(makeRepo());
-  const fake = fakeClaude({
-    implement: (_n, cwd) => {
-      fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n');
-      // Исполнитель нарушил запрет и поправил соседа.
-      fs.writeFileSync(path.join(api, 'src/math.js'), 'export const add = (a, b) => b + a;\n');
-    },
-    review: () => ({ blocking: [], notes: [] }),
-  });
-  const calls: { addDirs?: string[]; systemPrompt?: string; prompt: string }[] = [];
-  const fn = fake.fn;
-  fake.fn = (async (o: { prompt: string; cwd: string; systemPrompt?: string; addDirs?: string[] }) => { calls.push(o); return fn(o); }) as typeof fn;
-  const core = makeCore(fake);
-  core.saveProjectConfig(repo, { setupCommand: '', lintCommand: '', testCommand: 'node --test', relatedRepos: [{ path: api, note: 'бэкенд API' }, { path: path.join(api, 'нет-такой') }], notes: { setup: '', lint: '', test: '' } });
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
-  await untilGate(core, runId, 'gate1');
-  await core.dispatch({ type: 'gate.approve', runId });
-  const r = await untilGate(core, runId, 'gate2');
+test(
+  'соседние репозитории: агенты видят их на чтение, запись исполнителя туда — предупреждение',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    // Прогон хранит настоящий путь проекта (/private/var… на macOS) — настройки сохраняем по нему же.
+    const repo = fs.realpathSync(makeRepo());
+    const api = fs.realpathSync(makeRepo());
+    const fake = fakeClaude({
+      implement: (_n, cwd) => {
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n');
+        // Исполнитель нарушил запрет и поправил соседа.
+        fs.writeFileSync(path.join(api, 'src/math.js'), 'export const add = (a, b) => b + a;\n');
+      },
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const calls: { addDirs?: string[]; systemPrompt?: string; prompt: string }[] = [];
+    const fn = fake.fn;
+    fake.fn = (async (o: { prompt: string; cwd: string; systemPrompt?: string; addDirs?: string[] }) => {
+      calls.push(o);
+      return fn(o);
+    }) as typeof fn;
+    const core = makeCore(fake);
+    core.saveProjectConfig(repo, {
+      setupCommand: '',
+      lintCommand: '',
+      testCommand: 'node --test',
+      relatedRepos: [{ path: api, note: 'бэкенд API' }, { path: path.join(api, 'нет-такой') }],
+      notes: { setup: '', lint: '', test: '' },
+    });
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    await core.dispatch({ type: 'gate.approve', runId });
+    const r = await untilGate(core, runId, 'gate2');
 
-  const exec = calls.find((c) => /исполнитель/.test(c.systemPrompt ?? ''))!;
-  assert.deepEqual(exec.addDirs, [api]);
-  assert.match(exec.systemPrompt!, /Соседние репозитории \(только чтение\)[\s\S]*бэкенд API/);
-  assert.ok(r.warnings?.some((w) => w.text.includes(api)), 'запись в соседа замечена');
-});
+    const exec = calls.find((c) => /исполнитель/.test(c.systemPrompt ?? ''))!;
+    assert.deepEqual(exec.addDirs, [api]);
+    assert.match(exec.systemPrompt!, /Соседние репозитории \(только чтение\)[\s\S]*бэкенд API/);
+    assert.ok(
+      r.warnings?.some((w) => w.text.includes(api)),
+      'запись в соседа замечена',
+    );
+  },
+);
 
-test('только codex: прогон без claude, служебные вызовы и менеджер — на codex, визуальная проверка выключена', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
-  const repo = fs.realpathSync(makeRepo());
-  const fake = fakeClaude({
-    implement: (_n, cwd) => fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
-    review: () => ({ blocking: [], notes: [] }),
-  });
-  const sandboxes: string[] = [];
-  const codex = (async (o: { prompt: string; cwd: string; systemPrompt?: string; sandbox: string }) => { sandboxes.push(o.sandbox); return fake.fn(o); }) as never;
-  // codex «установлен» (скрипт отвечает версией), claude — нет.
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
-  fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\necho "codex-cli 1.0.0"\n', { mode: 0o755 });
-  const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'нет-claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '' }, agents: { planner: 'codex', executor: 'codex', reviewer: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: (() => { throw new Error('claude не должен запускаться'); }) as never, codex } });
+test(
+  'только codex: прогон без claude, служебные вызовы и менеджер — на codex, визуальная проверка выключена',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = fs.realpathSync(makeRepo());
+    const fake = fakeClaude({
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const sandboxes: string[] = [];
+    const codex = (async (o: { prompt: string; cwd: string; systemPrompt?: string; sandbox: string }) => {
+      sandboxes.push(o.sandbox);
+      return fake.fn(o);
+    }) as never;
+    // codex «установлен» (скрипт отвечает версией), claude — нет.
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
+    fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\necho "codex-cli 1.0.0"\n', { mode: 0o755 });
+    const settings = {
+      toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'нет-claude') },
+      proxy: { baseUrl: '', apiKey: '' },
+      models: { planner: '', executor: '', reviewer: '' },
+      agents: { planner: 'codex', executor: 'codex', reviewer: 'codex' },
+      agentTimeoutMin: 5,
+      testTimeoutMin: 2,
+      maxParallel: 2,
+    } as unknown as CoreSettings;
+    const core = new Orchestrator({
+      dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')),
+      promptsDir: PROMPTS,
+      env,
+      getSettings: () => settings,
+      runners: {
+        claude: (() => {
+          throw new Error('claude не должен запускаться');
+        }) as never,
+        codex,
+      },
+    });
 
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', visual: true, runCommand: 'node -e 1', appUrl: 'http://localhost:{port}' } as never });
-  assert.equal(core.getRun(runId)!.visual, undefined, 'без claude визуальной проверки нет');
-  await untilGate(core, runId, 'gate1');
-  await core.dispatch({ type: 'gate.approve', runId });
-  await untilGate(core, runId, 'gate2');
-  const chat = await core.askManager(runId, 'Как дела?');
-  assert.equal(chat.at(-1)!.text, 'Всё идёт по плану.');
-  assert.equal(sandboxes.at(-1), 'read-only');
-});
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+        visual: true,
+        runCommand: 'node -e 1',
+        appUrl: 'http://localhost:{port}',
+      } as never,
+    });
+    assert.equal(core.getRun(runId)!.visual, undefined, 'без claude визуальной проверки нет');
+    await untilGate(core, runId, 'gate1');
+    await core.dispatch({ type: 'gate.approve', runId });
+    await untilGate(core, runId, 'gate2');
+    const chat = await core.askManager(runId, 'Как дела?');
+    assert.equal(chat.at(-1)!.text, 'Всё идёт по плану.');
+    assert.equal(sandboxes.at(-1), 'read-only');
+  },
+);
 
 test('менеджер на codex по выбору в настройках, даже если claude установлен', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
   const repo = fs.realpathSync(makeRepo());
@@ -381,10 +632,37 @@ test('менеджер на codex по выбору в настройках, д�
   const calls: string[] = [];
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   for (const n of ['codex', 'claude']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
-  const via = (name: string) => (async (o: { prompt: string; cwd: string }) => { if (/Ты — менеджер прогона/.test(o.prompt)) calls.push(name); return fake.fn(o); }) as never;
-  const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '', manager: 'gpt-mini' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'claude', manager: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: via('claude'), codex: via('codex') } });
-  const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
+  const via = (name: string) =>
+    (async (o: { prompt: string; cwd: string }) => {
+      if (/Ты — менеджер прогона/.test(o.prompt)) calls.push(name);
+      return fake.fn(o);
+    }) as never;
+  const settings = {
+    toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') },
+    proxy: { baseUrl: '', apiKey: '' },
+    models: { planner: '', executor: '', reviewer: '', manager: 'gpt-mini' },
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'claude', manager: 'codex' },
+    agentTimeoutMin: 5,
+    testTimeoutMin: 2,
+    maxParallel: 2,
+  } as unknown as CoreSettings;
+  const core = new Orchestrator({
+    dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')),
+    promptsDir: PROMPTS,
+    env,
+    getSettings: () => settings,
+    runners: { claude: via('claude'), codex: via('codex') },
+  });
+  const { runId } = await core.dispatch({
+    type: 'run.start',
+    input: {
+      projectPath: repo,
+      task: 'Добавь функцию mul(a, b) в src/math.js.',
+      testCommand: 'node --test',
+      mode: 'task',
+      workspace: 'worktree',
+    } as never,
+  });
   await untilGate(core, runId, 'gate1');
   await core.askManager(runId, 'Как дела?');
   assert.deepEqual(calls, ['codex']);

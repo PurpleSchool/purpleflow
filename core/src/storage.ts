@@ -36,7 +36,10 @@ export async function sizeOfAll(paths: string[]): Promise<number> {
 /** Каталоги в dir (полные пути). */
 export function subdirs(dir: string): string[] {
   try {
-    return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(dir, e.name));
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => path.join(dir, e.name));
   } catch {
     return [];
   }
@@ -63,7 +66,9 @@ export function screenshots(visualRoot: string): string[] {
     for (const attemptDir of subdirs(runDir)) {
       try {
         for (const f of fs.readdirSync(attemptDir)) if (/\.(png|jpe?g|webp)$/i.test(f)) out.push(path.join(attemptDir, f));
-      } catch { /* каталог пропал */ }
+      } catch {
+        /* каталог пропал */
+      }
     }
   }
   return out;

@@ -34,8 +34,16 @@ export function stageBars(run: RunFile, clock: ActiveClock, stage: StageId, now:
     const left = pct(s);
     const width = Math.max(minWidth, pct(e) - left);
     const kind: BarKind = isGate(a.stage)
-      ? (a.status === 'running' ? 'wait-live' : 'wait')
-      : a.status === 'running' ? 'live' : a.status === 'failed' ? 'fail' : a.status === 'stopped' ? 'stop' : 'done';
+      ? a.status === 'running'
+        ? 'wait-live'
+        : 'wait'
+      : a.status === 'running'
+        ? 'live'
+        : a.status === 'failed'
+          ? 'fail'
+          : a.status === 'stopped'
+            ? 'stop'
+            : 'done';
     const took = duration(a.startedAt, a.endedAt ?? new Date(now).toISOString());
     const tip = `${title}${attempts.length > 1 ? ` · попытка ${a.attempt}` : ''} — ${took}${a.model ? ` · ${a.model}` : ''}${a.summary ? `\n${a.summary}` : ''}`;
     return { attempt: a, left, width, kind, took, tip };

@@ -48,7 +48,7 @@ export function useAgentScreen(runId: string) {
         if (!e.frame) setAction(null);
       } else if (e.type === 'agent.output' && e.runId === runId && e.stage === 'visual') {
         // Вывод приходит кусками — склеиваем и берём последнюю завершённую строку с командой pw.
-         
+
         buf = (buf + e.text.replace(/\x1b\[[0-9;]*m/g, '')).slice(-4000);
         const lines = buf.split(/\r?\n/).slice(0, -1);
         for (let i = lines.length - 1; i >= 0; i--) {
@@ -81,9 +81,18 @@ export function AgentScreen({ screen }: { screen: ReturnType<typeof useAgentScre
   return (
     <div className="browser is-agent">
       <div className="browser-bar">
-        <span className="agent-live"><i />Агент проверяет</span>
-        <div className="browser-address"><input value={frame.url} readOnly aria-label="Адрес" /></div>
-        {action && <span className="agent-action" title={action}>pw {action}</span>}
+        <span className="agent-live">
+          <i />
+          Агент проверяет
+        </span>
+        <div className="browser-address">
+          <input value={frame.url} readOnly aria-label="Адрес" />
+        </div>
+        {action && (
+          <span className="agent-action" title={action}>
+            pw {action}
+          </span>
+        )}
       </div>
       <div className="browser-stage agent-stage">
         <img className="agent-frame" src={`data:image/jpeg;base64,${frame.data}`} alt="Экран браузера агента" draggable={false} />
@@ -96,8 +105,14 @@ export function AgentScreen({ screen }: { screen: ReturnType<typeof useAgentScre
  * Вкладка «Браузер»: приложение из ветки прогона во встроенном webview.
  * Отдельная сессия, без preload и Node, только локальные адреса (см. will-attach-webview в main).
  */
-export function BrowserPane({ preview, canRun, manual = false, intro }: {
-  preview: ReturnType<typeof usePreview>; canRun: boolean;
+export function BrowserPane({
+  preview,
+  canRun,
+  manual = false,
+  intro,
+}: {
+  preview: ReturnType<typeof usePreview>;
+  canRun: boolean;
   /** Можно открыть свой адрес (уже запущенный локальный сервер) без команды запуска. */
   manual?: boolean;
   intro?: string;
@@ -129,7 +144,9 @@ export function BrowserPane({ preview, canRun, manual = false, intro }: {
       try {
         setAddress(w.getURL());
         setNav({ back: w.canGoBack(), forward: w.canGoForward(), loading: w.isLoading() });
-      } catch { /* webview ещё не готов */ }
+      } catch {
+        /* webview ещё не готов */
+      }
     };
     const loading = () => setNav((n) => ({ ...n, loading: true }));
     w.addEventListener('did-navigate', sync);
@@ -165,36 +182,67 @@ export function BrowserPane({ preview, canRun, manual = false, intro }: {
     return (
       <div className="browser-empty">
         <div className="browser-empty-card">
-          <span className="browser-empty-icon">{state.status === 'failed' || error ? <TriangleAlert size={22} /> : <Globe size={22} />}</span>
+          <span className="browser-empty-icon">
+            {state.status === 'failed' || error ? <TriangleAlert size={22} /> : <Globe size={22} />}
+          </span>
           {state.status === 'starting' ? (
             <>
               <strong>Запускаю приложение…</strong>
-              <p><code>{state.command}</code></p>
+              <p>
+                <code>{state.command}</code>
+              </p>
               <p className="muted">Ждём ответа на {state.url}</p>
               <span className="spinner big" />
-              <Button tone="quiet" onClick={() => void stop()}>Отменить</Button>
+              <Button tone="quiet" onClick={() => void stop()}>
+                Отменить
+              </Button>
             </>
           ) : state.status === 'failed' ? (
             <>
               <strong>Приложение не запустилось</strong>
               <p>{state.error}</p>
               {state.output && <pre className="browser-output">{state.output.trim().split('\n').slice(-20).join('\n')}</pre>}
-              <Button tone="primary" icon={<RotateCw size={14} />} onClick={() => void start()}>Попробовать снова</Button>
+              <Button tone="primary" icon={<RotateCw size={14} />} onClick={() => void start()}>
+                Попробовать снова
+              </Button>
             </>
           ) : (
             <>
               <strong>Проверьте результат сами</strong>
-              <p>{intro ?? 'Приложение поднимется из ветки прогона на свободном порту и откроется прямо здесь — можно протыкать изменения перед приёмкой.'}</p>
+              <p>
+                {intro ??
+                  'Приложение поднимется из ветки прогона на свободном порту и откроется прямо здесь — можно протыкать изменения перед приёмкой.'}
+              </p>
               {error && <p className="browser-error">{error}</p>}
               {canRun ? (
-                <Button tone="primary" icon={<Globe size={15} />} onClick={() => void start()}>Открыть приложение</Button>
+                <Button tone="primary" icon={<Globe size={15} />} onClick={() => void start()}>
+                  Открыть приложение
+                </Button>
               ) : (
-                <p className="muted">Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»){manual ? ' или откройте адрес вручную' : ''}.</p>
+                <p className="muted">
+                  Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты»){manual ? ' или откройте адрес вручную' : ''}
+                  .
+                </p>
               )}
               {manual && (
-                <form className="browser-manual" onSubmit={(e) => { e.preventDefault(); openManual(); }}>
-                  <input className="input mono" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="localhost:3000" aria-label="Адрес" spellCheck={false} />
-                  <Button tone={canRun ? 'ghost' : 'primary'} type="submit">Открыть адрес</Button>
+                <form
+                  className="browser-manual"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    openManual();
+                  }}
+                >
+                  <input
+                    className="input mono"
+                    value={typed}
+                    onChange={(e) => setTyped(e.target.value)}
+                    placeholder="localhost:3000"
+                    aria-label="Адрес"
+                    spellCheck={false}
+                  />
+                  <Button tone={canRun ? 'ghost' : 'primary'} type="submit">
+                    Открыть адрес
+                  </Button>
                 </form>
               )}
             </>
@@ -208,20 +256,64 @@ export function BrowserPane({ preview, canRun, manual = false, intro }: {
     <div className="browser">
       <div className="browser-bar">
         <Button tone="quiet" icon={<ArrowLeft size={16} />} title="Назад" disabled={!nav.back} onClick={() => view.current?.goBack()} />
-        <Button tone="quiet" icon={<ArrowRight size={16} />} title="Вперёд" disabled={!nav.forward} onClick={() => view.current?.goForward()} />
-        <Button tone="quiet" icon={<RotateCw size={15} className={nav.loading ? 'spin' : ''} />} title="Обновить" onClick={() => view.current?.reload()} />
-        <form className="browser-address" onSubmit={(e) => { e.preventDefault(); go(); }}>
+        <Button
+          tone="quiet"
+          icon={<ArrowRight size={16} />}
+          title="Вперёд"
+          disabled={!nav.forward}
+          onClick={() => view.current?.goForward()}
+        />
+        <Button
+          tone="quiet"
+          icon={<RotateCw size={15} className={nav.loading ? 'spin' : ''} />}
+          title="Обновить"
+          onClick={() => view.current?.reload()}
+        />
+        <form
+          className="browser-address"
+          onSubmit={(e) => {
+            e.preventDefault();
+            go();
+          }}
+        >
           <input value={address} onChange={(e) => setAddress(e.target.value)} spellCheck={false} aria-label="Адрес" />
         </form>
         <div className="segmented small" role="radiogroup" aria-label="Устройство">
-          <button role="radio" aria-checked={!mobile} className={!mobile ? 'is-on' : ''} title="Десктоп" onClick={() => toggleMobile(false)}><Monitor size={14} /></button>
-          <button role="radio" aria-checked={mobile} className={mobile ? 'is-on' : ''} title="Телефон" onClick={() => toggleMobile(true)}><Smartphone size={14} /></button>
+          <button
+            role="radio"
+            aria-checked={!mobile}
+            className={!mobile ? 'is-on' : ''}
+            title="Десктоп"
+            onClick={() => toggleMobile(false)}
+          >
+            <Monitor size={14} />
+          </button>
+          <button role="radio" aria-checked={mobile} className={mobile ? 'is-on' : ''} title="Телефон" onClick={() => toggleMobile(true)}>
+            <Smartphone size={14} />
+          </button>
         </div>
-        <Button tone="quiet" icon={<ExternalLink size={15} />} title="Открыть в системном браузере" onClick={() => void window.open(address || state.url, '_blank')} />
-        <Button tone="quiet" icon={<Square size={13} />} title={manualUrl ? 'Закрыть страницу' : 'Остановить приложение'} onClick={() => void stop()} />
+        <Button
+          tone="quiet"
+          icon={<ExternalLink size={15} />}
+          title="Открыть в системном браузере"
+          onClick={() => void window.open(address || state.url, '_blank')}
+        />
+        <Button
+          tone="quiet"
+          icon={<Square size={13} />}
+          title={manualUrl ? 'Закрыть страницу' : 'Остановить приложение'}
+          onClick={() => void stop()}
+        />
       </div>
       <div className={`browser-stage ${mobile ? 'is-mobile' : ''}`}>
-        <webview ref={(el) => { view.current = el as unknown as WebviewTag | null; }} src={state.url} partition="purpleflow-preview" className="browser-view" />
+        <webview
+          ref={(el) => {
+            view.current = el as unknown as WebviewTag | null;
+          }}
+          src={state.url}
+          partition="purpleflow-preview"
+          className="browser-view"
+        />
       </div>
     </div>
   );

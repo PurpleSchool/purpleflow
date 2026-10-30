@@ -14,7 +14,13 @@ interface Block {
 }
 
 const plain = (md: string) =>
-  md.replace(/^\s*([-*+]|\d+\.)\s+(\[[ xX]\]\s+)?/, '').replace(/^#+\s+/, '').replace(/[`*_>#]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  md
+    .replace(/^\s*([-*+]|\d+\.)\s+(\[[ xX]\]\s+)?/, '')
+    .replace(/^#+\s+/, '')
+    .replace(/[`*_>#]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
 
 /** Разбивает Markdown на блоки верхнего уровня; списки — по пунктам, чтобы замечание можно было оставить к одной задаче. */
 function blocksOf(source: string): Block[] {
@@ -41,8 +47,20 @@ function blocksOf(source: string): Block[] {
  * Markdown, где к любому абзацу, заголовку или пункту списка можно оставить замечание.
  * Замечание — {file, line, quote, text}: уходит агенту вместе с возвратом.
  */
-export function CommentableMarkdown({ file, source, comments, onComments, editable, className = '' }: {
-  file: string; source: string; comments: LineComment[]; onComments: (c: LineComment[]) => void; editable: boolean; className?: string;
+export function CommentableMarkdown({
+  file,
+  source,
+  comments,
+  onComments,
+  editable,
+  className = '',
+}: {
+  file: string;
+  source: string;
+  comments: LineComment[];
+  onComments: (c: LineComment[]) => void;
+  editable: boolean;
+  className?: string;
 }) {
   const blocks = useMemo(() => blocksOf(source), [source]);
   const [draftLine, setDraftLine] = useState<number | null>(null);
@@ -105,8 +123,12 @@ export function CommentableMarkdown({ file, source, comments, onComments, editab
                   }}
                 />
                 <div className="composer-actions">
-                  <Button tone="quiet" onClick={() => setDraftLine(null)}>Отмена</Button>
-                  <Button tone="primary" onClick={() => add(b)} disabled={!draft.trim()}>Добавить</Button>
+                  <Button tone="quiet" onClick={() => setDraftLine(null)}>
+                    Отмена
+                  </Button>
+                  <Button tone="primary" onClick={() => add(b)} disabled={!draft.trim()}>
+                    Добавить
+                  </Button>
                 </div>
               </div>
             )}

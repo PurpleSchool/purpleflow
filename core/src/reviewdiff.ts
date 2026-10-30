@@ -87,15 +87,18 @@ const moduleOf = (path: string) => path.split('/').slice(0, 3).join('/');
 
 export function packReview(diff: string, budget: number, maxParts = 4): ReviewParts {
   const trimmed: string[] = [];
-  const files = splitDiff(diff).map((f) => {
-    const size = f.text.length;
-    let text = f.text;
-    if (size > FILE_CAP && !f.path.startsWith('openspec/')) {
-      trimmed.push(f.path);
-      text = f.text.slice(0, FILE_CAP) + `\n… (файл урезан: ${Math.round(size / 1024)} КБ в диффе — остальное смотри через git diff -- ${f.path})\n`;
-    }
-    return { ...f, text, prio: priorityOf(f.path, size) };
-  })
+  const files = splitDiff(diff)
+    .map((f) => {
+      const size = f.text.length;
+      let text = f.text;
+      if (size > FILE_CAP && !f.path.startsWith('openspec/')) {
+        trimmed.push(f.path);
+        text =
+          f.text.slice(0, FILE_CAP) +
+          `\n… (файл урезан: ${Math.round(size / 1024)} КБ в диффе — остальное смотри через git diff -- ${f.path})\n`;
+      }
+      return { ...f, text, prio: priorityOf(f.path, size) };
+    })
     // OpenSpec (proposal, tasks, спецификации) ревьюер уже получает в промпте отдельно.
     .filter((f) => f.prio < 4);
   // Сначала код, внутри приоритета — по модулям, чтобы связанное шло рядом.
@@ -109,7 +112,10 @@ export function packReview(diff: string, budget: number, maxParts = 4): ReviewPa
   if (count === 1) {
     for (const f of files) {
       if (sizes[0] + f.text.length > budget) omitted.push(f.path);
-      else { parts[0].push(f); sizes[0] += f.text.length; }
+      else {
+        parts[0].push(f);
+        sizes[0] += f.text.length;
+      }
     }
   } else {
     // Модули целиком — в наименее заполненную часть; не влезает модуль — по файлам.
@@ -129,7 +135,10 @@ export function packReview(diff: string, budget: number, maxParts = 4): ReviewPa
       for (const f of group) {
         const j = sizes.indexOf(Math.min(...sizes));
         if (sizes[j] + f.text.length > budget) omitted.push(f.path);
-        else { parts[j].push(f); sizes[j] += f.text.length; }
+        else {
+          parts[j].push(f);
+          sizes[j] += f.text.length;
+        }
       }
     }
   }

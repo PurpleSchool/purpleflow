@@ -23,7 +23,12 @@ export async function stageClarify(h: Orchestrator, run: RunFile) {
   }
   h.flushBaseChecks(run);
   run.clarify = { questions };
-  h.log(run, c.amber(`? вопросы планировщика (${questions.length}):\n`) + questions.map((q, i) => `  ${i + 1}. ${q.q}${q.options?.length ? c.dim(` [${q.options.join(' / ')}]`) : ''}`).join('\n') + '\n');
+  h.log(
+    run,
+    c.amber(`? вопросы планировщика (${questions.length}):\n`) +
+      questions.map((q, i) => `  ${i + 1}. ${q.q}${q.options?.length ? c.dim(` [${q.options.join(' / ')}]`) : ''}`).join('\n') +
+      '\n',
+  );
   h.end(run, attempt, 'done', `Вопросов: ${questions.length}`);
   run.next = 'gate0';
   h.save(run);
@@ -34,9 +39,19 @@ export async function answer(h: Orchestrator, id: string, answers: { q: string; 
   if (r.next !== 'gate0' || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт ответов на вопросы');
   const clean = answers.map((x) => ({ q: x.q.trim(), a: x.a.trim() })).filter((x) => x.a);
   r.clarify = { questions: r.clarify?.questions ?? [], answers: clean, skipped: clean.length ? undefined : true };
-  r.gates.push({ gate: 'gate0', at: new Date().toISOString(), decision: 'approve', comment: clean.map((x) => `${x.q} — ${x.a}`).join('\n') || undefined });
+  r.gates.push({
+    gate: 'gate0',
+    at: new Date().toISOString(),
+    decision: 'approve',
+    comment: clean.map((x) => `${x.q} — ${x.a}`).join('\n') || undefined,
+  });
   const gateAttempt = [...r.attempts].reverse().find((a) => a.stage === 'gate0' && a.status === 'running');
-  if (gateAttempt) Object.assign(gateAttempt, { status: 'done', endedAt: new Date().toISOString(), summary: clean.length ? `Ответов: ${clean.length}` : 'Без ответов' });
+  if (gateAttempt)
+    Object.assign(gateAttempt, {
+      status: 'done',
+      endedAt: new Date().toISOString(),
+      summary: clean.length ? `Ответов: ${clean.length}` : 'Без ответов',
+    });
   if (clean.length) h.log(r, c.mint('✓ ответы человека:\n') + clean.map((x) => `  • ${x.q} — ${x.a}`).join('\n') + '\n');
   r.message = undefined;
   r.next = 'plan';
@@ -81,7 +96,10 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   h.checkStop(run);
   if (v.valid && mode === 'epic' && !fs.existsSync(path.join(changeDir, 'design.md'))) {
     v.valid = false;
-    v.issues.push({ level: 'ERROR', message: 'Для большой задачи нужен design.md: варианты решения, выбранный подход и разбиение на этапы.' });
+    v.issues.push({
+      level: 'ERROR',
+      message: 'Для большой задачи нужен design.md: варианты решения, выбранный подход и разбиение на этапы.',
+    });
   }
   if (v.valid && mode === 'epic') {
     run.phases = Math.max(1, Math.min(8, countPhases((await h.getChangeDocs(run.id)).tasks)));
@@ -89,7 +107,8 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
   if (v.valid) {
     const focus = parseFocusTests((await h.getChangeDocs(run.id)).proposal);
     run.focusTestCommand = focus && run.testCommand && focus !== run.testCommand ? focus : undefined;
-    if (run.focusTestCommand) h.log(run, c.dim(`Тесты задачи: \`${run.focusTestCommand}\` — на каждой попытке; полный набор — перед приёмкой.`) + '\n');
+    if (run.focusTestCommand)
+      h.log(run, c.dim(`Тесты задачи: \`${run.focusTestCommand}\` — на каждой попытке; полный набор — перед приёмкой.`) + '\n');
   }
   if (v.valid && mode === 'bug') {
     // Воспроизведение засчитано, только если проверки на текущем коде красные.
@@ -98,10 +117,16 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
     run.repro = result;
     if (!result.checks?.length) {
       v.valid = false;
-      v.issues.push({ level: 'ERROR', message: 'Не заданы команды тестов — воспроизвести баг тестом нельзя. Укажите команду тестов в командах проекта.' });
+      v.issues.push({
+        level: 'ERROR',
+        message: 'Не заданы команды тестов — воспроизвести баг тестом нельзя. Укажите команду тестов в командах проекта.',
+      });
     } else if (result.passed) {
       v.valid = false;
-      v.issues.push({ level: 'ERROR', message: `Тест воспроизведения не падает: все проверки зелёные на текущем коде${run.focusTestCommand ? ` (запускалась команда из «## Checks»: \`${run.focusTestCommand}\` — она должна включать тест воспроизведения)` : ''}. Напиши тест, который падает именно из-за бага.` });
+      v.issues.push({
+        level: 'ERROR',
+        message: `Тест воспроизведения не падает: все проверки зелёные на текущем коде${run.focusTestCommand ? ` (запускалась команда из «## Checks»: \`${run.focusTestCommand}\` — она должна включать тест воспроизведения)` : ''}. Напиши тест, который падает именно из-за бага.`,
+      });
     } else {
       h.log(run, c.mint('✓ баг воспроизведён: проверки красные, как и ожидалось') + '\n');
     }
@@ -136,14 +161,17 @@ export async function stagePlan(h: Orchestrator, run: RunFile) {
     return;
   }
   run.feedback = { source: 'validator', text: `\`openspec validate ${run.changeId} --strict\` нашёл ошибки:\n${issues}` };
-  h.markStopped(run, `План не прошёл openspec validate после ${PLAN_RETRIES + 1} попыток. Исправьте файлы вручную или нажмите «Продолжить».`);
+  h.markStopped(
+    run,
+    `План не прошёл openspec validate после ${PLAN_RETRIES + 1} попыток. Исправьте файлы вручную или нажмите «Продолжить».`,
+  );
 }
 
 /**
  * С чего начать исполнителю: файлы, которые план называет в proposal и tasks.md, — чтобы не изучать проект заново.
  * Профиль проекта у него и так в системном промпте.
  */
-export async function startFilesBlock(h: Orchestrator, run: RunFile) : Promise<string> {
+export async function startFilesBlock(h: Orchestrator, run: RunFile): Promise<string> {
   if (modeOf(run) === 'quick') return '';
   const docs = await h.getChangeDocs(run.id).catch(() => null);
   if (!docs) return '';
@@ -154,6 +182,9 @@ export async function startFilesBlock(h: Orchestrator, run: RunFile) : Promise<s
     if (!p.startsWith('openspec/') && !p.includes('..')) paths.add(p);
   }
   if (!paths.size) return '';
-  const list = [...paths].slice(0, 60).map((p) => `- \`${p}\`${fs.existsSync(path.join(run.worktreePath, p)) ? '' : ' (новый)'}`).join('\n');
+  const list = [...paths]
+    .slice(0, 60)
+    .map((p) => `- \`${p}\`${fs.existsSync(path.join(run.worktreePath, p)) ? '' : ' (новый)'}`)
+    .join('\n');
   return `\nФайлы, которые называет план, — начни с них и их соседей; весь проект заново не изучай (профиль проекта — в системном промпте):\n${list}\n`;
 }

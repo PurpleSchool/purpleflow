@@ -1,5 +1,34 @@
 import type {
-  AgentKind, ChatFile, ChatSummary, ManagerMessage, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
+  AgentKind,
+  ChatFile,
+  ChatSummary,
+  ManagerMessage,
+  Models,
+  AiCommands,
+  EnvCheck,
+  NextPartDraft,
+  CommandIssue,
+  PrStatus,
+  ProjectKnowledge,
+  ProjectListItem,
+  ProjectOverview,
+  ProjectStats,
+  PrDetails,
+  ProjectBranches,
+  StorageItem,
+  ConnectionCheck,
+  ModeSuggestion,
+  PreviewState,
+  ProjectConfig,
+  CoreCommand,
+  CoreEvent,
+  DiffFile,
+  ProjectCommands,
+  Role,
+  RunFile,
+  RunSummary,
+  ToolInfo,
+  ToolName,
 } from '@purpleflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
@@ -43,7 +72,11 @@ export interface SettingsPatch {
 /** Ответ запросов к PurpleSchool: ошибки — понятным текстом, а не исключением IPC. */
 export type AccountResult<T = null> =
   | { ok: true; data: T }
-  | { ok: false; error: string; /** unauthorized — токен больше не действует, нужен вход заново. */ code?: 'unauthorized' | 'exists' | 'rate' | 'network' };
+  | {
+      ok: false;
+      error: string;
+      /** unauthorized — токен больше не действует, нужен вход заново. */ code?: 'unauthorized' | 'exists' | 'rate' | 'network';
+    };
 
 /** Ключ AI-прокси из аккаунта: сам ключ в окно не уходит, только хвост для узнавания. */
 export interface AccountKey {
@@ -58,15 +91,31 @@ export interface AccountKey {
 
 /** Баланс и план AI-прокси (GET /public/ai-proxy/overview). Юниты — строками: в БД это BigInt. */
 export interface AccountOverview {
-  balance: { totalInitialUnits: string; usedUnits: string; usedPercentage: number; remainingUnits: string; nonRolloverRemainingUnits: string; averageDailyUnitsSpend: string; estimatedRemainingDays: number | null };
+  balance: {
+    totalInitialUnits: string;
+    usedUnits: string;
+    usedPercentage: number;
+    remainingUnits: string;
+    nonRolloverRemainingUnits: string;
+    averageDailyUnitsSpend: string;
+    estimatedRemainingDays: number | null;
+  };
   currentPlan: { title: string; priceMinor: number; unitsPerMonth: string; nextPaymentAt: string; isAutoPaymentEnabled: boolean } | null;
 }
 
 export type UsageBucket = 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
-export interface UsageModelSpend { modelName: string; unitsSpend: string; requestsCount: number }
+export interface UsageModelSpend {
+  modelName: string;
+  unitsSpend: string;
+  requestsCount: number;
+}
 /** Расход AI-прокси (GET /public/ai-proxy/usage). */
 export interface AccountUsage {
-  timeSeries: { bucketType: UsageBucket; period: { from: string; to: string }; buckets: { date: string; totalUnitsSpend: string; modelUnitsSpend: UsageModelSpend[] }[] };
+  timeSeries: {
+    bucketType: UsageBucket;
+    period: { from: string; to: string };
+    buckets: { date: string; totalUnitsSpend: string; modelUnitsSpend: UsageModelSpend[] }[];
+  };
   modelSummary: { models: UsageModelSpend[]; totalUnitsSpend: string; totalRequests: number; averageUnitsSpendPerBucket: string };
 }
 

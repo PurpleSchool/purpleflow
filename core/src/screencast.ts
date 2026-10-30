@@ -24,13 +24,20 @@ export async function waitForCdp(port: number, timeoutMs = 20_000): Promise<bool
     try {
       const r = await fetch(`http://127.0.0.1:${port}/json/version`);
       if (r.ok) return true;
-    } catch { /* ещё не поднялся */ }
+    } catch {
+      /* ещё не поднялся */
+    }
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
 }
 
-interface Target { id: string; type: string; url: string; webSocketDebuggerUrl?: string }
+interface Target {
+  id: string;
+  type: string;
+  url: string;
+  webSocketDebuggerUrl?: string;
+}
 
 /**
  * Следит за вкладкой, с которой работает агент, и шлёт кадры не чаще раза в minIntervalMs.
@@ -61,7 +68,9 @@ export class Screencast {
     if (this.timer) clearInterval(this.timer);
     try {
       this.ws?.close();
-    } catch { /* уже закрыт */ }
+    } catch {
+      /* уже закрыт */
+    }
     this.ws = null;
   }
 
@@ -83,11 +92,15 @@ export class Screencast {
     this.target = page.id;
     try {
       this.ws?.close();
-    } catch { /* старое соединение */ }
+    } catch {
+      /* старое соединение */
+    }
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     this.ws = ws;
     const send = (method: string, params: object = {}) => ws.send(JSON.stringify({ id: ++this.msgId, method, params }));
-    ws.addEventListener('open', () => send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 2880, maxHeight: 2000, everyNthFrame: 1 }));
+    ws.addEventListener('open', () =>
+      send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 2880, maxHeight: 2000, everyNthFrame: 1 }),
+    );
     ws.addEventListener('message', (ev) => {
       let m: { method?: string; params?: { data: string; sessionId: number; metadata?: { deviceWidth?: number; deviceHeight?: number } } };
       try {
@@ -100,7 +113,12 @@ export class Screencast {
       const now = Date.now();
       if (now - this.lastFrame < this.minIntervalMs) return;
       this.lastFrame = now;
-      this.onFrame({ data: m.params.data, url: this.url, width: m.params.metadata?.deviceWidth ?? 0, height: m.params.metadata?.deviceHeight ?? 0 });
+      this.onFrame({
+        data: m.params.data,
+        url: this.url,
+        width: m.params.metadata?.deviceWidth ?? 0,
+        height: m.params.metadata?.deviceHeight ?? 0,
+      });
     });
     ws.addEventListener('close', () => {
       if (this.ws === ws) {
@@ -108,6 +126,8 @@ export class Screencast {
         this.target = null;
       }
     });
-    ws.addEventListener('error', () => { /* переподключимся на следующем опросе */ });
+    ws.addEventListener('error', () => {
+      /* переподключимся на следующем опросе */
+    });
   }
 }

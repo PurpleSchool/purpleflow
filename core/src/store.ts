@@ -96,15 +96,35 @@ export class RunStore {
       const r = this.readFile(e.runJsonPath) ?? this.readFile(this.backupPath(e.id));
       if (!r) {
         return {
-          id: e.id, title: 'run.json не найден', changeId: '', projectPath: '', branch: '', status: 'stopped',
-          next: 'plan', createdAt: e.createdAt, updatedAt: e.createdAt, runJsonPath: e.runJsonPath,
-          implAttemptsUsed: 0, totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, missing: true,
+          id: e.id,
+          title: 'run.json не найден',
+          changeId: '',
+          projectPath: '',
+          branch: '',
+          status: 'stopped',
+          next: 'plan',
+          createdAt: e.createdAt,
+          updatedAt: e.createdAt,
+          runJsonPath: e.runJsonPath,
+          implAttemptsUsed: 0,
+          totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          missing: true,
         } satisfies RunSummary;
       }
       return {
-        id: r.id, title: r.title, changeId: r.changeId, projectPath: r.projectPath, branch: r.branch,
-        status: r.status, next: r.next, createdAt: r.createdAt, updatedAt: r.updatedAt,
-        runJsonPath: e.runJsonPath, implAttemptsUsed: r.implAttemptsUsed, totals: r.totals, mode: r.mode,
+        id: r.id,
+        title: r.title,
+        changeId: r.changeId,
+        projectPath: r.projectPath,
+        branch: r.branch,
+        status: r.status,
+        next: r.next,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        runJsonPath: e.runJsonPath,
+        implAttemptsUsed: r.implAttemptsUsed,
+        totals: r.totals,
+        mode: r.mode,
       };
     });
   }
@@ -116,7 +136,15 @@ export class RunStore {
   /** Всё, что прогон хранит в данных приложения: индекс, копия run.json, лог, PID-файлы. */
   forget(id: string): void {
     this.remove(id);
-    for (const f of [this.backupPath(id), this.logFile(id), this.chatFile(id), this.pidFile(id), this.pidFile(`${id}:server`), this.pidFile(`${id}:preview`)]) fs.rmSync(f, { force: true });
+    for (const f of [
+      this.backupPath(id),
+      this.logFile(id),
+      this.chatFile(id),
+      this.pidFile(id),
+      this.pidFile(`${id}:server`),
+      this.pidFile(`${id}:preview`),
+    ])
+      fs.rmSync(f, { force: true });
   }
 
   private pidFile(group: string): string {

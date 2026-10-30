@@ -18,11 +18,21 @@ function makeCore(runners: { claude?: unknown; codex?: unknown }) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   for (const n of ['codex', 'claude']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   const settings = {
-    toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') }, proxy: { baseUrl: '', apiKey: '' },
-    models: { planner: 'opus', executor: 'sonnet', reviewer: '' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
-    agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2,
+    toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') },
+    proxy: { baseUrl: '', apiKey: '' },
+    models: { planner: 'opus', executor: 'sonnet', reviewer: '' },
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
+    agentTimeoutMin: 5,
+    testTimeoutMin: 2,
+    maxParallel: 2,
   } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env: process.env, getSettings: () => settings, runners: runners as never });
+  const core = new Orchestrator({
+    dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')),
+    promptsDir: PROMPTS,
+    env: process.env,
+    getSettings: () => settings,
+    runners: runners as never,
+  });
   return core;
 }
 
@@ -58,7 +68,11 @@ test('чат на claude: ответ кусками, шаги инструмен
   assert.equal(after.title, 'Как устроен проект?');
   const answer = after.messages.at(-1)!;
   assert.equal(answer.role, 'assistant');
-  assert.deepEqual(answer.parts, [{ kind: 'text', text: 'Привет' }, { kind: 'tool', text: 'Read src/a.ts' }, { kind: 'text', text: 'Готово' }]);
+  assert.deepEqual(answer.parts, [
+    { kind: 'text', text: 'Привет' },
+    { kind: 'tool', text: 'Read src/a.ts' },
+    { kind: 'text', text: 'Готово' },
+  ]);
   assert.equal(answer.text, 'Привет\n\nГотово');
   assert.ok(events.some((e) => e.type === 'chat.updated'));
   // Первый ход — новая сессия с системным промптом, модель — как у первой роли claude.
@@ -74,13 +88,20 @@ test('чат на claude: ответ кусками, шаги инструмен
   assert.equal(calls[1].systemPrompt, undefined);
   assert.doesNotMatch(calls[1].prompt, /Предыдущая переписка/);
 
-  assert.deepEqual(core.listChats().map((c) => c.id), [chat.id]);
+  assert.deepEqual(
+    core.listChats().map((c) => c.id),
+    [chat.id],
+  );
 });
 
 test('чат: только чтение, смена агента пересказывает историю, ошибка и удаление', async () => {
   const claudeCalls: AgentRunOptions[] = [];
   const codexCalls: (AgentRunOptions & { sandbox: string; resumeThread?: string; persist?: boolean })[] = [];
-  const claude = async (o: AgentRunOptions) => { claudeCalls.push(o); o.onStep?.({ kind: 'text', text: 'Ответ claude', delta: true }); return { ok: true, text: 'Ответ claude', usage: emptyUsage() }; };
+  const claude = async (o: AgentRunOptions) => {
+    claudeCalls.push(o);
+    o.onStep?.({ kind: 'text', text: 'Ответ claude', delta: true });
+    return { ok: true, text: 'Ответ claude', usage: emptyUsage() };
+  };
   const codex = async (o: AgentRunOptions & { sandbox: string }) => {
     codexCalls.push(o);
     o.onSession?.('thread-1');
@@ -166,7 +187,9 @@ test('чат: сообщение во время ответа встаёт в о
     calls.push(o);
     o.onStep?.({ kind: 'text', text: `ответ ${calls.length}`, delta: true });
     const r = await new Promise<{ stopped?: boolean }>((res) => gates.push(res));
-    return r.stopped ? { ok: false, stopped: true, text: '', usage: emptyUsage() } : { ok: true, text: `ответ ${calls.length}`, usage: emptyUsage() };
+    return r.stopped
+      ? { ok: false, stopped: true, text: '', usage: emptyUsage() }
+      : { ok: true, text: `ответ ${calls.length}`, usage: emptyUsage() };
   };
   const core = makeCore({ claude });
   const chat = await core.createChat({ agent: 'claude' });
@@ -183,7 +206,10 @@ test('чат: сообщение во время ответа встаёт в о
   await core.sendChat(chat.id, 'лишнее');
   let c = core.getChat(chat.id)!;
   assert.equal(c.busy, true);
-  assert.deepEqual(c.chat.messages.filter((m) => m.queued).map((m) => m.text), ['Только один тест', 'math.test.js', 'лишнее']);
+  assert.deepEqual(
+    c.chat.messages.filter((m) => m.queued).map((m) => m.text),
+    ['Только один тест', 'math.test.js', 'лишнее'],
+  );
   core.unqueueChat(chat.id, c.chat.messages.at(-1)!.id);
   assert.throws(() => core.unqueueChat(chat.id, c.chat.messages[0].id), /уже ушло/);
 
@@ -193,8 +219,10 @@ test('чат: сообщение во время ответа встаёт в о
   assert.equal(calls[1].resume, calls[0].sessionId);
   assert.equal(calls[1].prompt, 'Я прервал твой предыдущий ответ.\n\nТолько один тест\n\nmath.test.js');
   c = core.getChat(chat.id)!;
-  assert.deepEqual(c.chat.messages.map((m) => (m.pending ? `${m.role}:…` : `${m.role}:${m.text}${m.queued ? ':q' : ''}${m.stopped ? ':stopped' : ''}`)),
-    ['user:Прогони тесты', 'assistant:ответ 1:stopped', 'user:Только один тест', 'user:math.test.js', 'assistant:…']);
+  assert.deepEqual(
+    c.chat.messages.map((m) => (m.pending ? `${m.role}:…` : `${m.role}:${m.text}${m.queued ? ':q' : ''}${m.stopped ? ':stopped' : ''}`)),
+    ['user:Прогони тесты', 'assistant:ответ 1:stopped', 'user:Только один тест', 'user:math.test.js', 'assistant:…'],
+  );
 
   gates[1]({});
   await untilIdle(core, chat.id);

@@ -31,19 +31,32 @@ export function WelcomeScreen() {
       <div className="onboard-drag drag" aria-hidden />
       {step === 'start' ? (
         <div className="onboard-hero" key="start">
-          <div className="onboard-logo"><Mark size={68} /></div>
+          <div className="onboard-logo">
+            <Mark size={68} />
+          </div>
           <h1>PurpleFlow</h1>
-          <p>Задачи проходят план, реализацию, тесты и ревью — claude и codex работают за вас. Войдите через PurpleSchool, чтобы агенты работали без VPN.</p>
+          <p>
+            Задачи проходят план, реализацию, тесты и ревью — claude и codex работают за вас. Войдите через PurpleSchool, чтобы агенты
+            работали без VPN.
+          </p>
           <div className="onboard-actions">
-            <Button tone="primary" icon={<LogIn size={18} />} onClick={() => setStep('login')}>Войти через PurpleSchool</Button>
-            <Button tone="ghost" icon={<UserPlus size={18} />} onClick={() => setStep('register')}>Зарегистрироваться</Button>
-            <Button tone="quiet" busy={leaving} onClick={() => void next()}>Пропустить</Button>
+            <Button tone="primary" icon={<LogIn size={18} />} onClick={() => setStep('login')}>
+              Войти через PurpleSchool
+            </Button>
+            <Button tone="ghost" icon={<UserPlus size={18} />} onClick={() => setStep('register')}>
+              Зарегистрироваться
+            </Button>
+            <Button tone="quiet" busy={leaving} onClick={() => void next()}>
+              Пропустить
+            </Button>
           </div>
           <p className="onboard-skip-hint">Без входа claude и codex работают по вашим подпискам. Войти можно позже в настройках.</p>
           <ul className="onboard-benefits">
             {ACCOUNT_BENEFITS.map((b) => (
               <li key={b.title}>
-                <span className="onboard-tick"><Check size={13} /></span>
+                <span className="onboard-tick">
+                  <Check size={13} />
+                </span>
                 <div>
                   <strong>{b.title}</strong>
                   <span>{b.text}</span>
@@ -60,12 +73,21 @@ export function WelcomeScreen() {
             </button>
           )}
           <div className="onboard-card">
-            <div className="onboard-card-mark"><Mark size={36} /></div>
+            <div className="onboard-card-mark">
+              <Mark size={36} />
+            </div>
             {step === 'key' ? (
               <div className="onboard-key">
                 <h2>Ключ AI-прокси</h2>
                 <p className="auth-sub">
-                  Вы вошли{state.settings?.account?.email ? <> как <strong>{state.settings.account.email}</strong></> : null}. Агенты ходят в модели по ключу AI-прокси вашего аккаунта.
+                  Вы вошли
+                  {state.settings?.account?.email ? (
+                    <>
+                      {' '}
+                      как <strong>{state.settings.account.email}</strong>
+                    </>
+                  ) : null}
+                  . Агенты ходят в модели по ключу AI-прокси вашего аккаунта.
                 </p>
                 <AccountKeys onUnauthorized={() => setStep('login')} />
                 <Button tone="primary" icon={<ArrowRight size={15} />} busy={leaving} onClick={() => void next()}>
@@ -77,7 +99,9 @@ export function WelcomeScreen() {
             )}
           </div>
           {step !== 'key' && (
-            <button className="link onboard-skip" disabled={leaving} onClick={() => void next()}>Пропустить</button>
+            <button className="link onboard-skip" disabled={leaving} onClick={() => void next()}>
+              Пропустить
+            </button>
           )}
         </div>
       )}

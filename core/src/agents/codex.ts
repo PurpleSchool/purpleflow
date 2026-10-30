@@ -27,7 +27,10 @@ export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string
  * codex exec --json; промпт читается из stdin ("-").
  * Прокси подключаем отдельным провайдером через -c, не трогая ~/.codex/config.toml.
  */
-export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images' | 'userConfig' | 'persist' | 'resumeThread'>, extra: { schemaFile?: string; lastFile: string }): string[] {
+export function codexArgs(
+  o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'proxy' | 'images' | 'userConfig' | 'persist' | 'resumeThread'>,
+  extra: { schemaFile?: string; lastFile: string },
+): string[] {
   // У resume нет -C и -s: папка — рабочая папка процесса, песочница — через -c.
   const args = o.resumeThread
     ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${o.sandbox}"`]
@@ -36,13 +39,19 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
     // С настройками пользователя его config.toml (MCP и прочее) остаётся, провайдер переопределяется поверх через -c.
     if (!o.userConfig) args.push('--ignore-user-config');
     args.push(
-      '-c', 'model_provider=purpleflow',
-      '-c', 'model_providers.purpleflow.name=purpleflow',
-      '-c', `model_providers.purpleflow.base_url=${codexProxyBase(o.proxy)}`,
-      '-c', `model_providers.purpleflow.env_key=${KEY_ENV}`,
-      '-c', 'model_providers.purpleflow.wire_api=responses',
+      '-c',
+      'model_provider=purpleflow',
+      '-c',
+      'model_providers.purpleflow.name=purpleflow',
+      '-c',
+      `model_providers.purpleflow.base_url=${codexProxyBase(o.proxy)}`,
+      '-c',
+      `model_providers.purpleflow.env_key=${KEY_ENV}`,
+      '-c',
+      'model_providers.purpleflow.wire_api=responses',
       // Прокси PurpleSchool не поддерживает WebSocket-транспорт Responses API.
-      '-c', 'model_providers.purpleflow.supports_websockets=false',
+      '-c',
+      'model_providers.purpleflow.supports_websockets=false',
     );
   }
   // Исполнителю и планировщику на codex нужна сеть (зависимости, openspec) — в песочнице workspace-write она выключена по умолчанию.
@@ -98,7 +107,12 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
         case 'item.started':
           if (item?.type === 'command_execution') {
             out(c.violet('▸ ') + `shell ${c.dim(String(item.command ?? '').slice(0, 200))}` + '\n');
-            o.onStep?.({ kind: 'tool', text: `shell ${String(item.command ?? '').split('\n')[0].slice(0, 160)}` });
+            o.onStep?.({
+              kind: 'tool',
+              text: `shell ${String(item.command ?? '')
+                .split('\n')[0]
+                .slice(0, 160)}`,
+            });
           }
           break;
         case 'item.completed':
@@ -144,11 +158,21 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
   let text = lastMessage;
   try {
     if (fs.existsSync(lastFile)) text = fs.readFileSync(lastFile, 'utf8') || lastMessage;
-  } catch { /* остаётся lastMessage */ }
+  } catch {
+    /* остаётся lastMessage */
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 
   if (r.killed) return { ok: false, text, usage, stopped: true, error: 'Остановлено' };
-  if (r.timedOut) return { ok: false, text, usage, error: r.idle ? `codex: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен` : `codex: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин` };
+  if (r.timedOut)
+    return {
+      ok: false,
+      text,
+      usage,
+      error: r.idle
+        ? `codex: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен`
+        : `codex: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин`,
+    };
   if (r.spawnError) return { ok: false, text: '', usage, error: `codex не запустился: ${r.spawnError}` };
   if (r.code !== 0 || (errors.length && !text.trim())) {
     return { ok: false, text, usage, error: explainError('codex', [...errors, r.stderr].join('\n') || `код выхода ${r.code}`) };

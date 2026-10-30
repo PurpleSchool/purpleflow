@@ -10,10 +10,17 @@ export function detectProjectCommands(dir: string): ProjectCommands {
     let pkg: { scripts?: Record<string, string>; dependencies?: object; devDependencies?: object; packageManager?: string } = {};
     try {
       pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    } catch { /* битый package.json — всё равно предлагаем npm test */ }
-    const pm = has('pnpm-lock.yaml') || pkg.packageManager?.startsWith('pnpm')
-      ? 'pnpm'
-      : has('yarn.lock') ? 'yarn' : has('bun.lockb') || has('bun.lock') ? 'bun' : 'npm';
+    } catch {
+      /* битый package.json — всё равно предлагаем npm test */
+    }
+    const pm =
+      has('pnpm-lock.yaml') || pkg.packageManager?.startsWith('pnpm')
+        ? 'pnpm'
+        : has('yarn.lock')
+          ? 'yarn'
+          : has('bun.lockb') || has('bun.lock')
+            ? 'bun'
+            : 'npm';
     const hasDeps = Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length > 0;
     const install = pm === 'npm' ? (has('package-lock.json') ? 'npm ci' : 'npm install') : `${pm} install`;
     const test = pkg.scripts?.test ? (pm === 'npm' ? 'npm test' : `${pm} test`) : '';
@@ -25,11 +32,24 @@ export function detectProjectCommands(dir: string): ProjectCommands {
   if (has('pyproject.toml')) {
     const text = fs.readFileSync(path.join(dir, 'pyproject.toml'), 'utf8');
     const lintCommand = text.includes('[tool.ruff') ? 'ruff check .' : '';
-    if (text.includes('[tool.poetry')) return { testCommand: 'poetry run pytest', setupCommand: 'poetry install', lintCommand: lintCommand && `poetry run ${lintCommand}`, detectedFrom: 'pyproject.toml' };
-    if (has('uv.lock')) return { testCommand: 'uv run pytest', setupCommand: 'uv sync', lintCommand: lintCommand && `uv run ${lintCommand}`, detectedFrom: 'pyproject.toml' };
+    if (text.includes('[tool.poetry'))
+      return {
+        testCommand: 'poetry run pytest',
+        setupCommand: 'poetry install',
+        lintCommand: lintCommand && `poetry run ${lintCommand}`,
+        detectedFrom: 'pyproject.toml',
+      };
+    if (has('uv.lock'))
+      return {
+        testCommand: 'uv run pytest',
+        setupCommand: 'uv sync',
+        lintCommand: lintCommand && `uv run ${lintCommand}`,
+        detectedFrom: 'pyproject.toml',
+      };
     return { testCommand: 'python -m pytest', setupCommand: '', lintCommand, detectedFrom: 'pyproject.toml' };
   }
-  if (has('Cargo.toml')) return { testCommand: 'cargo test', setupCommand: '', lintCommand: 'cargo clippy -- -D warnings', detectedFrom: 'Cargo.toml' };
+  if (has('Cargo.toml'))
+    return { testCommand: 'cargo test', setupCommand: '', lintCommand: 'cargo clippy -- -D warnings', detectedFrom: 'Cargo.toml' };
   return { testCommand: '', setupCommand: '', lintCommand: '', detectedFrom: null };
 }
 
@@ -39,7 +59,20 @@ export function detectProjectCommands(dir: string): ProjectCommands {
  */
 export function findEnvFiles(repo: string, maxDepth = 4): string[] {
   const out: string[] = [];
-  const skip = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '.turbo', 'vendor', 'target', '.venv', 'venv', 'openspec']);
+  const skip = new Set([
+    'node_modules',
+    '.git',
+    '.next',
+    'dist',
+    'build',
+    'coverage',
+    '.turbo',
+    'vendor',
+    'target',
+    '.venv',
+    'venv',
+    'openspec',
+  ]);
   const walk = (dir: string, depth: number) => {
     let entries: fs.Dirent[];
     try {
@@ -59,7 +92,6 @@ export function findEnvFiles(repo: string, maxDepth = 4): string[] {
   return out.sort();
 }
 
-
 /**
  * Проверка команды без запуска: каждый `npm run X` / `pnpm X` / `yarn X` сверяется со scripts в package.json
  * той папки, куда ведут `cd` перед ним. Ловит «Missing script» до прогона.
@@ -73,8 +105,14 @@ export function checkCommand(repo: string, command: string): CommandIssue[] {
   let cwd = '.';
   for (const raw of tokens) {
     const t = raw.trim();
-    if (t === '(') { stack.push(cwd); continue; }
-    if (t === ')') { cwd = stack.pop() ?? '.'; continue; }
+    if (t === '(') {
+      stack.push(cwd);
+      continue;
+    }
+    if (t === ')') {
+      cwd = stack.pop() ?? '.';
+      continue;
+    }
     if (!t || /^(&&|\|\||;|\||&)$/.test(t)) continue;
     const words = t.split(/\s+/).filter((w) => !/^[A-Z_][A-Z0-9_]*=/.test(w));
     if (words[0] === 'cd' && words[1]) {
@@ -83,7 +121,12 @@ export function checkCommand(repo: string, command: string): CommandIssue[] {
     }
     let script: string | null = null;
     if (words[0] === 'npm' && (words[1] === 'run' || words[1] === 'run-script') && words[2]) script = words[2];
-    else if ((words[0] === 'pnpm' || words[0] === 'yarn') && words[1] && !['install', 'add', 'exec', 'dlx', 'i', 'remove', 'run'].includes(words[1])) script = words[1];
+    else if (
+      (words[0] === 'pnpm' || words[0] === 'yarn') &&
+      words[1] &&
+      !['install', 'add', 'exec', 'dlx', 'i', 'remove', 'run'].includes(words[1])
+    )
+      script = words[1];
     else if ((words[0] === 'pnpm' || words[0] === 'yarn') && words[1] === 'run' && words[2]) script = words[2];
     if (!script) continue;
     const pkgFile = path.join(repo, cwd, 'package.json');
@@ -99,8 +142,12 @@ export function checkCommand(repo: string, command: string): CommandIssue[] {
     // Похожие: start:dev для dev, dev:server для dev и т. п.
     const similar = names.filter((n) => n.split(/[:\-_]/).includes(script!) || n.includes(script!));
     const where = cwd === '.' ? 'package.json' : `${cwd}/package.json`;
-    const best = similar.length === 1 ? similar[0] : similar.find((n) => n === `start:${script}`) ?? null;
-    if (best) fixed = fixed.replace(new RegExp(`(\\b(?:npm run|pnpm|yarn)(?: run)?\\s+)${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[\\s;&|)])`), `$1${best}`);
+    const best = similar.length === 1 ? similar[0] : (similar.find((n) => n === `start:${script}`) ?? null);
+    if (best)
+      fixed = fixed.replace(
+        new RegExp(`(\\b(?:npm run|pnpm|yarn)(?: run)?\\s+)${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[\\s;&|)])`),
+        `$1${best}`,
+      );
     issues.push({
       message: `В ${where} нет скрипта «${script}».${similar.length ? ` Похожие: ${similar.join(', ')}.` : names.length ? ` Есть: ${names.slice(0, 8).join(', ')}.` : ''}`,
       fix: best && fixed !== command ? fixed : undefined,

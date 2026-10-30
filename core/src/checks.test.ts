@@ -69,7 +69,10 @@ test('failedTestNames: Jest — имена из «●», без дублей и 
 });
 
 test('failedTestNames: Vitest, pytest, go, node:test; нераспознанный вывод — null', () => {
-  assert.deepEqual(failedTestNames(' FAIL  src/a.test.ts > sum > adds 12ms\n × src/b.test.ts > x > y'), ['src/a.test.ts > sum > adds', 'src/b.test.ts > x > y']);
+  assert.deepEqual(failedTestNames(' FAIL  src/a.test.ts > sum > adds 12ms\n × src/b.test.ts > x > y'), [
+    'src/a.test.ts > sum > adds',
+    'src/b.test.ts > x > y',
+  ]);
   assert.deepEqual(failedTestNames('FAILED tests/test_a.py::test_one - assert 1 == 2'), ['tests/test_a.py::test_one']);
   assert.deepEqual(failedTestNames('--- FAIL: TestSum (0.00s)'), ['TestSum']);
   assert.deepEqual(failedTestNames('not ok 3 - padLeft keeps width'), ['padLeft keeps width']);
@@ -94,7 +97,10 @@ test('packReview: код раньше текстов, большой файл у
   assert.ok(one.parts[0].indexOf('src/svc.ts') < one.parts[0].indexOf('README.md'));
   const big = packReview(file('src/prompts/huge.prompt.ts', 20_000), 100_000);
   assert.deepEqual(big.trimmed, ['src/prompts/huge.prompt.ts']);
-  const many = packReview(file('packages/api/src/a.ts', 3000) + file('packages/web/src/b.ts', 3000) + file('packages/api/src/c.ts', 3000), 20_000);
+  const many = packReview(
+    file('packages/api/src/a.ts', 3000) + file('packages/web/src/b.ts', 3000) + file('packages/api/src/c.ts', 3000),
+    20_000,
+  );
   assert.equal(many.parts.length, 2);
   assert.ok(many.files.some((f) => f.includes('packages/api/src/a.ts') && f.includes('packages/api/src/c.ts')));
   assert.deepEqual(many.omitted, []);
@@ -103,9 +109,13 @@ test('packReview: код раньше текстов, большой файл у
 test('parseVerdicts и ARTIFACT_RE', async () => {
   const { parseVerdicts } = await import('./orchestrator.js');
   const { ARTIFACT_RE } = await import('./reviewdiff.js');
-  assert.deepEqual(parseVerdicts('ok {"items":[{"index":1,"verdict":"rejected","reason":"есть проверка"},{"index":2,"verdict":"bogus","reason":""}]}'), [{ index: 1, verdict: 'rejected', reason: 'есть проверка' }]);
+  assert.deepEqual(
+    parseVerdicts('ok {"items":[{"index":1,"verdict":"rejected","reason":"есть проверка"},{"index":2,"verdict":"bogus","reason":""}]}'),
+    [{ index: 1, verdict: 'rejected', reason: 'есть проверка' }],
+  );
   assert.equal(parseVerdicts('не JSON'), null);
-  for (const f of ['packages/frontend/tsconfig.tsbuildinfo', 'apps/web/next-env.d.ts', '.DS_Store', 'npm-debug.log.123']) assert.ok(ARTIFACT_RE.test(f), f);
+  for (const f of ['packages/frontend/tsconfig.tsbuildinfo', 'apps/web/next-env.d.ts', '.DS_Store', 'npm-debug.log.123'])
+    assert.ok(ARTIFACT_RE.test(f), f);
   for (const f of ['src/next-env.ts', 'package-lock.json', 'src/app.ts']) assert.ok(!ARTIFACT_RE.test(f), f);
 });
 

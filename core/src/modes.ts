@@ -4,16 +4,23 @@ import type { RunFile, RunMode, StageId } from './types.js';
 export function stagesOf(mode: RunMode, visual: boolean): StageId[] {
   const v: StageId[] = visual ? ['visual'] : [];
   switch (mode) {
-    case 'quick': return ['implement', 'tests', 'review', ...v, 'gate2', 'finish'];
-    case 'refactor': return ['baseline', 'clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
-    default: return ['clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    case 'quick':
+      return ['implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    case 'refactor':
+      return ['baseline', 'clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
+    default:
+      return ['clarify', 'plan', 'gate1', 'implement', 'tests', 'review', ...v, 'gate2', 'finish'];
   }
 }
 
 export const modeOf = (run: Pick<RunFile, 'mode'>): RunMode => run.mode ?? 'task';
 
 export const MODE_FIRST: Record<RunMode, StageId> = {
-  quick: 'implement', bug: 'clarify', task: 'clarify', epic: 'clarify', refactor: 'baseline',
+  quick: 'implement',
+  bug: 'clarify',
+  task: 'clarify',
+  epic: 'clarify',
+  refactor: 'baseline',
 };
 
 /** Лимит попыток реализации (для большой задачи — на этап). */

@@ -2,7 +2,20 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { DiffEditor, loader, type DiffOnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
-import { Check, ChevronRight, ListChecks, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  ListChecks,
+  FileCode2,
+  FilePlus2,
+  FileMinus2,
+  Folder,
+  ListTree,
+  List,
+  MessageSquarePlus,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PillTabs } from './PillTabs';
 import type { DiffFile, LineComment, ReviewItem } from '@purpleflow/core';
@@ -60,9 +73,29 @@ monaco.editor.defineTheme('purpleflow-night', {
 });
 
 const LANG: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  json: 'json', md: 'markdown', css: 'css', scss: 'scss', html: 'html', py: 'python', go: 'go', rs: 'rust',
-  yml: 'yaml', yaml: 'yaml', sh: 'shell', java: 'java', kt: 'kotlin', rb: 'ruby', php: 'php', sql: 'sql', vue: 'html',
+  ts: 'typescript',
+  tsx: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  json: 'json',
+  md: 'markdown',
+  css: 'css',
+  scss: 'scss',
+  html: 'html',
+  py: 'python',
+  go: 'go',
+  rs: 'rust',
+  yml: 'yaml',
+  yaml: 'yaml',
+  sh: 'shell',
+  java: 'java',
+  kt: 'kotlin',
+  rb: 'ruby',
+  php: 'php',
+  sql: 'sql',
+  vue: 'html',
 };
 const langOf = (p: string) => LANG[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'plaintext';
 
@@ -114,7 +147,9 @@ function useViewed(key: string | undefined) {
     if (!storageKey) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch { /* без памяти об отметках */ }
+    } catch {
+      /* без памяти об отметках */
+    }
   };
   return { marks, save, enabled: Boolean(storageKey) };
 }
@@ -191,14 +226,31 @@ const WIDTH_KEY = 'purpleflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
 
-export function DiffReview({ files, review, comments, onComments, readOnly, summary, picked, onPicked, visualItems = [], tab: outerTab, onTab, groups, viewedKey }: Props) {
+export function DiffReview({
+  files,
+  review,
+  comments,
+  onComments,
+  readOnly,
+  summary,
+  picked,
+  onPicked,
+  visualItems = [],
+  tab: outerTab,
+  onTab,
+  groups,
+  viewedKey,
+}: Props) {
   const [ownTab, setOwnTab] = useState<'code' | 'notes'>('code');
   const tab = outerTab ?? ownTab;
   const setTab = onTab ?? setOwnTab;
   const [sumOpen, setSumOpen] = useState(false);
   // Сначала код, потом файлы OpenSpec — человек смотрит в первую очередь на изменения проекта.
   const sorted = useMemo(
-    () => [...files].sort((a, b) => Number(a.path.startsWith('openspec/')) - Number(b.path.startsWith('openspec/')) || a.path.localeCompare(b.path)),
+    () =>
+      [...files].sort(
+        (a, b) => Number(a.path.startsWith('openspec/')) - Number(b.path.startsWith('openspec/')) || a.path.localeCompare(b.path),
+      ),
     [files],
   );
   const tree = useMemo(() => buildTree(files), [files]);
@@ -212,7 +264,13 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     }
   });
   const byPath = useMemo(() => new Map(files.map((f) => [f.path, f])), [files]);
-  const planGroups = useMemo(() => (groups ?? []).map((g) => ({ ...g, items: g.files.map((f) => byPath.get(f)).filter((f): f is DiffFile => Boolean(f)) })).filter((g) => g.items.length), [groups, byPath]);
+  const planGroups = useMemo(
+    () =>
+      (groups ?? [])
+        .map((g) => ({ ...g, items: g.files.map((f) => byPath.get(f)).filter((f): f is DiffFile => Boolean(f)) }))
+        .filter((g) => g.items.length),
+    [groups, byPath],
+  );
   // «По плану» — когда группы посчитаны; иначе дерево.
   const view: FilesView = viewPref === 'plan' && !planGroups.length ? 'tree' : viewPref;
   const asTree = view === 'tree';
@@ -220,7 +278,9 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     setViewPref(v);
     try {
       localStorage.setItem(TREE_KEY, v);
-    } catch { /* без памяти о виде */ }
+    } catch {
+      /* без памяти о виде */
+    }
   };
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   /** Ширина панели файлов — тянется за правый край, запоминается. */
@@ -247,14 +307,21 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
       document.body.classList.remove('is-col-resizing');
       try {
         localStorage.setItem(WIDTH_KEY, String(w));
-      } catch { /* без памяти о ширине */ }
+      } catch {
+        /* без памяти о ширине */
+      }
     };
     document.body.classList.add('is-col-resizing');
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
   const ordered = useMemo(
-    () => (view === 'plan' ? [...planGroups.flatMap((g) => g.items), ...sorted.filter((f) => !planGroups.some((g) => g.items.includes(f)))] : asTree ? treeOrder(tree) : sorted),
+    () =>
+      view === 'plan'
+        ? [...planGroups.flatMap((g) => g.items), ...sorted.filter((f) => !planGroups.some((g) => g.items.includes(f)))]
+        : asTree
+          ? treeOrder(tree)
+          : sorted,
     [view, asTree, tree, sorted, planGroups],
   );
   const [current, setCurrent] = useState<string | null>(ordered[0]?.path ?? null);
@@ -323,7 +390,9 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
   }, [file, review, comments]);
 
   const countFor = (p: string) =>
-    (review?.blocking.filter((r) => r.file === p).length ?? 0) + (review?.notes.filter((r) => r.file === p).length ?? 0) + comments.filter((c) => c.file === p).length;
+    (review?.blocking.filter((r) => r.file === p).length ?? 0) +
+    (review?.notes.filter((r) => r.file === p).length ?? 0) +
+    comments.filter((c) => c.file === p).length;
 
   // Замечания — карточки прямо под строкой (view zones) + метки на полях.
   useEffect(() => {
@@ -347,7 +416,9 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
           card.append(who, txt);
           node.append(card);
         }
-        zones.current.push(acc.addZone({ afterLineNumber: line, heightInPx: 18 + list.length * 46, domNode: node, suppressMouseDown: true }));
+        zones.current.push(
+          acc.addZone({ afterLineNumber: line, heightInPx: 18 + list.length * 46, domNode: node, suppressMouseDown: true }),
+        );
       }
     });
     decos.current?.clear();
@@ -387,14 +458,21 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     ed?.setPosition({ lineNumber: line, column: 1 });
   };
 
-
   const fileRow = (f: DiffFile, depth: number, withDir: boolean) => {
     const n = countFor(f.path);
     const name = f.path.split('/').pop();
     const dir = f.path.slice(0, f.path.length - (name?.length ?? 0));
     return (
       <li key={f.path}>
-        <button className={`file ${f.path === current ? 'is-on' : ''} ${isViewed(f.path) ? 'is-viewed' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => { setCurrent(f.path); setDraftLine(null); }} title={f.path}>
+        <button
+          className={`file ${f.path === current ? 'is-on' : ''} ${isViewed(f.path) ? 'is-viewed' : ''}`}
+          style={{ paddingLeft: 12 + depth * 14 }}
+          onClick={() => {
+            setCurrent(f.path);
+            setDraftLine(null);
+          }}
+          title={f.path}
+        >
           <span className={`file-st st-${f.status}`}>
             {f.status === 'A' ? <FilePlus2 size={14} /> : f.status === 'D' ? <FileMinus2 size={14} /> : <FileCode2 size={14} />}
           </span>
@@ -409,29 +487,40 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     );
   };
 
-  const toggleDir = (p: string) => setCollapsed((cur) => {
-    const next = new Set(cur);
-    if (next.has(p)) next.delete(p);
-    else next.add(p);
-    return next;
-  });
+  const toggleDir = (p: string) =>
+    setCollapsed((cur) => {
+      const next = new Set(cur);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
 
   const renderDir = (d: TreeDir, depth: number): ReactNode[] => {
-    const inner = [...d.dirs.flatMap((x) => {
-      const shut = collapsed.has(x.path);
-      const n = treeOrder(x).reduce((k, f) => k + countFor(f.path), 0);
-      return [
-        <li key={`d:${x.path}`}>
-          <button className={`file dir ${shut ? 'is-shut' : ''}`} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => toggleDir(x.path)} title={x.path}>
-            <ChevronRight size={13} className="dir-caret" />
-            <Folder size={14} className="dir-icon" />
-            <span className="file-name"><span>{x.name}</span></span>
-            {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{x.count}</span>}
-          </button>
-        </li>,
-        ...(shut ? [] : renderDir(x, depth + 1)),
-      ];
-    }), ...d.files.map((f) => fileRow(f, depth, false))];
+    const inner = [
+      ...d.dirs.flatMap((x) => {
+        const shut = collapsed.has(x.path);
+        const n = treeOrder(x).reduce((k, f) => k + countFor(f.path), 0);
+        return [
+          <li key={`d:${x.path}`}>
+            <button
+              className={`file dir ${shut ? 'is-shut' : ''}`}
+              style={{ paddingLeft: 12 + depth * 14 }}
+              onClick={() => toggleDir(x.path)}
+              title={x.path}
+            >
+              <ChevronRight size={13} className="dir-caret" />
+              <Folder size={14} className="dir-icon" />
+              <span className="file-name">
+                <span>{x.name}</span>
+              </span>
+              {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{x.count}</span>}
+            </button>
+          </li>,
+          ...(shut ? [] : renderDir(x, depth + 1)),
+        ];
+      }),
+      ...d.files.map((f) => fileRow(f, depth, false)),
+    ];
     return inner;
   };
 
@@ -447,161 +536,260 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
     <div className="diff-wrap">
       {!outerTab && (
         <div className="diff-tabs">
-        <PillTabs<'code' | 'notes'>
-          className="tabs small"
-          value={tab}
-          onChange={setTab}
-          items={[
-            { id: 'code', label: `Код · ${files.length}` },
-            { id: 'notes', label: `Заметки · ${noteCount}`, extra: review?.blocking.length ? <span className="tab-badge is-bad">{review.blocking.length}</span> : undefined },
-          ]}
-        />
-        {!readOnly && <span className="muted diff-tabs-hint">{tab === 'code' ? 'Клик по номеру строки — замечание исполнителю' : pickedN ? `Отмечено к исправлению: ${pickedN}` : 'Отметьте «исправить» у замечаний, которые нужно поправить'}</span>}
-      </div>
-      )}
-    <div className={`diff ${tab === 'code' ? '' : 'is-hidden'}`} style={{ gridTemplateColumns: `${filesW}px minmax(0, 1fr)` }}>
-      <div className="diff-files-resize" style={{ left: `calc(var(--s-4) + ${filesW}px - 1px)` }} onPointerDown={startResize} onDoubleClick={() => { setFilesW(232); try { localStorage.removeItem(WIDTH_KEY); } catch { /* без памяти */ } }} title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию" />
-      <aside className="diff-files">
-        <div className="diff-files-head">
-          <span>Файлы</span>
-          <span className="muted">{viewed.enabled ? `${viewedCount} из ${files.length}` : files.length}</span>
-          <span className="grow" />
-          <span className="diff-files-modes" role="radiogroup" aria-label="Вид списка файлов">
-            {planGroups.length > 0 && (
-              <button role="radio" aria-checked={view === 'plan'} className={`diff-files-mode ${view === 'plan' ? 'is-on' : ''}`} title="По пунктам плана" onClick={() => setView('plan')}><ListChecks size={14} /></button>
-            )}
-            <button role="radio" aria-checked={view === 'tree'} className={`diff-files-mode ${view === 'tree' ? 'is-on' : ''}`} title="Деревом" onClick={() => setView('tree')}><ListTree size={14} /></button>
-            <button role="radio" aria-checked={view === 'list'} className={`diff-files-mode ${view === 'list' ? 'is-on' : ''}`} title="Списком" onClick={() => setView('list')}><List size={14} /></button>
-          </span>
+          <PillTabs<'code' | 'notes'>
+            className="tabs small"
+            value={tab}
+            onChange={setTab}
+            items={[
+              { id: 'code', label: `Код · ${files.length}` },
+              {
+                id: 'notes',
+                label: `Заметки · ${noteCount}`,
+                extra: review?.blocking.length ? <span className="tab-badge is-bad">{review.blocking.length}</span> : undefined,
+              },
+            ]}
+          />
+          {!readOnly && (
+            <span className="muted diff-tabs-hint">
+              {tab === 'code'
+                ? 'Клик по номеру строки — замечание исполнителю'
+                : pickedN
+                  ? `Отмечено к исправлению: ${pickedN}`
+                  : 'Отметьте «исправить» у замечаний, которые нужно поправить'}
+            </span>
+          )}
         </div>
-        <ul>
-          {view === 'plan'
-            ? planGroups.flatMap((g) => {
-              const shut = collapsed.has(`plan:${g.title}`);
-              const n = g.items.reduce((k, f) => k + countFor(f.path), 0);
-              return [
-                <li key={`g:${g.title}`}>
-                  <button className={`file dir plan-group ${shut ? 'is-shut' : ''} ${/^Без пункта|^Вне плана/.test(g.title) ? 'is-offplan' : ''}`} onClick={() => toggleDir(`plan:${g.title}`)} title={g.title}>
-                    <ChevronRight size={13} className="dir-caret" />
-                    <span className="file-name"><span>{g.title}</span></span>
-                    {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{g.items.length}</span>}
-                  </button>
-                </li>,
-                ...(shut ? [] : g.items.map((f) => fileRow(f, 1, true))),
-              ];
-            })
-            : asTree ? renderDir(tree, 0) : sorted.map((f) => fileRow(f, 0, true))}
-        </ul>
-      </aside>
-
-      <div className={`diff-main ${viewed.enabled && file ? 'has-head' : ''}`}>
-        {viewed.enabled && file && (
-          <div className="diff-file-head">
-            <span className="diff-file-path" title={file.path}>{file.path}</span>
-            <button className={`viewed-toggle ${isViewed(file.path) ? 'is-on' : ''}`} onClick={() => toggleViewed(file.path)} title={isViewed(file.path) ? 'Снять отметку' : 'Отметить просмотренным и перейти к следующему (V)'}>
-              <span className="viewed-box">{isViewed(file.path) && <Check size={12} />}</span>
-              Просмотрено
-            </button>
+      )}
+      <div className={`diff ${tab === 'code' ? '' : 'is-hidden'}`} style={{ gridTemplateColumns: `${filesW}px minmax(0, 1fr)` }}>
+        <div
+          className="diff-files-resize"
+          style={{ left: `calc(var(--s-4) + ${filesW}px - 1px)` }}
+          onPointerDown={startResize}
+          onDoubleClick={() => {
+            setFilesW(232);
+            try {
+              localStorage.removeItem(WIDTH_KEY);
+            } catch {
+              /* без памяти */
+            }
+          }}
+          title="Потяните, чтобы изменить ширину; двойной клик — по умолчанию"
+        />
+        <aside className="diff-files">
+          <div className="diff-files-head">
+            <span>Файлы</span>
+            <span className="muted">{viewed.enabled ? `${viewedCount} из ${files.length}` : files.length}</span>
+            <span className="grow" />
+            <span className="diff-files-modes" role="radiogroup" aria-label="Вид списка файлов">
+              {planGroups.length > 0 && (
+                <button
+                  role="radio"
+                  aria-checked={view === 'plan'}
+                  className={`diff-files-mode ${view === 'plan' ? 'is-on' : ''}`}
+                  title="По пунктам плана"
+                  onClick={() => setView('plan')}
+                >
+                  <ListChecks size={14} />
+                </button>
+              )}
+              <button
+                role="radio"
+                aria-checked={view === 'tree'}
+                className={`diff-files-mode ${view === 'tree' ? 'is-on' : ''}`}
+                title="Деревом"
+                onClick={() => setView('tree')}
+              >
+                <ListTree size={14} />
+              </button>
+              <button
+                role="radio"
+                aria-checked={view === 'list'}
+                className={`diff-files-mode ${view === 'list' ? 'is-on' : ''}`}
+                title="Списком"
+                onClick={() => setView('list')}
+              >
+                <List size={14} />
+              </button>
+            </span>
           </div>
-        )}
-        {file ? (
-          file.binary ? (
-            <div className="diff-binary">Бинарный файл — дифф не показывается.</div>
+          <ul>
+            {view === 'plan'
+              ? planGroups.flatMap((g) => {
+                  const shut = collapsed.has(`plan:${g.title}`);
+                  const n = g.items.reduce((k, f) => k + countFor(f.path), 0);
+                  return [
+                    <li key={`g:${g.title}`}>
+                      <button
+                        className={`file dir plan-group ${shut ? 'is-shut' : ''} ${/^Без пункта|^Вне плана/.test(g.title) ? 'is-offplan' : ''}`}
+                        onClick={() => toggleDir(`plan:${g.title}`)}
+                        title={g.title}
+                      >
+                        <ChevronRight size={13} className="dir-caret" />
+                        <span className="file-name">
+                          <span>{g.title}</span>
+                        </span>
+                        {n > 0 ? <span className="file-n">{n}</span> : <span className="dir-count">{g.items.length}</span>}
+                      </button>
+                    </li>,
+                    ...(shut ? [] : g.items.map((f) => fileRow(f, 1, true))),
+                  ];
+                })
+              : asTree
+                ? renderDir(tree, 0)
+                : sorted.map((f) => fileRow(f, 0, true))}
+          </ul>
+        </aside>
+
+        <div className={`diff-main ${viewed.enabled && file ? 'has-head' : ''}`}>
+          {viewed.enabled && file && (
+            <div className="diff-file-head">
+              <span className="diff-file-path" title={file.path}>
+                {file.path}
+              </span>
+              <button
+                className={`viewed-toggle ${isViewed(file.path) ? 'is-on' : ''}`}
+                onClick={() => toggleViewed(file.path)}
+                title={isViewed(file.path) ? 'Снять отметку' : 'Отметить просмотренным и перейти к следующему (V)'}
+              >
+                <span className="viewed-box">{isViewed(file.path) && <Check size={12} />}</span>
+                Просмотрено
+              </button>
+            </div>
+          )}
+          {file ? (
+            file.binary ? (
+              <div className="diff-binary">Бинарный файл — дифф не показывается.</div>
+            ) : (
+              <DiffEditor
+                key={file.path}
+                original={file.original}
+                modified={file.modified}
+                language={langOf(file.path)}
+                theme="purpleflow-night"
+                onMount={onMount}
+                options={{
+                  readOnly: true,
+                  originalEditable: false,
+                  renderSideBySide: true,
+                  glyphMargin: true,
+                  minimap: { enabled: false },
+                  fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace",
+                  fontSize: 12.5,
+                  lineHeight: 21,
+                  scrollBeyondLastLine: false,
+                  renderOverviewRuler: false,
+                  hideUnchangedRegions: { enabled: true, contextLineCount: 4, minimumLineCount: 6 },
+                  padding: { top: 16, bottom: 16 },
+                  smoothScrolling: true,
+                  automaticLayout: true,
+                }}
+              />
+            )
           ) : (
-            <DiffEditor
-              key={file.path}
-              original={file.original}
-              modified={file.modified}
-              language={langOf(file.path)}
-              theme="purpleflow-night"
-              onMount={onMount}
-              options={{
-                readOnly: true,
-                originalEditable: false,
-                renderSideBySide: true,
-                glyphMargin: true,
-                minimap: { enabled: false },
-                fontFamily: "'Geist Mono Variable', ui-monospace, Menlo, monospace",
-                fontSize: 12.5,
-                lineHeight: 21,
-                scrollBeyondLastLine: false,
-                renderOverviewRuler: false,
-                hideUnchangedRegions: { enabled: true, contextLineCount: 4, minimumLineCount: 6 },
-                padding: { top: 16, bottom: 16 },
-                smoothScrolling: true,
-                automaticLayout: true,
-              }}
-            />
-          )
-        ) : (
-          <div className="diff-binary">В ветке нет изменений.</div>
-        )}
-        {!readOnly && draftLine && (
-          <div className="composer is-open diff-composer">
-            {draftLine && file ? (
-              <>
-                <div className="composer-head">
-                  <MessageSquarePlus size={15} />
-                  <span>
-                    {file.path.split('/').pop()}, строка {draftLine}
-                  </span>
-                </div>
-                <TextArea
-                  ref={draftRef}
-                  rows={3}
-                  placeholder="Что исправить в этой строке"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment();
-                    if (e.key === 'Escape') setDraftLine(null);
-                  }}
-                />
-                <div className="composer-actions">
-                  <Button tone="quiet" onClick={() => setDraftLine(null)}>Отмена</Button>
-                  <Button tone="primary" onClick={addComment} disabled={!draft.trim()}>Добавить</Button>
-                </div>
-              </>
-            ) : null}
-          </div>
-        )}
-
+            <div className="diff-binary">В ветке нет изменений.</div>
+          )}
+          {!readOnly && draftLine && (
+            <div className="composer is-open diff-composer">
+              {draftLine && file ? (
+                <>
+                  <div className="composer-head">
+                    <MessageSquarePlus size={15} />
+                    <span>
+                      {file.path.split('/').pop()}, строка {draftLine}
+                    </span>
+                  </div>
+                  <TextArea
+                    ref={draftRef}
+                    rows={3}
+                    placeholder="Что исправить в этой строке"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment();
+                      if (e.key === 'Escape') setDraftLine(null);
+                    }}
+                  />
+                  <div className="composer-actions">
+                    <Button tone="quiet" onClick={() => setDraftLine(null)}>
+                      Отмена
+                    </Button>
+                    <Button tone="primary" onClick={addComment} disabled={!draft.trim()}>
+                      Добавить
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
 
       {tab === 'notes' && (
         <div className="diff-notes-page scroll">
-        {summary !== undefined && (
-          <section className={`change-summary ${sumOpen ? '' : 'is-clamped'}`}>
-            <h4><Sparkles size={14} /> Что изменилось</h4>
-            {summary === null ? <p className="composer-hint"><span className="spinner" /> Готовлю сводку по диффу…</p> : <Markdown source={summary} className="summary-md" />}
-            {summary && <button className="link summary-more" onClick={() => setSumOpen(!sumOpen)}>{sumOpen ? 'Свернуть' : 'Показать полностью'}</button>}
-          </section>
-        )}
-        <NoteList title="Блокирующие" kind="blocking" items={review?.blocking ?? []} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
-        <NoteList title="Заметки ревьюера" kind="note" items={review?.notes ?? []} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
-        {comments.length > 0 && (
-          <section className="notes">
-            <h4>Ваши замечания <span className="muted">{comments.length}</span></h4>
-            {comments.map((c, i) => (
-              <div key={i} className="note n-mine">
-                <button className="note-loc" onClick={() => jumpTo(c)}>
-                  {c.file.split('/').pop()}:{c.line}
+          {summary !== undefined && (
+            <section className={`change-summary ${sumOpen ? '' : 'is-clamped'}`}>
+              <h4>
+                <Sparkles size={14} /> Что изменилось
+              </h4>
+              {summary === null ? (
+                <p className="composer-hint">
+                  <span className="spinner" /> Готовлю сводку по диффу…
+                </p>
+              ) : (
+                <Markdown source={summary} className="summary-md" />
+              )}
+              {summary && (
+                <button className="link summary-more" onClick={() => setSumOpen(!sumOpen)}>
+                  {sumOpen ? 'Свернуть' : 'Показать полностью'}
                 </button>
-                <p>{c.text}</p>
-                {!readOnly && (
-                  <button className="note-del" title="Удалить" onClick={() => onComments(comments.filter((_, k) => k !== i))}>
-                    <Trash2 size={13} />
+              )}
+            </section>
+          )}
+          <NoteList
+            title="Блокирующие"
+            kind="blocking"
+            items={review?.blocking ?? []}
+            picked={!readOnly ? picked : undefined}
+            onPicked={onPicked}
+            onJump={jumpTo}
+          />
+          <NoteList
+            title="Заметки ревьюера"
+            kind="note"
+            items={review?.notes ?? []}
+            picked={!readOnly ? picked : undefined}
+            onPicked={onPicked}
+            onJump={jumpTo}
+          />
+          {comments.length > 0 && (
+            <section className="notes">
+              <h4>
+                Ваши замечания <span className="muted">{comments.length}</span>
+              </h4>
+              {comments.map((c, i) => (
+                <div key={i} className="note n-mine">
+                  <button className="note-loc" onClick={() => jumpTo(c)}>
+                    {c.file.split('/').pop()}:{c.line}
                   </button>
-                )}
-              </div>
-            ))}
-          </section>
-        )}
-        <NoteList title="Визуальная проверка" kind="note" items={visualItems} picked={!readOnly ? picked : undefined} onPicked={onPicked} onJump={jumpTo} />
-        {noteCount === 0 && (
-          <p className="composer-hint">Замечаний нет.</p>
-        )}
+                  <p>{c.text}</p>
+                  {!readOnly && (
+                    <button className="note-del" title="Удалить" onClick={() => onComments(comments.filter((_, k) => k !== i))}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
+          <NoteList
+            title="Визуальная проверка"
+            kind="note"
+            items={visualItems}
+            picked={!readOnly ? picked : undefined}
+            onPicked={onPicked}
+            onJump={jumpTo}
+          />
+          {noteCount === 0 && <p className="composer-hint">Замечаний нет.</p>}
         </div>
       )}
     </div>
@@ -617,19 +805,40 @@ const ORIGIN: Record<NonNullable<ReviewItem['origin']>, { label: string; title: 
 /** Пометка повторного ревью: ходит ли прогон по кругу. */
 export function OriginTag({ origin }: { origin?: ReviewItem['origin'] }) {
   if (!origin) return null;
-  return <span className={`origin-tag o-${origin}`} title={ORIGIN[origin].title}>{ORIGIN[origin].label}</span>;
+  return (
+    <span className={`origin-tag o-${origin}`} title={ORIGIN[origin].title}>
+      {ORIGIN[origin].label}
+    </span>
+  );
 }
 
-function NoteList({ title, kind, items, onJump, picked, onPicked }: { title: string; kind: 'blocking' | 'note'; items: ReviewItem[]; onJump: (r: ReviewItem) => void; picked?: ReviewItem[]; onPicked?: (items: ReviewItem[]) => void }) {
+function NoteList({
+  title,
+  kind,
+  items,
+  onJump,
+  picked,
+  onPicked,
+}: {
+  title: string;
+  kind: 'blocking' | 'note';
+  items: ReviewItem[];
+  onJump: (r: ReviewItem) => void;
+  picked?: ReviewItem[];
+  onPicked?: (items: ReviewItem[]) => void;
+}) {
   if (!items.length) return null;
   return (
     <section className="notes">
-      <h4>{title} <span className="muted">{items.length}</span></h4>
+      <h4>
+        {title} <span className="muted">{items.length}</span>
+      </h4>
       {items.map((r, i) => (
         <div key={i} className={`note n-${kind}`}>
           {r.file && (
             <button className="note-loc" onClick={() => onJump(r)}>
-              {r.file.split('/').pop()}{r.line ? `:${r.line}` : ''}
+              {r.file.split('/').pop()}
+              {r.line ? `:${r.line}` : ''}
             </button>
           )}
           <OriginTag origin={r.origin} />

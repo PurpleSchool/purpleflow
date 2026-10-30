@@ -15,15 +15,22 @@ export const cleanErr = (e: unknown) => String((e as Error).message ?? e).replac
 
 export function unstableText(u: NonNullable<CheckResult['unstable']>): string {
   const list = u.tests.length ? ` (${u.tests.slice(0, 4).join('; ')}${u.tests.length > 4 ? '…' : ''})` : '';
-  const why = u.reason === 'retry' ? `Тесты упали${list}, а при повторе прошли`
-    : u.reason === 'differs' ? `При повторе упали другие тесты${list}`
-    : `Эти тесты падают и на исходном коде, без изменений задачи${list}`;
+  const why =
+    u.reason === 'retry'
+      ? `Тесты упали${list}, а при повторе прошли`
+      : u.reason === 'differs'
+        ? `При повторе упали другие тесты${list}`
+        : `Эти тесты падают и на исходном коде, без изменений задачи${list}`;
   return `${why} — похоже на нестабильность проекта, а не на ошибку задачи. На доработку не отправлено, решение за вами на приёмке; нестабильные тесты лучше чинить отдельной задачей.`;
 }
 
 export function originSummary(items: ReviewItem[]): string {
   const n = (o: ReviewItem['origin']) => items.filter((x) => x.origin === o).length;
-  const parts = [n('unfixed') && `не исправлено с прошлого раза — ${n('unfixed')}`, n('from_fix') && `из‑за исправлений — ${n('from_fix')}`, n('new') && `новых — ${n('new')}`].filter(Boolean);
+  const parts = [
+    n('unfixed') && `не исправлено с прошлого раза — ${n('unfixed')}`,
+    n('from_fix') && `из‑за исправлений — ${n('from_fix')}`,
+    n('new') && `новых — ${n('new')}`,
+  ].filter(Boolean);
   return parts.length ? ` Из блокирующих: ${parts.join(', ')}.` : '';
 }
 
@@ -35,6 +42,5 @@ export function withPicked(comment: string, picked: ReviewItem[]): string {
 }
 
 export function stripAnsi(s: string): string {
-   
   return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
 }
