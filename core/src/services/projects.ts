@@ -14,6 +14,7 @@ import { parseNextParts } from '../parse.js';
 import { killGroup, run as runProc } from '../proc.js';
 import { ARTIFACT_RE } from '../reviewdiff.js';
 import { projectStats as computeProjectStats } from '../stats.js';
+import { traced } from '../trace.js';
 import type {
   AiCommands,
   EnvCheck,
@@ -392,7 +393,7 @@ export async function checkEnvironment(k: Kernel, repo: string): Promise<EnvChec
     await killGroup(group);
     // Dev-сервер мог переписать отслеживаемые артефакты (next-env.d.ts, tsbuildinfo) — рабочая копия остаётся как была.
     const touched = (await git.dirtyFiles(key).catch(() => [] as string[])).filter((f) => !dirtyBefore.has(f) && ARTIFACT_RE.test(f));
-    if (touched.length) await git.restoreFromBase(key, 'HEAD', touched).catch(() => undefined);
+    if (touched.length) await git.restoreFromBase(key, 'HEAD', touched).catch(traced('checkEnvironment: restore artifacts'));
     k.envChecks.delete(key);
   }
 }

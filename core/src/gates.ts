@@ -7,6 +7,7 @@ import { stopPreview } from './services/preview.js';
 import { getChangeDocs } from './services/runs.js';
 import { STAGE_TITLES, isGate } from './stage-info.js';
 import { mapFilesToPlan, summarizeChanges } from './stages/review.js';
+import { traced } from './trace.js';
 import type { Feedback, GateId, LineComment, RunFile } from './types.js';
 
 export async function decide(
@@ -159,8 +160,8 @@ export function waitGate(k: Kernel, run: RunFile, gate: GateId, message?: string
   k.log(run, c.amber(`◆ ${STAGE_TITLES[gate]}: ждём решения человека`) + '\n');
   k.emit({ type: 'gate.waiting', runId: run.id, gate, message });
   if (gate === 'gate2') {
-    void summarizeChanges(k, run.id).catch(() => undefined);
-    void mapFilesToPlan(k, run.id).catch(() => undefined);
+    void summarizeChanges(k, run.id).catch(traced('summarizeChanges'));
+    void mapFilesToPlan(k, run.id).catch(traced('mapFilesToPlan'));
   }
   if (run.autopilot) void autopilotGate(k, run, gate);
 }

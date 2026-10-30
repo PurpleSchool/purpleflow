@@ -1,6 +1,7 @@
-import { migrateRun } from './migrate.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { migrateRun } from './migrate.js';
+import { trace } from './trace.js';
 import type { ManagerMessage, ProjectConfig, RunFile, RunSummary } from './types.js';
 
 interface IndexEntry {
@@ -35,9 +36,18 @@ export class RunStore {
   }
 
   private readIndex(): IndexEntry[] {
+    if (!fs.existsSync(this.indexFile)) return [];
     try {
       return JSON.parse(fs.readFileSync(this.indexFile, 'utf8')) as IndexEntry[];
-    } catch {
+    } catch (e) {
+      // Следующая запись перезапишет индекс — битый откладываем рядом, чтобы прогоны можно было вернуть руками.
+      const aside = `${this.indexFile}.broken-${Date.now()}`;
+      try {
+        fs.copyFileSync(this.indexFile, aside);
+      } catch {
+        /* копия не удалась — хотя бы запись в журнале */
+      }
+      trace('store: runs.json', `${(e as Error).message}; копия — ${aside}`);
       return [];
     }
   }
@@ -85,9 +95,11 @@ export class RunStore {
   }
 
   private readFile(file: string): RunFile | null {
+    if (!fs.existsSync(file)) return null;
     try {
       return migrateRun(JSON.parse(fs.readFileSync(file, 'utf8')));
-    } catch {
+    } catch (e) {
+      trace(`store: ${file}`, e);
       return null;
     }
   }

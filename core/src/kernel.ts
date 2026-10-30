@@ -2,6 +2,7 @@
 // события, run.json, лог, попытки стадий, поиск инструментов и запуск агентов.
 // Доменной логики здесь нет: она в engine.ts, stages/ и services/.
 import { AsyncLocalStorage } from 'node:async_hooks';
+import path from 'node:path';
 import { runClaude } from './agents/claude.js';
 import { runCodex } from './agents/codex.js';
 import { type AgentResult, addUsage, c, crlf, emptyUsage } from './agents/common.js';
@@ -11,6 +12,7 @@ import { Prompts } from './prompts.js';
 import { type BasePrep, type CoreOptions, type Listener, StopSignal, type Tools } from './runtime.js';
 import { STAGE_TITLES, isGate } from './stage-info.js';
 import { RunStore } from './store.js';
+import { setTraceFile } from './trace.js';
 import type { CoreEvent, PreviewState, RunFile, StageAttempt, StageId } from './types.js';
 
 /** Операции движка, которые нужны стадиям и сервисам; связываются в Orchestrator, чтобы модули не зависели от движка. */
@@ -44,6 +46,7 @@ export class Kernel {
 
   constructor(readonly opts: CoreOptions) {
     this.store = new RunStore(opts.dataDir);
+    setTraceFile(path.join(opts.dataDir, 'core.log'));
     this.prompts = new Prompts(opts.promptsDir);
     const store = this.store;
     setPidTracker({

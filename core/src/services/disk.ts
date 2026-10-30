@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from '../storage.js';
+import { traced } from '../trace.js';
 import type { RunFile, StorageItem } from '../types.js';
 import { stopPreview } from './preview.js';
 import { runsWithFiles } from './runs.js';
@@ -104,7 +105,7 @@ export async function cleanStorage(k: Kernel, id: StorageItem['id']): Promise<nu
         /* не worktree */
       }
       const repo = gitdir ? path.resolve(gitdir, '..', '..', '..') : null;
-      if (repo && fs.existsSync(repo)) await git.removeWorktree(repo, d).catch(() => undefined);
+      if (repo && fs.existsSync(repo)) await git.removeWorktree(repo, d).catch(traced('cleanStorage: worktree'));
       fs.rmSync(d, { recursive: true, force: true });
     }
   } else if (id === 'browser') {

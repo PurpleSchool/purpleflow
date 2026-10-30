@@ -10,6 +10,7 @@ import { OpenSpec } from '../openspec.js';
 import { learn } from '../services/projects.js';
 import { envFilesOf } from '../services/workspace.js';
 import { RunStore } from '../store.js';
+import { traced } from '../trace.js';
 import type { RunFile } from '../types.js';
 export async function stageFinish(k: Kernel, run: RunFile) {
   const tools = await k.tools(['git', 'openspec']);
@@ -91,5 +92,5 @@ export async function stageFinish(k: Kernel, run: RunFile) {
   k.emit({ type: 'run.updated', run });
   k.emit({ type: 'run.finished', runId: run.id, status: 'finished' });
   // Уроки для следующих прогонов — в фоне, коммит уже сделан.
-  void learn(k, run).catch(() => undefined);
+  void learn(k, run).catch(traced('learn'));
 }

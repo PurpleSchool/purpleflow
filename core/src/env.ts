@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from './proc.js';
+import { trace } from './trace.js';
 import type { ToolInfo, ToolName } from './types.js';
 
 const isWin = process.platform === 'win32';
@@ -39,7 +40,8 @@ export function loadLoginShellEnv(base: NodeJS.ProcessEnv = process.env): NodeJS
       if (i > 0) env[line.slice(0, i)] = line.slice(i + 1);
     }
     return withExtraPath(env);
-  } catch {
+  } catch (e) {
+    trace('loginShellEnv', e);
     return withExtraPath(stripSessionEnv({ ...base }));
   }
 }

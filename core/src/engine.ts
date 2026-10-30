@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { c, emptyUsage } from './agents/common.js';
+import { gateMessage, waitGate } from './gates.js';
 import { Git } from './git.js';
 import { makeChangeId, makeTitle, runBranch } from './ids.js';
 import type { Kernel } from './kernel.js';
-import { waitGate, gateMessage } from './gates.js';
 import { RUN_VERSION } from './migrate.js';
 import { MODE_FIRST, MODE_LIMIT } from './modes.js';
 import { killGroup, killPid } from './proc.js';
@@ -25,6 +25,7 @@ import { stageImplement } from './stages/implement.js';
 import { stageClarify, stagePlan } from './stages/plan.js';
 import { stageReview } from './stages/review.js';
 import { stageVisual } from './stages/visual.js';
+import { traced } from './trace.js';
 import type { AgentKind, GateId, Role, RunFile, StartRunInput } from './types.js';
 import { DEFAULT_AGENTS } from './types.js';
 
@@ -423,8 +424,8 @@ export async function deleteRun(k: Kernel, id: string, deleteBranch: boolean) {
   await stopPreview(k, id);
   if (r) {
     if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath))
-      await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => undefined);
-    if (deleteBranch) await git.deleteBranch(r.projectPath, r.branch).catch(() => undefined);
+      await git.removeWorktree(r.projectPath, r.worktreePath).catch(traced('deleteRun: worktree'));
+    if (deleteBranch) await git.deleteBranch(r.projectPath, r.branch).catch(traced('deleteRun: branch'));
   }
   for (const dir of [attachmentsDir(k, id), path.join(k.opts.dataDir, 'visual', id)]) fs.rmSync(dir, { recursive: true, force: true });
   k.store.forget(id);
