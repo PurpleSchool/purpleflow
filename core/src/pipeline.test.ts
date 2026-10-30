@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Orchestrator, type CoreSettings } from './orchestrator.js';
 import { acceptTarget, afterChecks, availableActions, limitRow, plannedRoute, reviewInParallel, skippedStages } from './route.js';
-import { loadLoginShellEnv } from './env.js';
+import { loadLoginShellEnv, prependPath } from './env.js';
 import type { AgentResult } from './agents/common.js';
 import { parseReply } from './pipeline/manager.js';
 import type { RunFile, StageAttempt } from './types.js';
@@ -56,7 +56,8 @@ test('route: какие действия управления доступны �
 // ——— Конвейер целиком: настоящие git, openspec и тесты, фейковые агенты ———
 
 const PROMPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
-const env = loadLoginShellEnv();
+// openspec — devDependency ядра: интеграционные тесты не зависят от глобальной установки.
+const env = prependPath(loadLoginShellEnv(), path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules', '.bin'));
 const hasOpenspec = (() => { try { execFileSync('openspec', ['--version'], { env, stdio: 'ignore' }); return true; } catch { return false; } })();
 
 function makeRepo(): string {
