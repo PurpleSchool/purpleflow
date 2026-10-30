@@ -6,7 +6,10 @@ import { parseJsonReply } from '../json.js';
 import { GENERATED_GLOBS, lineStats, packReview, splitDiff } from '../reviewdiff.js';
 import { modeOf } from '../modes.js';
 import type { ReviewItem, ReviewResult, RunFile, StageAttempt } from '../types.js';
-import { INLINE_DIFF, RUN_JSON_GLOB, STAGE_TITLES, isImageFile, parseReview, parseVerdicts } from '../shared.js';
+import { isImageFile } from '../files.js';
+import { parseReview, parseVerdicts } from '../parse.js';
+import { INLINE_DIFF, RUN_JSON_GLOB } from '../runtime.js';
+import { STAGE_TITLES } from '../stages.js';
 import type { Orchestrator } from '../orchestrator.js';
 /** После прогона: уроки из правок человека, ревью, визуальной проверки и сбоев проверок. В фоне, не задерживает коммит. */
 /** Что за круг принимает человек: от этого зависит, как читать дифф. */

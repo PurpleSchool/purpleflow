@@ -5,7 +5,7 @@ import { ARTIFACT_RE } from '../reviewdiff.js';
 import { modeOf } from '../modes.js';
 import { DEFAULT_AGENTS } from '../types.js';
 import type { RunFile } from '../types.js';
-import { firstLine } from '../shared.js';
+import { firstLine } from '../parse.js';
 import type { Orchestrator } from '../orchestrator.js';
 export async function stageImplement(h: Orchestrator, run: RunFile) {
   // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReview } from './orchestrator.js';
+import { parseReview } from './parse.js';
 
 test('parseReview: чистый JSON', () => {
   const r = parseReview('{"blocking":[{"file":"a.ts","line":3,"message":"x"}],"notes":[]}');
@@ -16,7 +16,7 @@ test('parseReview: не JSON', () => {
   assert.equal(parseReview('всё хорошо'), null);
 });
 
-import { planTitle } from './orchestrator.js';
+import { planTitle } from './parse.js';
 test('planTitle: H1 из proposal.md', () => {
   assert.equal(planTitle('# Email-уведомления админу о сроке ссылки\n\n## Why\n…'), 'Email-уведомления админу о сроке ссылки');
   assert.equal(planTitle('# Change: Add `slugify`\n'), 'Add slugify');

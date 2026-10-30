@@ -7,7 +7,8 @@ import { formatItem } from '../items.js';
 import { killGroup, run as runProc } from '../proc.js';
 import { Screencast, findChrome, waitForCdp } from '../screencast.js';
 import type { VisualResult, RunFile } from '../types.js';
-import { expandPorts, freePort, parseReview, parseShots, parseUnverified, portEnv, waitForUrl } from '../shared.js';
+import { expandPorts, freePort, portEnv, waitForUrl } from '../net.js';
+import { parseReview, parseShots, parseUnverified } from '../parse.js';
 import type { Orchestrator } from '../orchestrator.js';
 import { prepareApp } from './workspace.js';
 export function visualDir(h: Orchestrator, run: RunFile, attempt: number): string {

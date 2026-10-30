@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { errorCount, failedTestNames, portEnv } from './orchestrator.js';
+import { portEnv } from './net.js';
+import { errorCount, failedTestNames } from './parse.js';
 
 test('errorCount: ESLint, суммирует несколько пакетов монорепо', () => {
   const out = 'apps/web ...\n✖ 3 problems (2 errors, 1 warning)\n\napps/api ...\n\x1b[31m✖ 191 problems (191 errors, 0 warnings)\x1b[39m';
@@ -27,7 +28,7 @@ test('explainError: base64 картинки не попадает в сообщ�
 });
 
 test('parseQuestions: JSON с вопросами, не больше 4, пустой — без вопросов', async () => {
-  const { parseQuestions } = await import('./orchestrator.js');
+  const { parseQuestions } = await import('./parse.js');
   const qs = parseQuestions('ок\n{"questions":[{"q":"Где показывать?","options":["Шапка","Сайдбар"],"why":"Меняет компонент"},{"q":"x"}]}');
   assert.equal(qs.length, 1);
   assert.deepEqual(qs[0].options, ['Шапка', 'Сайдбар']);
@@ -38,7 +39,7 @@ test('parseQuestions: JSON с вопросами, не больше 4, пуст�
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isImageFile, readSmallText } from './orchestrator.js';
+import { isImageFile, readSmallText } from './files.js';
 
 test('вложения: изображения и небольшие текстовые файлы', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-att-'));
@@ -107,7 +108,7 @@ test('packReview: код раньше текстов, большой файл у
 });
 
 test('parseVerdicts и ARTIFACT_RE', async () => {
-  const { parseVerdicts } = await import('./orchestrator.js');
+  const { parseVerdicts } = await import('./parse.js');
   const { ARTIFACT_RE } = await import('./reviewdiff.js');
   assert.deepEqual(
     parseVerdicts('ok {"items":[{"index":1,"verdict":"rejected","reason":"есть проверка"},{"index":2,"verdict":"bogus","reason":""}]}'),
@@ -120,14 +121,14 @@ test('parseVerdicts и ARTIFACT_RE', async () => {
 });
 
 test('parseNextParts: пункты раздела до следующего заголовка', async () => {
-  const { parseNextParts } = await import('./orchestrator.js');
+  const { parseNextParts } = await import('./parse.js');
   const p = '# Т\n\n## Why\nx\n\n## Next Parts\n- Часть 2: озвучка\n  и дубли голоса\n2. Часть 3: сцены\n\n## Invariants\n- не трогать\n';
   assert.deepEqual(parseNextParts(p), ['Часть 2: озвучка и дубли голоса', 'Часть 3: сцены']);
   assert.deepEqual(parseNextParts('# Т\n## Why\nx'), []);
 });
 
 test('тесты задачи: команда из «## Checks» proposal.md; «нет» и пустой раздел — не выбраны', async () => {
-  const { parseFocusTests } = await import('./shared.js');
+  const { parseFocusTests } = await import('./parse.js');
   assert.equal(parseFocusTests('# X\n\n## Why\nтекст\n\n## Checks\n- `npx vitest run src/audio`\n'), 'npx vitest run src/audio');
   assert.equal(parseFocusTests('## Checks\n\n- `pytest tests/audio -q`\n\n## Next Parts\n- `другое`\n'), 'pytest tests/audio -q');
   assert.equal(parseFocusTests('## Checks\n- нет\n\n## Next Parts\n- `npm test`\n'), undefined);

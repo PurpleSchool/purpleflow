@@ -57,21 +57,10 @@ import type {
   ToolInfo,
   ToolName,
 } from './types.js';
-import {
-  type CoreOptions,
-  IMPL_LIMIT,
-  type Listener,
-  STAGE_TITLES,
-  StopSignal,
-  type Tools,
-  expandPorts,
-  isGate,
-  isImageFile,
-  portEnv,
-  readSmallText,
-  waitForUrl,
-} from './shared.js';
-export * from './shared.js';
+import { isImageFile, readSmallText } from './files.js';
+import { expandPorts, portEnv, waitForUrl } from './net.js';
+import { type CoreOptions, IMPL_LIMIT, type Listener, StopSignal, type Tools } from './runtime.js';
+import { STAGE_TITLES, isGate } from './stages.js';
 import {
   runChecks,
   runCheck,

@@ -4,7 +4,8 @@ import { c } from '../agents/common.js';
 import { OpenSpec } from '../openspec.js';
 import { modeOf } from '../modes.js';
 import type { RunFile } from '../types.js';
-import { PLAN_RETRIES, countPhases, firstLine, parseFocusTests, parseQuestions, planTitle } from '../shared.js';
+import { countPhases, firstLine, parseFocusTests, parseQuestions, planTitle } from '../parse.js';
+import { PLAN_RETRIES } from '../runtime.js';
 import type { Orchestrator } from '../orchestrator.js';
 export async function stageClarify(h: Orchestrator, run: RunFile) {
   h.startBaseChecks(run);

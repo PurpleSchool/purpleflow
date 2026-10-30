@@ -1,5 +1,8 @@
 export * from './types.js';
-export { Orchestrator, STAGE_TITLES, parseReview, parseQuestions, errorCount, type CoreOptions } from './orchestrator.js';
+export { Orchestrator } from './orchestrator.js';
+export type { CoreOptions } from './runtime.js';
+export { STAGE_TITLES } from './stages.js';
+export { parseReview, parseQuestions, errorCount } from './parse.js';
 export { loadLoginShellEnv, detectTools, which } from './env.js';
 export { checkCommand, detectProjectCommands, findEnvFiles } from './detect.js';
 export { killAll, liveCount } from './proc.js';

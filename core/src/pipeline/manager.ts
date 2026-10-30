@@ -4,7 +4,7 @@ import { Git } from '../git.js';
 import { run as runProc } from '../proc.js';
 import { modeOf } from '../modes.js';
 import { availableActions, replansLeft } from '../route.js';
-import { isGate, STAGE_TITLES } from '../shared.js';
+import { isGate, STAGE_TITLES } from '../stages.js';
 import type { CommandAction, ManagerAction, ManagerMessage, RunFile } from '../types.js';
 import { relatedBlock, relatedRepos } from './projects.js';
 import type { Orchestrator } from '../orchestrator.js';

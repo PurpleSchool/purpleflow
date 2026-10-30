@@ -3,8 +3,9 @@ import { Git } from '../git.js';
 import { afterChecks, afterReview, reviewInParallel } from '../route.js';
 import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE, modeOf } from '../modes.js';
 import type { CheckResult, ReviewResult, RunFile, TestResult } from '../types.js';
-import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB, errorCount, failedTestNames } from '../shared.js';
-import { StopSignal } from '../shared.js';
+import { errorCount, failedTestNames } from '../parse.js';
+import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB } from '../runtime.js';
+import { StopSignal } from '../runtime.js';
 import type { Orchestrator } from '../orchestrator.js';
 /** Линтер и тесты в worktree. Общий для «Проверок», базовых проверок и воспроизведения бага. */
 export async function runChecks(

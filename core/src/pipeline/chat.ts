@@ -4,7 +4,7 @@ import path from 'node:path';
 import { emptyUsage, type AgentResult, type AgentStep } from '../agents/common.js';
 import { Git } from '../git.js';
 import { killGroup } from '../proc.js';
-import { isImageFile } from '../shared.js';
+import { isImageFile } from '../files.js';
 import { writeAtomic } from '../store.js';
 import type { AgentKind, ChatFile, ChatMessage, ChatPart, ChatSummary, DiffFile, NextPartDraft, PreviewState } from '../types.js';
 import type { Orchestrator } from '../orchestrator.js';

@@ -26,7 +26,8 @@ import type {
   RunFile,
   StageAttempt,
 } from '../types.js';
-import { expandPorts, parseNextParts, portEnv, waitForUrl } from '../shared.js';
+import { expandPorts, portEnv, waitForUrl } from '../net.js';
+import { parseNextParts } from '../parse.js';
 import type { Orchestrator } from '../orchestrator.js';
 import { prepareApp } from './workspace.js';
 export function knowledgeOf(h: Orchestrator, repo: string): ProjectKnowledge {

@@ -2,7 +2,7 @@ import { c } from '../agents/common.js';
 import { Git } from '../git.js';
 import { MODE_LIMIT, modeOf } from '../modes.js';
 import { availableActions, replansLeft } from '../route.js';
-import { isGate, STAGE_TITLES } from '../shared.js';
+import { isGate, STAGE_TITLES } from '../stages.js';
 import type { ControlAction, RunFile } from '../types.js';
 import type { Orchestrator } from '../orchestrator.js';
 
