@@ -5,7 +5,7 @@ import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { Check, ChevronRight, ListChecks, FileCode2, FilePlus2, FileMinus2, Folder, ListTree, List, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { PillTabs } from './PillTabs';
-import type { DiffFile, LineComment, ReviewItem } from '@psflow/core';
+import type { DiffFile, LineComment, ReviewItem } from '@purpleflow/core';
 import { Button, TextArea } from './ui';
 
 // Monaco из бандла, без CDN: приложение работает офлайн.
@@ -25,7 +25,7 @@ interface TsApi {
   javascriptDefaults?: { setDiagnosticsOptions?: (o: object) => void };
 }
 
-monaco.editor.defineTheme('psflow-night', {
+monaco.editor.defineTheme('purpleflow-night', {
   base: 'vs-dark',
   inherit: true,
   rules: [
@@ -98,7 +98,7 @@ function fingerprint(f: DiffFile): string {
 
 /** Просмотренные файлы прогона: путь → отпечаток. Удобство одного человека — хватает localStorage. */
 function useViewed(key: string | undefined) {
-  const storageKey = key ? `psflow.viewed.${key}` : null;
+  const storageKey = key ? `purpleflow.viewed.${key}` : null;
   const read = (): Record<string, string> => {
     if (!storageKey) return {};
     try {
@@ -186,8 +186,8 @@ function treeOrder(d: TreeDir): DiffFile[] {
   return [...d.dirs.flatMap(treeOrder), ...d.files];
 }
 
-const TREE_KEY = 'psflow.diffTree';
-const WIDTH_KEY = 'psflow.diffFilesWidth';
+const TREE_KEY = 'purpleflow.diffTree';
+const WIDTH_KEY = 'purpleflow.diffFilesWidth';
 const MIN_W = 180;
 const MAX_W = 640;
 
@@ -513,7 +513,7 @@ export function DiffReview({ files, review, comments, onComments, readOnly, summ
               original={file.original}
               modified={file.modified}
               language={langOf(file.path)}
-              theme="psflow-night"
+              theme="purpleflow-night"
               onMount={onMount}
               options={{
                 readOnly: true,

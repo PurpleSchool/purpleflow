@@ -1,5 +1,5 @@
 // Headless-прогон флоу на настоящих агентах (для проверки без GUI).
-// npx tsx scripts/e2e.ts --repo ~/psflow-sample --task "…" [--reject-plan "комментарий"] [--stop-after-ms 20000]
+// npx tsx scripts/e2e.ts --repo ~/purpleflow-sample --task "…" [--reject-plan "комментарий"] [--stop-after-ms 20000]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +13,7 @@ const arg = (name: string) => {
 };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(arg('repo') ?? path.join(os.homedir(), 'psflow-sample'));
+const repo = path.resolve(arg('repo') ?? path.join(os.homedir(), 'purpleflow-sample'));
 const task = arg('task') ?? 'Добавь функцию slugify(s: string): string в src/strings.ts: переводит строку в kebab-case латиницей (кириллицу транслитерирует), убирает всё кроме букв, цифр и дефисов. Добавь тест.';
 let rejectPlan = arg('reject-plan');
 const stopAfter = arg('stop-after-ms');
@@ -23,12 +23,12 @@ const crashOn = arg('crash-on-stage');
 const resumeRun = arg('resume-run');
 
 const settings: CoreSettings = {
-  toolPaths: { openspec: process.env.PSFLOW_OPENSPEC ?? '' },
-  proxy: { baseUrl: process.env.PSFLOW_BASE_URL ?? '', apiKey: process.env.PSFLOW_API_KEY ?? '' },
+  toolPaths: { openspec: process.env.PURPLEFLOW_OPENSPEC ?? '' },
+  proxy: { baseUrl: process.env.PURPLEFLOW_BASE_URL ?? '', apiKey: process.env.PURPLEFLOW_API_KEY ?? '' },
   models: {
-    planner: process.env.PSFLOW_PLANNER ?? 'sonnet',
-    executor: process.env.PSFLOW_EXECUTOR ?? 'sonnet',
-    reviewer: process.env.PSFLOW_REVIEWER ?? '',
+    planner: process.env.PURPLEFLOW_PLANNER ?? 'sonnet',
+    executor: process.env.PURPLEFLOW_EXECUTOR ?? 'sonnet',
+    reviewer: process.env.PURPLEFLOW_REVIEWER ?? '',
   },
   // --agents planner=claude,executor=codex,reviewer=claude
   agents: Object.fromEntries((process.argv[process.argv.indexOf('--agents') + 1] ?? '').split(',').filter((x) => x.includes('=') && process.argv.includes('--agents')).map((x) => x.split('='))),
@@ -37,7 +37,7 @@ const settings: CoreSettings = {
 };
 
 const core = new Orchestrator({
-  dataDir: arg('data') ?? path.join(os.tmpdir(), 'psflow-e2e'),
+  dataDir: arg('data') ?? path.join(os.tmpdir(), 'purpleflow-e2e'),
   promptsDir: path.join(here, '..', 'prompts'),
   env: loadLoginShellEnv(),
   getSettings: () => settings,

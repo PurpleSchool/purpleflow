@@ -6,7 +6,7 @@ import { run } from './proc.js';
 import type { ToolInfo, ToolName } from './types.js';
 
 const isWin = process.platform === 'win32';
-const MARK = '__PSFLOW_ENV__';
+const MARK = '__PURPLEFLOW_ENV__';
 
 /**
  * Приложение, запущенное из Finder/Dock, получает урезанный PATH (/usr/bin:/bin…).

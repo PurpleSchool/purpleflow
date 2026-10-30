@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleCheck, RotateCcw, Sparkles } from 'lucide-react';
-import type { ReviewItem, LineComment, RunFile, StageAttempt, StageId } from '@psflow/core';
+import type { ReviewItem, LineComment, RunFile, StageAttempt, StageId } from '@purpleflow/core';
 import { PillTabs } from '../../components/PillTabs';
 import { LiveLog, cut, finalMessage, type LogSlice } from '../../components/Terminal';
 import { Markdown } from '../../components/Markdown';
@@ -22,7 +22,7 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
     setBusy(true);
     setError(null);
     try {
-      await window.psflow.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
+      await window.purpleflow.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
       onDone();
     } catch (e) {
       setError(cleanErr(e));
@@ -123,7 +123,7 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
   useEffect(() => {
     let alive = true;
     if (!v) return;
-    void Promise.all(v.shots.map(async (s) => [s.file, await window.psflow.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
+    void Promise.all(v.shots.map(async (s) => [s.file, await window.purpleflow.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
       // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
       if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
     });
@@ -138,7 +138,7 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
     setRerunning(true);
     setRerunErr(null);
     try {
-      await window.psflow.core.dispatch({ type: 'run.rerunVisual', runId });
+      await window.purpleflow.core.dispatch({ type: 'run.rerunVisual', runId });
     } catch (e) {
       setRerunErr(cleanErr(e));
     } finally {
@@ -421,7 +421,7 @@ export function AgentOutput({ runId, slice, attempt }: { runId: string; slice: L
   useEffect(() => {
     if (running || attempt.output) return;
     let alive = true;
-    void window.psflow.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
+    void window.purpleflow.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
     return () => {
       alive = false;
     };

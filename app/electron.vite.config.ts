@@ -4,11 +4,11 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 
 // Ядро собирается прямо из исходников core/src и попадает в бандл main/coreHost —
 // в упакованном приложении нет node_modules.
-const coreAlias = { '@psflow/core': resolve(__dirname, '../core/src/index.ts') };
+const coreAlias = { '@purpleflow/core': resolve(__dirname, '../core/src/index.ts') };
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@psflow/core'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@purpleflow/core'] })],
     resolve: { alias: coreAlias },
     build: {
       rollupOptions: {
@@ -23,7 +23,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
-    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src'), '@psflow/route': resolve(__dirname, '../core/src/route.ts') } },
+    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src'), '@purpleflow/route': resolve(__dirname, '../core/src/route.ts') } },
     plugins: [react()],
     worker: { format: 'es' },
   },

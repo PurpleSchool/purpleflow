@@ -1,8 +1,8 @@
-import type { RunFile, StageAttempt, StageId } from '@psflow/core';
-import { currentRow, limitRow, stagesOf } from '@psflow/route';
+import type { RunFile, StageAttempt, StageId } from '@purpleflow/core';
+import { currentRow, limitRow, stagesOf } from '@purpleflow/route';
 
 // Маршрут — общий с ядром (core/src/route.ts).
-export { acceptTarget, limitRow, plannedRoute } from '@psflow/route';
+export { acceptTarget, limitRow, plannedRoute } from '@purpleflow/route';
 
 export interface StageDef {
   id: StageId;
@@ -41,14 +41,14 @@ const BASE: Record<StageId, StageDef> = {
   review: { id: 'review', title: 'Ревью', actor: 'codex', role: 'reviewer', hint: 'Другая модель сверяет дифф с планом' },
   gate2: { id: 'gate2', title: 'Приёмка', actor: 'человек', gate: true, hint: 'Дифф, замечания ревью и ваши замечания' },
   limit: { id: 'limit', title: 'Нужно решение', actor: 'человек', gate: true, hint: '' },
-  finish: { id: 'finish', title: 'Архив и коммит', actor: 'оркестратор', hint: 'openspec archive и коммит в ветку psflow/…' },
+  finish: { id: 'finish', title: 'Архив и коммит', actor: 'оркестратор', hint: 'openspec archive и коммит в ветку purpleflow/…' },
 };
 
 const OVERRIDE: Partial<Record<Mode, Partial<Record<StageId, Partial<StageDef>>>>> = {
   quick: {
     implement: { hint: 'Правка прямо по тексту задачи, без плана' },
     review: { hint: 'Только если дифф больше 120 строк' },
-    finish: { title: 'Коммит', hint: 'Коммит в ветку psflow/…' },
+    finish: { title: 'Коммит', hint: 'Коммит в ветку purpleflow/…' },
   },
   bug: {
     plan: { title: 'Воспроизведение', hint: 'Причина бага и падающий тест; проверки должны быть красными' },

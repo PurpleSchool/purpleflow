@@ -6,7 +6,7 @@ import { accountToken, proxyKey, setAccount, setAccountProfile, setProxyKey } fr
  * Запросы идут из main-процесса на машине пользователя — лимит частоты /auth/* считается по его IP,
  * а токен аккаунта не попадает в окно. Токен бессрочный и даёт полный доступ: не логируем и не кладём в URL.
  */
-const API = (process.env.PSFLOW_API_URL || 'https://app.purpleschool.ru/api-v2').replace(/\/+$/, '');
+const API = (process.env.PURPLEFLOW_API_URL || 'https://app.purpleschool.ru/api-v2').replace(/\/+$/, '');
 const KEY_NAME = 'PurpleFlow';
 const TIMEOUT_MS = 20_000;
 

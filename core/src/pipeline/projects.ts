@@ -5,6 +5,7 @@ import { addUsage, c, emptyUsage, type AgentResult } from '../agents/common.js';
 import { prependPath } from '../env.js';
 import { prReadiness } from '../github.js';
 import { Git } from '../git.js';
+import { isRunBranch } from '../ids.js';
 import { parseJsonReply } from '../json.js';
 import { ARTIFACT_RE } from '../reviewdiff.js';
 import { killGroup, run as runProc } from '../proc.js';
@@ -219,7 +220,7 @@ export async function checkEnvironment(h: Orchestrator, repo: string) : Promise<
     onStderr: (t) => { out = (out + t).slice(-8000); },
   });
   void server.then((r) => { exited = r.code; });
-  const session = `psflow-env-${id}`;
+  const session = `purpleflow-env-${id}`;
   try {
     const ready = await waitForUrl(url, 150_000, () => exited !== undefined);
     if (!ready) {
@@ -292,7 +293,7 @@ export async function projectBranches(h: Orchestrator, repo: string, fetch = fal
   const tools = await h.tools(['git']);
   const all = await new Git(tools.git, h.opts.env).allBranches(repo, fetch);
   // Ветки прогонов PurpleFlow — в конец: от них новые задачи начинают редко.
-  const own = (b: { name: string }) => b.name.replace(/^origin\//, '').startsWith('psflow/');
+  const own = (b: { name: string }) => isRunBranch(b.name);
   return { current: all.current, branches: [...all.branches.filter((b) => !own(b)), ...all.branches.filter(own)] };
 }
 

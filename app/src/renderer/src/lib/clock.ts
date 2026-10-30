@@ -1,4 +1,4 @@
-import type { RunFile } from '@psflow/core';
+import type { RunFile } from '@purpleflow/core';
 
 /** Промежутки короче этого — обычные переходы между стадиями, их считаем. Длиннее — прогон стоял. */
 const GAP_MS = 5000;

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ArrowUp, Check, PanelLeftClose, Pause, RotateCcw, SquareTerminal, StickyNote, Undo2, UserRoundCog, X } from 'lucide-react';
-import type { ManagerAction, ManagerMessage, RunFile } from '@psflow/core';
+import type { ManagerAction, ManagerMessage, RunFile } from '@purpleflow/core';
 import { Markdown } from '../../components/Markdown';
 import { onCoreEvent } from '../../lib/store';
 import { cleanErr } from './util';
@@ -15,7 +15,7 @@ const ACTION: Record<ManagerAction['kind'], { title: string; icon: ReactNode; hi
 
 const SUGGEST = ['Как идут дела?', 'Что сейчас мешает?', 'Что уже сделано по плану?'];
 
-const LAYOUT_KEY = 'psflow.manager';
+const LAYOUT_KEY = 'purpleflow.manager';
 const DEFAULT_W = 300;
 const MIN_W = 240;
 const MAX_W = 640;
@@ -82,7 +82,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setMessages([]);
     setThinking(false);
     setError(null);
-    void window.psflow.core.getManagerChat(runId).then((c) => {
+    void window.purpleflow.core.getManagerChat(runId).then((c) => {
       if (!alive) return;
       setMessages(c.messages);
       setThinking(c.thinking);
@@ -118,7 +118,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setError(null);
     setThinking(true);
     try {
-      setMessages(await window.psflow.core.askManager(runId, q));
+      setMessages(await window.purpleflow.core.askManager(runId, q));
     } catch (e) {
       setText(q);
       setError(cleanErr(e));
@@ -131,7 +131,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setBusy(`${m.id}:${apply}`);
     setError(null);
     try {
-      setMessages(await window.psflow.core.resolveManagerAction(runId, m.id, apply));
+      setMessages(await window.purpleflow.core.resolveManagerAction(runId, m.id, apply));
     } catch (e) {
       setError(cleanErr(e));
     } finally {

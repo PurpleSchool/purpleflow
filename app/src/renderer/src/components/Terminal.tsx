@@ -109,7 +109,7 @@ export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
       else queue.push(e.text);
     });
 
-    void window.psflow.core.getLog(runId).then((full) => {
+    void window.purpleflow.core.getLog(runId).then((full) => {
       if (!alive) return;
       const text = slice ? cut(full, slice) : full;
       term.write(text);

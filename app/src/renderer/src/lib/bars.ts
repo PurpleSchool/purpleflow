@@ -1,4 +1,4 @@
-import type { RunFile, StageAttempt, StageId } from '@psflow/core';
+import type { RunFile, StageAttempt, StageId } from '@purpleflow/core';
 import type { ActiveClock } from './clock';
 import { duration } from './format';
 import { limitRow, stageTitle } from './stages';

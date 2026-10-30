@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleAlert, FileCode2, RefreshCw } from 'lucide-react';
-import type { DiffFile, LineComment, ReviewItem, RunFile } from '@psflow/core';
+import type { DiffFile, LineComment, ReviewItem, RunFile } from '@purpleflow/core';
 import { DiffReview } from '../../components/DiffReview';
 import { PillTabs } from '../../components/PillTabs';
 import { Button, Empty } from '../../components/ui';
@@ -19,7 +19,7 @@ export function useChangedFiles(run: RunFile | undefined): string[] | null {
     let alive = true;
     setFiles((f) => (f && id !== loadedFor.current ? null : f));
     loadedFor.current = id;
-    const load = () => window.psflow.core.getChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
+    const load = () => window.purpleflow.core.getChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
     void load();
     const timer = live ? setInterval(load, 8000) : undefined;
     return () => {
@@ -60,7 +60,7 @@ export function CodePane({ run, changed, accept, tools }: { run: RunFile; change
     setBusy(true);
     setError(null);
     try {
-      setDiff(await window.psflow.core.getDiff(run.id));
+      setDiff(await window.purpleflow.core.getDiff(run.id));
       setAt(new Date());
     } catch (e) {
       setError(cleanErr(e));

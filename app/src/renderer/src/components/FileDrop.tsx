@@ -85,7 +85,7 @@ export function FileDrop({ files, onChange }: { files: PickedFile[]; onChange: (
         <Paperclip size={18} />
         <span>
           <strong>{files.length ? 'Ещё файл' : 'Файлы к задаче'}</strong>
-          <small>Макеты, скриншоты, документы, логи — перетащите, вставьте {window.psflow.platform === 'darwin' ? '⌘V' : 'Ctrl+V'} или выберите</small>
+          <small>Макеты, скриншоты, документы, логи — перетащите, вставьте {window.purpleflow.platform === 'darwin' ? '⌘V' : 'Ctrl+V'} или выберите</small>
         </span>
       </button>
       <input ref={input} type="file" multiple hidden onChange={(e) => { if (e.target.files) add(e.target.files); e.target.value = ''; }} />

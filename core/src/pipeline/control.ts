@@ -67,7 +67,7 @@ async function replan(h: Orchestrator, r: RunFile, reason: string, keepCode: boo
   const git = new Git(tools.git, h.opts.env);
   const base = h.diffBase(r);
   const n = (r.interventions ?? []).filter((i) => i.kind === 'replan').length + 1;
-  const ref = `refs/psflow/${r.id}/replan-${n}`;
+  const ref = `refs/purpleflow/${r.id}/replan-${n}`;
   let snapshot: string | undefined;
   try {
     await git.snapshot(r.worktreePath, ref, `PurpleFlow: работа до возврата к плану №${n}`);

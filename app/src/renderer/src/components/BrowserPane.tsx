@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Monitor, RotateCw, Smartphone, Square, TriangleAlert } from 'lucide-react';
-import type { PreviewState } from '@psflow/core';
+import type { PreviewState } from '@purpleflow/core';
 import { Button } from './ui';
 import { onCoreEvent } from '../lib/store';
 
@@ -13,7 +13,7 @@ export function usePreview(runId: string) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.psflow.core.getPreview(runId).then((s) => alive && setState(s));
+    void window.purpleflow.core.getPreview(runId).then((s) => alive && setState(s));
     const off = onCoreEvent((e) => {
       if (e.type === 'preview.state' && e.runId === runId) setState(e.state);
     });
@@ -25,12 +25,12 @@ export function usePreview(runId: string) {
   const start = async () => {
     setError(null);
     try {
-      setState(await window.psflow.core.startPreview(runId));
+      setState(await window.purpleflow.core.startPreview(runId));
     } catch (e) {
       setError(cleanErr(e));
     }
   };
-  const stop = () => window.psflow.core.stopPreview(runId);
+  const stop = () => window.purpleflow.core.stopPreview(runId);
   return { state, error, start, stop };
 }
 
@@ -158,7 +158,7 @@ export function BrowserPane({ preview, canRun, manual = false, intro }: {
   const toggleMobile = (m: boolean) => {
     setMobile(m);
     const w = view.current;
-    if (w) void window.psflow.previewEmulate(w.getWebContentsId(), m);
+    if (w) void window.purpleflow.previewEmulate(w.getWebContentsId(), m);
   };
 
   if (!ready) {
@@ -221,7 +221,7 @@ export function BrowserPane({ preview, canRun, manual = false, intro }: {
         <Button tone="quiet" icon={<Square size={13} />} title={manualUrl ? 'Закрыть страницу' : 'Остановить приложение'} onClick={() => void stop()} />
       </div>
       <div className={`browser-stage ${mobile ? 'is-mobile' : ''}`}>
-        <webview ref={(el) => { view.current = el as unknown as WebviewTag | null; }} src={state.url} partition="psflow-preview" className="browser-view" />
+        <webview ref={(el) => { view.current = el as unknown as WebviewTag | null; }} src={state.url} partition="purpleflow-preview" className="browser-view" />
       </div>
     </div>
   );

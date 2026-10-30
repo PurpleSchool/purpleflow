@@ -8,7 +8,7 @@ import { SettingsScreen } from './screens/Settings';
 import { WelcomeScreen } from './screens/Welcome';
 import { ChatScreen } from './screens/Chat';
 
-const SIDEBAR_KEY = 'psflow.sidebarCollapsed';
+const SIDEBAR_KEY = 'purpleflow.sidebarCollapsed';
 
 export function App() {
   const { state } = useStore();
@@ -30,8 +30,8 @@ export function App() {
   const { go } = useStore();
   // Звук внимания (прогон ждёт решения, готов или упал) и переход к прогону по клику на уведомление.
   useEffect(() => {
-    const offChime = window.psflow.onChime(chime);
-    const offGo = window.psflow.onGo((runId) => go({ name: 'run', runId }));
+    const offChime = window.purpleflow.onChime(chime);
+    const offGo = window.purpleflow.onGo((runId) => go({ name: 'run', runId }));
     return () => {
       offChime();
       offGo();
@@ -52,14 +52,14 @@ export function App() {
   // Экран входа при первом запуске — на всё окно, без боковой панели.
   if (v.name === 'welcome') {
     return (
-      <div className={`app app-onboard os-${window.psflow.platform}`}>
+      <div className={`app app-onboard os-${window.purpleflow.platform}`}>
         <WelcomeScreen />
       </div>
     );
   }
 
   return (
-    <div className={`app os-${window.psflow.platform} ${collapsed ? 'is-collapsed' : ''}`}>
+    <div className={`app os-${window.purpleflow.platform} ${collapsed ? 'is-collapsed' : ''}`}>
       <Sidebar collapsed={collapsed} onToggle={toggle} />
       <main className="main">
         {/* Полоса сверху вместо заголовка окна: за неё окно перетаскивается. */}

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { checkCommand, findEnvFiles } from './detect.js';
 
 function repo() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-detect-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-detect-'));
   const pkg = (rel: string, scripts: Record<string, string>) => {
     fs.mkdirSync(path.join(dir, rel), { recursive: true });
     fs.writeFileSync(path.join(dir, rel, 'package.json'), JSON.stringify({ scripts }));

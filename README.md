@@ -3,7 +3,7 @@
 Задача проходит жёсткие стадии: **план → утверждение → реализация → тесты → ревью другой моделью → приёмка → архив и коммит**.
 Своего агента нет: стадии выполняют установленные CLI `claude` и `codex`. PurpleFlow отвечает только за оркестрацию, гейты и интерфейс.
 
-Каждая задача — одно изменение OpenSpec в отдельной git worktree на ветке `psflow/<change-id>`. Рабочая копия пользователя не трогается, merge делает человек.
+Каждая задача — одно изменение OpenSpec в отдельной git worktree на ветке `purpleflow/<change-id>`. Рабочая копия пользователя не трогается, merge делает человек.
 
 ```
 core/        ядро на чистом TypeScript, без Electron: стадии, гейты, агенты, run.json
@@ -39,15 +39,15 @@ npm run dev
 ## Сборка
 
 ```bash
-npm run dist:mac -w @psflow/app
+npm run dist:mac -w @purpleflow/app
 ```
 
 ```bash
-npm run dist:win -w @psflow/app
+npm run dist:win -w @purpleflow/app
 ```
 
 ```bash
-npm run dist:linux -w @psflow/app
+npm run dist:linux -w @purpleflow/app
 ```
 
 Результат — в `app/release/`. Все зависимости приложения бандлятся (main + utilityProcess + renderer), поэтому в пакете нет `node_modules`; промпты кладутся в `Resources/prompts`.
@@ -63,7 +63,7 @@ export APPLE_API_KEY=~/keys/AuthKey_XXXX.p8 APPLE_API_KEY_ID=XXXX APPLE_API_ISSU
 Сборка без подписи (для локальной проверки):
 
 ```bash
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @psflow/app -- -c.mac.notarize=false
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @purpleflow/app -- -c.mac.notarize=false
 ```
 
 **Windows.** Подпись — `CSC_LINK`/`CSC_KEY_PASSWORD` (или `WIN_CSC_LINK`). Установщик NSIS.
@@ -79,7 +79,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @psflow/app -- -c.mac.nota
 | 3 | Тесты | оркестратор | команда тестов в worktree | зелёные → 4; красные → 2 с выводом; после 3 попыток — вопрос человеку |
 | 4 | Ревью | codex, роль «ревьюер» | дифф ветки против proposal/tasks, ответ `{ "blocking": [...], "notes": [...] }` по JSON-схеме | нет blocking → G2; есть → 2 (тратит попытку) |
 | G2 | Приёмка | человек | Monaco diff, замечания ревьюера на строках, свои замечания | Принять → 5; Вернуть → 2 с замечаниями |
-| 5 | Завершение | оркестратор | `openspec archive <id> -y`, коммит в `psflow/<id>` | готово |
+| 5 | Завершение | оркестратор | `openspec archive <id> -y`, коммит в `purpleflow/<id>` | готово |
 
 Правила попыток:
 
@@ -126,7 +126,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @psflow/app -- -c.mac.nota
 ## Приёмка: «Поправить» и Pull Request
 
 - «Поправить» на приёмке — небольшая правка в той же ветке: реализация → проверки → снова приёмка, без ревью и визуальной проверки. «Вернуть на доработку» — полный круг.
-- «Создать PR» (нужен `gh` с `gh auth login` и origin на GitHub): `git push -u origin psflow/<id>`, `gh pr create` с описанием из прогона (задача, итог исполнителя, план, проверки, ревью, визуальная проверка). В строке статуса — PR и проверки CI, «Влить PR» — `gh pr merge --merge`, когда CI зелёный. Фонового опроса нет: статус берётся при открытии прогона и по кнопке «Обновить».
+- «Создать PR» (нужен `gh` с `gh auth login` и origin на GitHub): `git push -u origin purpleflow/<id>`, `gh pr create` с описанием из прогона (задача, итог исполнителя, план, проверки, ревью, визуальная проверка). В строке статуса — PR и проверки CI, «Влить PR» — `gh pr merge --merge`, когда CI зелёный. Фонового опроса нет: статус берётся при открытии прогона и по кнопке «Обновить».
 - Вкладка «Pull Request» (после «Таймлайн / Лог / Браузер») — PR прогона: обсуждения в коде с ответами, итоги ревью, общие комментарии (GraphQL через `gh api`) и упавшие проверки CI. Отметьте, что отработать, при желании добавьте свой комментарий — «Отработать» запускает новый круг в том же прогоне: реализация (исполнитель продолжает свою сессию) → проверки → ревью → приёмка (дифф только этого круга) → коммит и `git push` в ветку PR. Для упавших GitHub Actions исполнитель получает хвост лога job (`gh run view --log-failed`). Удалённая при очистке рабочая копия создаётся заново из ветки, чужие коммиты в ветке PR подтягиваются перемоткой. Отработанные замечания помечаются номером круга; уроки из замечаний ревьюеров попадают в «Знания о проекте». Запуск — только вручную, отвечать в обсуждениях — на GitHub.
 - «Обновить ветку» там же: свежая базовая ветка PR вливается в ветку прогона (`git merge`). Без конфликтов — проверки и сразу `git push`; покраснели — чинит исполнитель, затем приёмка. С конфликтами слияние остаётся незавершённым, исполнитель разрешает конфликты (без commit/abort), проверки, приёмка диффа только конфликтных файлов, merge-коммит и push.
 - «Что изменилось» на приёмке: над замечаниями к диффу — сводка от claude (что сделано, что затронуто, на что посмотреть) с учётом круга: обычная реализация, замечания PR или разрешение конфликтов. Пишется в фоне, приёмку не задерживает.
@@ -188,7 +188,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @psflow/app -- -c.mac.nota
 
 На экране прогона рядом с «Таймлайн» и «Лог» — вкладка «Браузер» для ручной проверки. «Открыть приложение» (или «Проверить в браузере» на приёмке) поднимает приложение из рабочей копии прогона командой «Запуск приложения» на свободном порту (`{port}`) и открывает «Адрес» во встроенном webview: адресная строка, назад/вперёд, обновить, десктоп/телефон (390 px, мобильный user agent), открыть во внешнем браузере.
 
-- webview — в отдельной сессии `psflow-preview`, без preload и Node, только `localhost`/`127.0.0.1`; внешние ссылки открываются в системном браузере, запросы разрешений отклоняются.
+- webview — в отдельной сессии `purpleflow-preview`, без preload и Node, только `localhost`/`127.0.0.1`; внешние ссылки открываются в системном браузере, запросы разрешений отклоняются.
 - Сервер — своя группа процессов `<runId>:preview`: гасится кнопкой «Остановить», решением на гейте (до коммита или новой попытки), «Стопом» прогона и выходом из приложения.
 
 ## Визуальная проверка
@@ -204,7 +204,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:dir -w @psflow/app -- -c.mac.nota
 
 CLI выбран вместо Playwright MCP ради экономии токенов: нет схем инструментов в контексте, снимок страницы компактный.
 
-Второй тестовый проект — веб-приложение с заложенным багом: `npm run make-test-repo -- --web ~/psflow-sample-web` (команда запуска `PORT={port} npm start`).
+Второй тестовый проект — веб-приложение с заложенным багом: `npm run make-test-repo -- --web ~/purpleflow-sample-web` (команда запуска `PORT={port} npm start`).
 
 ## Ядро: события и команды
 
@@ -212,7 +212,7 @@ CLI выбран вместо Playwright MCP ради экономии токе�
 
 Устройство ядра:
 - `orchestrator.ts` — команды, очередь, цикл `drive`, гейты, восстановление после перезапуска; стадии и сервисы — тонкими обёртками над модулями ниже.
-- `route.ts` — маршрут прогона, одна правда для ядра и окна (окно импортирует его как `@psflow/route`): куда после проверок и ревью, что пропускается в каком круге, где «попытки исчерпаны», куда «Дальше как есть».
+- `route.ts` — маршрут прогона, одна правда для ядра и окна (окно импортирует его как `@purpleflow/route`): куда после проверок и ревью, что пропускается в каком круге, где «попытки исчерпаны», куда «Дальше как есть».
 - `pipeline/` — стадии и сервисы: `plan`, `implement`, `checks` (проверки, повтор нестабильных, сверка с исходным кодом), `review` (ревью, второй проход, сводка, карта по плану), `visual`, `finish`, `pr`, `projects` (проекты, знания, проверка окружения), `workspace` (worktree, зависимости, env-файлы).
 - `shared.ts` — константы и разбор ответов агентов; `json.ts` — единый разбор JSON из ответа; `items.ts` — форматирование замечаний; `reviewdiff.ts` — дифф для ревью.
 - Служебные вызовы claude — через `service()`, агенты стадий — через `claude()`/`codex()`: в тестах их подменяют (`CoreOptions.runners`). `pipeline.test.ts` гоняет конвейер целиком на временном репозитории с фейковыми агентами — за секунды.
@@ -262,7 +262,7 @@ claude -p --output-format stream-json --verbose
 - «Мои настройки агентов» (Настройки → Агенты и модели, по умолчанию включено): агенты основных стадий получают настройки пользователя из `~/.claude` и `~/.codex` — MCP-серверы (например, трекер задач), скиллы, плагины, CLAUDE.md, а также подключённые коннекторы claude.ai. Хуки claude выключены через `--settings '{"disableAllHooks":true}'`, чтобы уведомления и логгеры пользователя не срабатывали на каждом шаге. Файлы настроек только читаются. Служебные вызовы (определение команд, профиль проекта, «Что изменилось», уроки) всегда изолированы.
 - Если выключить — `--setting-sources project,local` и `--strict-mcp-config`: пользовательские хуки, плагины, MCP и `env` из `~/.claude` не вмешиваются в прогон, у codex — `--ignore-user-config` при работе через прокси.
 - `--permission-mode bypassPermissions` — агент работает автономно, но только внутри отдельной worktree.
-- Прокси: ключ AI-прокси берётся из аккаунта PurpleSchool (вход в настройках); адрес — `https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic` (переопределяется переменной `PSFLOW_PROXY_URL`). Агенту передаются `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_API_KEY=<ключ>` — прокси проверяет его в заголовке `x-api-key` (`ANTHROPIC_AUTH_TOKEN` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
+- Прокси: ключ AI-прокси берётся из аккаунта PurpleSchool (вход в настройках); адрес — `https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic` (переопределяется переменной `PURPLEFLOW_PROXY_URL`). Агенту передаются `ANTHROPIC_BASE_URL=<base URL>`, `ANTHROPIC_API_KEY=<ключ>` — прокси проверяет его в заголовке `x-api-key` (`ANTHROPIC_AUTH_TOKEN` убирается), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Только в окружении процесса агента.
 - Из stream-json берём `assistant` (текст и вызовы инструментов — в лог), `user.tool_result`, финальный `result` (`usage`, `total_cost_usd`, `is_error`).
 
 **codex** (`core/src/agents/codex.ts`), промпт через stdin (`-`):
@@ -275,7 +275,7 @@ codex exec --json --ephemeral --skip-git-repo-check --color never
 ```
 
 - Прокси подключается отдельным провайдером через `-c`, без правки `~/.codex/config.toml`:
-  `[--ignore-user-config, если «Мои настройки агентов» выключены] -c model_provider=psflow -c model_providers.psflow.base_url=<URL> -c model_providers.psflow.env_key=PSFLOW_OPENAI_API_KEY -c model_providers.psflow.wire_api=responses -c model_providers.psflow.supports_websockets=false`, ключ — в `PSFLOW_OPENAI_API_KEY`. URL для codex — `https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1` (переопределяется переменной `PSFLOW_CODEX_PROXY_URL`).
+  `[--ignore-user-config, если «Мои настройки агентов» выключены] -c model_provider=purpleflow -c model_providers.purpleflow.base_url=<URL> -c model_providers.purpleflow.env_key=PURPLEFLOW_OPENAI_API_KEY -c model_providers.purpleflow.wire_api=responses -c model_providers.purpleflow.supports_websockets=false`, ключ — в `PURPLEFLOW_OPENAI_API_KEY`. URL для codex — `https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1` (переопределяется переменной `PURPLEFLOW_CODEX_PROXY_URL`).
 - Из JSONL берём `item.completed` (`agent_message`, `command_execution`, `reasoning`), `turn.completed.usage`, `error`/`turn.failed`.
 
 **openspec**: `init --tools none --no-animation .`, `validate <id> --type change --strict --json --no-interactive`, `archive <id> -y --json`.
@@ -302,7 +302,7 @@ npm test
 Тестовый репозиторий для критерия 2 (небольшой TypeScript-проект с тестами на `node:test`, без зависимостей):
 
 ```bash
-npm run make-test-repo -- ~/psflow-sample
+npm run make-test-repo -- ~/purpleflow-sample
 ```
 
 Задача для проверки: «Добавь функцию slugify(s: string): string в src/strings.ts: переводит строку в kebab-case латиницей (кириллицу транслитерирует), убирает всё кроме букв, цифр и дефисов. Добавь тест.»
@@ -310,7 +310,7 @@ npm run make-test-repo -- ~/psflow-sample
 Headless-прогон того же флоу без GUI (автоматически принимает гейты; `--reject-plan` один раз возвращает план с комментарием):
 
 ```bash
-cd core && npx tsx scripts/e2e.ts --repo ~/psflow-sample --reject-plan "Добавь в tasks.md пункт про README"
+cd core && npx tsx scripts/e2e.ts --repo ~/purpleflow-sample --reject-plan "Добавь в tasks.md пункт про README"
 ```
 
 ## Что проверено (06.10.2026, macOS arm64)
@@ -318,7 +318,7 @@ cd core && npx tsx scripts/e2e.ts --repo ~/psflow-sample --reject-plan "Доба
 | Критерий | Как проверено | Итог |
 |---|---|---|
 | Приложение запускается «из Finder» и находит claude и codex | `open` упакованного `PurpleFlow.app` (LaunchServices, урезанный PATH) | git, claude 2.1.286, codex 0.160.1 найдены через login-шелл |
-| Задача проходит все стадии до архива и коммита | headless e2e и живой прогон через окно на `test-repo` | коммит в `psflow/<id>`, изменение в `openspec/changes/archive/`, тесты зелёные |
+| Задача проходит все стадии до архива и коммита | headless e2e и живой прогон через окно на `test-repo` | коммит в `purpleflow/<id>`, изменение в `openspec/changes/archive/`, тесты зелёные |
 | Красные тесты → повтор с выводом → стоп после 3 попыток | e2e с заведомо красной командой тестов | 3 реализации, исполнитель цитирует вывод тестов, затем вопрос человеку |
 | «Вернуть с комментарием» доходит до агента | возврат на G1 и на G2 с замечанием на строке | планировщик добавил пункт, исполнитель выполнил замечание на строке |
 | «Стоп» не оставляет живых процессов | стоп посреди плана + юнит-тест дерева процессов | 0 живых процессов |

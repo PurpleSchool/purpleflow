@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock3, GitPullRequest, Trash2, ArrowRight, ChevronDown, FileText, GitMerge, Hand, ShieldAlert, X, TriangleAlert } from 'lucide-react';
-import type { PrStatus, RunFile, StageId } from '@psflow/core';
+import type { PrStatus, RunFile, StageId } from '@purpleflow/core';
 import { useNow } from '../../components/Timeline';
 import { isGate } from '../../lib/bars';
 import { agentTime, ms } from '../../lib/clock';
@@ -21,7 +21,7 @@ export function DeleteRun({ run, runId }: { run: RunFile; runId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await window.psflow.core.dispatch({ type: 'run.delete', runId, deleteBranch: withBranch });
+      await window.purpleflow.core.dispatch({ type: 'run.delete', runId, deleteBranch: withBranch });
     } catch (e) {
       setError(cleanErr(e));
       setBusy(false);
@@ -121,7 +121,7 @@ export function LongRunBanner({ run, limitMin }: { run: RunFile; limitMin: numbe
 
 export const STAGE_TITLES_RU: Partial<Record<StageId, string>> = { clarify: 'Уточнение', plan: 'План', implement: 'Реализация', review: 'Ревью', visual: 'Визуальная проверка' };
 
-/** Готовый прогон: влить ветку psflow/<id> в выбранную ветку — прямо в строке статуса. */
+/** Готовый прогон: влить ветку purpleflow/<id> в выбранную ветку — прямо в строке статуса. */
 export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
   const [branches, setBranches] = useState<string[]>([]);
   const [target, setTarget] = useState('');
@@ -132,18 +132,18 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
 
   useEffect(() => {
     if (run.merged || run.pr) return;
-    void window.psflow.core.listBranches(runId).then((b) => {
+    void window.purpleflow.core.listBranches(runId).then((b) => {
       setBranches(b.branches);
       setTarget((t) => t || b.suggested || b.current || b.branches[0] || '');
     }).catch((e) => setError(cleanErr(e)));
-    void window.psflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
+    void window.purpleflow.core.prReady(runId).then(setPrWhy).catch(() => setPrWhy('Не удалось проверить GitHub CLI'));
   }, [runId, run.merged, run.pr]);
 
   // Открытый PR: статус проверок CI — при открытии прогона и после обновления на вкладке «Pull Request», без фонового опроса.
   useEffect(() => {
     if (!run.pr) return;
     let alive = true;
-    const load = () => void window.psflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
+    const load = () => void window.purpleflow.core.getPrStatus(runId).then((x) => alive && setPr(x)).catch((e) => alive && setError(cleanErr(e)));
     load();
     const off = onPrRefreshed(runId, (st) => alive && setPr(st));
     return () => {
@@ -156,11 +156,11 @@ export function MergeControl({ run, runId }: { run: RunFile; runId: string }) {
     setBusy(kind);
     setError(null);
     try {
-      if (kind === 'merge') await window.psflow.core.dispatch({ type: 'run.merge', runId, target });
-      else if (kind === 'pr') await window.psflow.core.dispatch({ type: 'run.pr', runId, base: target });
+      if (kind === 'merge') await window.purpleflow.core.dispatch({ type: 'run.merge', runId, target });
+      else if (kind === 'pr') await window.purpleflow.core.dispatch({ type: 'run.pr', runId, base: target });
       else {
-        await window.psflow.core.dispatch({ type: 'run.prMerge', runId });
-        setPr(await window.psflow.core.getPrStatus(runId));
+        await window.purpleflow.core.dispatch({ type: 'run.prMerge', runId });
+        setPr(await window.purpleflow.core.getPrStatus(runId));
       }
     } catch (e) {
       setError(cleanErr(e));
@@ -250,7 +250,7 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
   const [big, setBig] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void Promise.all(files.map((_, i) => window.psflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
+    void Promise.all(files.map((_, i) => window.purpleflow.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
     return () => { alive = false; };
   }, [runId, files.length]);
   return (
@@ -259,7 +259,7 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
         {files.map((f, i) => urls[i] ? (
           <button key={i} className="imgdrop-thumb" onClick={() => setBig(urls[i])} title="Открыть"><img src={urls[i]!} alt={`Изображение ${i + 1}`} /></button>
         ) : (
-          <button key={i} className="file-chip" onClick={() => void window.psflow.openPath(f)} title={f}>
+          <button key={i} className="file-chip" onClick={() => void window.purpleflow.openPath(f)} title={f}>
             <FileText size={16} />
             <span className="file-chip-text"><strong>{f.split(/[\\/]/).pop()!.replace(/^\d+-/, '')}</strong><small>открыть</small></span>
           </button>

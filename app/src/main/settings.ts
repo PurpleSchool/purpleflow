@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, safeStorage } from 'electron';
-import type { AgentKind, CoreSettings, Role } from '@psflow/core';
+import type { AgentKind, CoreSettings, Role } from '@purpleflow/core';
 import type { PublicSettings, SettingsPatch } from '../shared/ipc';
 
 interface StoredSettings {
@@ -49,11 +49,11 @@ const DEFAULTS: StoredSettings = {
 
 /**
  * Адреса AI-прокси PurpleSchool — как в официальной инструкции подключения (GET /public/ai-proxy/setup-instructions):
- * claude — Anthropic API, codex — OpenAI Responses API. Переопределяются переменными PSFLOW_PROXY_URL и
- * PSFLOW_CODEX_PROXY_URL или полями baseUrl и codexBaseUrl в settings.json.
+ * claude — Anthropic API, codex — OpenAI Responses API. Переопределяются переменными PURPLEFLOW_PROXY_URL и
+ * PURPLEFLOW_CODEX_PROXY_URL или полями baseUrl и codexBaseUrl в settings.json.
  */
-const PURPLESCHOOL_PROXY = process.env.PSFLOW_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic';
-const PURPLESCHOOL_CODEX_PROXY = process.env.PSFLOW_CODEX_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1';
+const PURPLESCHOOL_PROXY = process.env.PURPLEFLOW_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/anthropic';
+const PURPLESCHOOL_CODEX_PROXY = process.env.PURPLEFLOW_CODEX_PROXY_URL || 'https://app.purpleschool.ru/api-v2/public/ai-proxy/openai/v1';
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
 

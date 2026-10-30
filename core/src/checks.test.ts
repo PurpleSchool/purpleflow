@@ -41,7 +41,7 @@ import path from 'node:path';
 import { isImageFile, readSmallText } from './orchestrator.js';
 
 test('вложения: изображения и небольшие текстовые файлы', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-att-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-att-'));
   const txt = path.join(dir, 'spec.md');
   const bin = path.join(dir, 'data.bin');
   const big = path.join(dir, 'big.log');

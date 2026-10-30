@@ -9,7 +9,7 @@ import { addUsage, c, crlf, emptyUsage, type AgentResult } from './agents/common
 import { detectTools, prependPath } from './env.js';
 import { Git } from './git.js';
 import { acceptTarget, afterChecks } from './route.js';
-import { makeChangeId, makeTitle } from './ids.js';
+import { makeChangeId, makeTitle, runBranch } from './ids.js';
 import { killGroup, killPid, run as runProc, setPidTracker } from './proc.js';
 import { Prompts } from './prompts.js';
 import { RunStore } from './store.js';
@@ -392,7 +392,7 @@ export class Orchestrator {
     const present = (['claude', 'codex'] as const).filter((a) => found[a].path && !found[a].error);
     if (!present.length) throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
     const tools = { claude: found.claude.path!, codex: found.codex.path! };
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-check-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-check-'));
     const proxy = s.proxy.baseUrl ? s.proxy : undefined;
     const prompt = 'Это проверка подключения. Ответь ровно одним словом: готово';
     const one = async (agent: 'claude' | 'codex'): Promise<ConnectionCheck> => {
@@ -436,7 +436,7 @@ export class Orchestrator {
       : head;
 
     const changeId = makeChangeId(input.task);
-    const branch = `psflow/${changeId}`;
+    const branch = runBranch(changeId);
     const workspace = input.workspace ?? 'worktree';
     if (workspace === 'branch') {
       // В режиме «ветка» прогон занимает рабочую копию проекта целиком — второй в том же проекте ей бы помешал.

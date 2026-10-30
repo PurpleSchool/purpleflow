@@ -50,14 +50,14 @@ export function AuthForms({ onDone, initial = 'login' }: { onDone: () => void | 
     setBusy(true);
     try {
       if (mode === 'restore') {
-        const r = await window.psflow.account.restore(mail);
+        const r = await window.purpleflow.account.restore(mail);
         if (r.ok) setNotice(r.data);
         else setError({ text: r.error });
         return;
       }
       const r = mode === 'login'
-        ? await window.psflow.account.login(mail, password)
-        : await window.psflow.account.register({ name, email: mail, password, mailing });
+        ? await window.purpleflow.account.login(mail, password)
+        : await window.purpleflow.account.register({ name, email: mail, password, mailing });
       if (!r.ok) return setError({ text: r.error, toLogin: r.code === 'exists' });
       setPassword('');
       await reloadSettings();
@@ -140,7 +140,7 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
   };
 
   const load = async () => {
-    const r = await window.psflow.account.keys();
+    const r = await window.purpleflow.account.keys();
     if (!r.ok) return fail(r);
     setKeys(r.data.items);
     setLimit(r.data.limit);
@@ -149,7 +149,7 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
   useEffect(() => {
     void (async () => {
       // Сначала подставляем существующий ключ, если своего ещё нет, потом показываем список.
-      const auto = await window.psflow.account.autoKey();
+      const auto = await window.purpleflow.account.autoKey();
       if (!auto.ok) return fail(auto);
       if (auto.data === 'picked') await reloadSettings();
       await load();
@@ -171,7 +171,7 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
 
   const active = keys?.filter((k) => k.active) ?? [];
   const current = keys?.find((k) => k.current);
-  const create = () => void act('create', window.psflow.account.createKey);
+  const create = () => void act('create', window.purpleflow.account.createKey);
   return (
     <div className="acc-keys">
       <div className="acc-keys-head">
@@ -206,7 +206,7 @@ export function AccountKeys({ onUnauthorized }: { onUnauthorized?: () => void })
               {k.current ? (
                 <span className="acc-key-used"><CheckCircle2 size={14} /> Подставлен</span>
               ) : (
-                <Button tone="ghost" busy={busy === `use-${k.id}`} disabled={busy !== null && busy !== `use-${k.id}`} onClick={() => void act(`use-${k.id}`, () => window.psflow.account.useKey(k.id))}>
+                <Button tone="ghost" busy={busy === `use-${k.id}`} disabled={busy !== null && busy !== `use-${k.id}`} onClick={() => void act(`use-${k.id}`, () => window.purpleflow.account.useKey(k.id))}>
                   Использовать
                 </Button>
               )}

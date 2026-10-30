@@ -324,7 +324,7 @@ export interface RunFile {
   worktreeRemoved?: boolean;
   /** Pull Request ветки прогона на GitHub. */
   pr?: { url: string; number: number; base: string; createdAt: string };
-  /** Ветка psflow/<id> влита человеком из приложения. */
+  /** Ветка purpleflow/<id> влита человеком из приложения. */
   merged?: { into: string; commit: string; at: string };
   /** Доработка по замечаниям PR: номер текущего круга (первый — исходная реализация) и коммит, от которого считается дифф круга. */
   prRound?: number;
@@ -434,7 +434,7 @@ export type CoreCommand =
   | { type: 'run.prMerge'; runId: string }
   | { type: 'run.prFollowup'; runId: string; items: PrFollowupItem[]; note?: string }
   | { type: 'run.updateBranch'; runId: string }
-  /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку psflow/<id>. */
+  /** Удалить прогон: рабочую копию, данные приложения и, по желанию, ветку purpleflow/<id>. */
   | { type: 'run.delete'; runId: string; deleteBranch: boolean };
 
 export interface DiffFile {

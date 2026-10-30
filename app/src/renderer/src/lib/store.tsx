@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
-import type { ChatFile, ChatSummary, CoreEvent, RunFile, RunSummary, ToolInfo, ToolName, NextPartDraft } from '@psflow/core';
+import type { ChatFile, ChatSummary, CoreEvent, RunFile, RunSummary, ToolInfo, ToolName, NextPartDraft } from '@purpleflow/core';
 import type { PublicSettings } from '../../../shared/ipc';
 
 export type ProjectTab = 'overview' | 'commands' | 'knowledge';
@@ -94,7 +94,7 @@ interface Ctx {
   refreshTools(): Promise<void>;
   refreshRuns(): Promise<void>;
   loadRun(id: string): Promise<RunFile | null>;
-  saveSettings(patch: Parameters<typeof window.psflow.settings.set>[0]): Promise<PublicSettings>;
+  saveSettings(patch: Parameters<typeof window.purpleflow.settings.set>[0]): Promise<PublicSettings>;
   /** Перечитать настройки после входа, выхода или смены ключа в аккаунте. */
   reloadSettings(): Promise<PublicSettings>;
 }
@@ -124,7 +124,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refreshTools = useCallback(async () => {
     dispatch({ t: 'tools', tools: null, loading: true });
     try {
-      dispatch({ t: 'tools', tools: await window.psflow.core.detectTools(), loading: false });
+      dispatch({ t: 'tools', tools: await window.purpleflow.core.detectTools(), loading: false });
     } catch {
       dispatch({ t: 'tools', tools: null, loading: false });
     }
@@ -132,7 +132,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const refreshRuns = useCallback(async () => {
     try {
-      dispatch({ t: 'runs', runs: await window.psflow.core.listRuns() });
+      dispatch({ t: 'runs', runs: await window.purpleflow.core.listRuns() });
     } catch {
       // Ядро ещё не поднялось или упало — не держим вечный загрузчик: пустой список, следующее событие обновит.
       dispatch({ t: 'runs', runs: [] });
@@ -140,25 +140,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadRun = useCallback(async (id: string) => {
-    const r = await window.psflow.core.getRun(id);
+    const r = await window.purpleflow.core.getRun(id);
     if (r) dispatch({ t: 'run', run: r });
     return r;
   }, []);
 
-  const saveSettings = useCallback(async (patch: Parameters<typeof window.psflow.settings.set>[0]) => {
-    const s = await window.psflow.settings.set(patch);
+  const saveSettings = useCallback(async (patch: Parameters<typeof window.purpleflow.settings.set>[0]) => {
+    const s = await window.purpleflow.settings.set(patch);
     dispatch({ t: 'settings', settings: s });
     return s;
   }, []);
 
   const reloadSettings = useCallback(async () => {
-    const s = await window.psflow.settings.get();
+    const s = await window.purpleflow.settings.get();
     dispatch({ t: 'settings', settings: s });
     return s;
   }, []);
 
   useEffect(() => {
-    const off = window.psflow.onEvent((e) => {
+    const off = window.purpleflow.onEvent((e) => {
       if (e.type === 'run.updated') dispatch({ t: 'run', run: e.run });
       if (e.type === 'run.deleted') dispatch({ t: 'deleted', runId: e.runId });
       if (e.type === 'chat.updated') {
@@ -168,20 +168,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const fn of listeners) fn(e);
     });
     void (async () => {
-      const s = await window.psflow.settings.get();
+      const s = await window.purpleflow.settings.get();
       dispatch({ t: 'settings', settings: s });
       // Первый запуск: сначала вход в PurpleSchool (можно пропустить), затем настройка инструментов.
       if (!s.onboarded) dispatch({ t: 'view', view: { name: !s.authPrompted && !s.account ? 'welcome' : 'settings' } });
       await refreshRuns();
-      window.psflow.core.listChats().then((chats) => dispatch({ t: 'chats', chats })).catch(() => {});
+      window.purpleflow.core.listChats().then((chats) => dispatch({ t: 'chats', chats })).catch(() => {});
       await refreshTools();
     })();
     return off;
   }, [refreshRuns, refreshTools]);
 
-  // Dev-хук для скриншотов: window.__psflowGo({ name: 'run', runId }).
+  // Dev-хук для скриншотов: window.__purpleflowGo({ name: 'run', runId }).
   useEffect(() => {
-    (window as unknown as { __psflowGo: (v: View) => void }).__psflowGo = (view) => dispatch({ t: 'view', view });
+    (window as unknown as { __purpleflowGo: (v: View) => void }).__purpleflowGo = (view) => dispatch({ t: 'view', view });
   }, []);
 
   const value = useMemo<Ctx>(

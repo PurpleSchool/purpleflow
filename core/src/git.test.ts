@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { Git } from './git.js';
 
 test('дифф для окна и коммит не конфликтуют за index.lock', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-git-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-git-'));
   const g = (...a: string[]) => execFileSync('git', a, { cwd: dir });
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
@@ -24,43 +24,43 @@ test('дифф для окна и коммит не конфликтуют за 
 });
 
 test('merge: чистая копия, грязная копия, ветка вне копии, конфликт', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-merge-'));
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-merge-wt-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-merge-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-merge-wt-'));
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
   g('add', '-A'); g('commit', '-qm', 'init');
   g('branch', 'dev');
-  g('checkout', '-q', '-b', 'psflow/x');
+  g('checkout', '-q', '-b', 'purpleflow/x');
   fs.writeFileSync(path.join(dir, 'b.txt'), 'b\n');
   g('add', '-A'); g('commit', '-qm', 'feature');
   g('checkout', '-q', 'main');
   const git = new Git('git', process.env);
 
   // 1. main открыта и чистая — вливаем прямо в неё.
-  const sha = await git.merge(dir, 'psflow/x', 'main', 'Merge psflow/x', tmp);
+  const sha = await git.merge(dir, 'purpleflow/x', 'main', 'Merge purpleflow/x', tmp);
   assert.equal(g('rev-parse', 'main').trim(), sha);
   assert.ok(fs.existsSync(path.join(dir, 'b.txt')));
 
   // 2. dev нигде не открыта — вливаем во временной worktree, рабочая копия не меняется.
   const before = g('rev-parse', 'HEAD').trim();
-  await git.merge(dir, 'psflow/x', 'dev', 'Merge psflow/x', tmp);
+  await git.merge(dir, 'purpleflow/x', 'dev', 'Merge purpleflow/x', tmp);
   assert.equal(g('rev-parse', 'HEAD').trim(), before);
-  assert.match(g('log', '--format=%s', '-1', 'dev'), /Merge psflow\/x/);
+  assert.match(g('log', '--format=%s', '-1', 'dev'), /Merge purpleflow\/x/);
   assert.equal(fs.readdirSync(tmp).length, 0);
 
   // 3. Незакоммиченные изменения в открытой ветке — отказ без изменений.
   fs.writeFileSync(path.join(dir, 'a.txt'), 'dirty\n');
-  await assert.rejects(git.merge(dir, 'psflow/x', 'main', 'm', tmp), /незакоммиченные/);
+  await assert.rejects(git.merge(dir, 'purpleflow/x', 'main', 'm', tmp), /незакоммиченные/);
   g('checkout', '--', 'a.txt');
 
   // 4. Конфликт — слияние отменено, дерево чистое.
-  g('checkout', '-q', '-b', 'psflow/y', 'main~1');
+  g('checkout', '-q', '-b', 'purpleflow/y', 'main~1');
   fs.writeFileSync(path.join(dir, 'b.txt'), 'other\n');
   g('add', '-A'); g('commit', '-qm', 'conflict');
   g('checkout', '-q', 'main');
   const headBefore = g('rev-parse', 'HEAD').trim();
-  await assert.rejects(git.merge(dir, 'psflow/y', 'main', 'm', tmp), /Конфликт[\s\S]*b\.txt/);
+  await assert.rejects(git.merge(dir, 'purpleflow/y', 'main', 'm', tmp), /Конфликт[\s\S]*b\.txt/);
   assert.equal(g('rev-parse', 'HEAD').trim(), headBefore);
   assert.equal(g('status', '--porcelain').trim(), '');
   fs.rmSync(dir, { recursive: true, force: true });
@@ -68,7 +68,7 @@ test('merge: чистая копия, грязная копия, ветка вн
 });
 
 test('commitAll: изменений нет, кроме исключённого файла — коммит не создаётся и не падает', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-noop-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-noop-'));
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
@@ -82,7 +82,7 @@ test('commitAll: изменений нет, кроме исключённого 
 });
 
 test('commitAll: исключение файла из .gitignore не ломает коммит', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-ign-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-ign-'));
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
   g('init', '-q');
   fs.writeFileSync(path.join(dir, '.gitignore'), '.env\n');
@@ -97,7 +97,7 @@ test('commitAll: исключение файла из .gitignore не ломае
 });
 
 test('restoreFromBase: изменённый артефакт — из базы, новый — удалён, остальное не тронуто', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-git-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-git-'));
   const g = (...a: string[]) => execFileSync('git', a, { cwd: dir });
   g('init', '-q');
   fs.writeFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'old\n');

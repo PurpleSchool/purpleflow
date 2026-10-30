@@ -40,8 +40,8 @@ export async function stageFinish(h: Orchestrator, run: RunFile) {
     const message = round?.kind === 'update'
       ? `Merge ${run.pr!.base} в ${run.branch}${round.conflicts?.length ? `\n\nРазрешены конфликты:\n${round.conflicts.map((f) => `- ${f}`).join('\n')}` : ''}\n\nPurpleFlow run: ${run.id}`
       : round
-      ? `psflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
-      : `psflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
+      ? `purpleflow: ${run.changeId} — замечания PR #${run.pr!.number}\n\nКруг доработки ${round.round}:\n${round.items.map((i) => `- ${i.kind === 'check' ? `CI: ${i.body}` : `${i.path ? i.path + ': ' : ''}${i.body.split('\n')[0].slice(0, 120)}`}`).join('\n')}${round.note ? `\n- ${round.note.split('\n')[0]}` : ''}\n\nPurpleFlow run: ${run.id}`
+      : `purpleflow: ${run.changeId}\n\n${run.task}\n\n${modeOf(run) === 'quick' ? '' : `OpenSpec change: ${run.changeId}\n`}PurpleFlow run: ${run.id}`;
     sha = await git.commitAll(run.worktreePath, message, exclude);
   } catch (e) {
     // Коммит не прошёл — прогон не завершён: возвращаем статус и честно помечаем попытку.

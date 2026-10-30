@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Gauge, Leaf, Sparkles, X } from 'lucide-react';
-import type { AgentKind, Models, Role } from '@psflow/core';
+import type { AgentKind, Models, Role } from '@purpleflow/core';
 import { Button } from './ui';
 
 export type Agents = Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };

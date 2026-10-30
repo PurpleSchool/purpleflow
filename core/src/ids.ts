@@ -7,6 +7,20 @@ const RU: Record<string, string> = {
 };
 
 /** kebab-case идентификатор изменения OpenSpec из текста задачи (с транслитерацией) + короткий суффикс. */
+/** Ветки прогонов: purpleflow/<change-id>. До переименования прогоны создавали psflow/<change-id>. */
+export const BRANCH_PREFIX = 'purpleflow/';
+const LEGACY_BRANCH_PREFIX = 'psflow/';
+
+export function runBranch(changeId: string): string {
+  return BRANCH_PREFIX + changeId;
+}
+
+/** Ветка, созданная прогоном (локальная или origin/…), в том числе старым psflow/. */
+export function isRunBranch(name: string): boolean {
+  const n = name.replace(/^origin\//, '');
+  return n.startsWith(BRANCH_PREFIX) || n.startsWith(LEGACY_BRANCH_PREFIX);
+}
+
 export function makeChangeId(task: string): string {
   const words = task
     .toLowerCase()

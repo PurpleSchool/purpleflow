@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, FolderGit2, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, Workflow } from 'lucide-react';
-import type { ChatSummary, RunSummary, ToolName } from '@psflow/core';
+import type { ChatSummary, RunSummary, ToolName } from '@purpleflow/core';
 import { useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { MODES } from '../lib/stages';
@@ -53,7 +53,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const v = state.view;
   const groups = useMemo(() => groupItems(state.runs, state.chats), [state.runs, state.chats]);
   const waiting = state.runs.filter((r) => r.status === 'waiting').length;
-  const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
+  const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
   const [menu, setMenu] = useState(false);
   const create = (kind: 'task' | 'chat') => {
     setMenu(false);

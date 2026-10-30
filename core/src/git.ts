@@ -45,7 +45,7 @@ export class Git {
   }
 
   /**
-   * Новая worktree на ветке psflow/<id> от HEAD пользователя.
+   * Новая worktree на ветке purpleflow/<id> от HEAD пользователя.
    * Рабочая копия пользователя не меняется: ни checkout, ни stash.
    */
   async addWorktree(repo: string, worktreePath: string, branch: string, base: string): Promise<void> {
@@ -84,7 +84,7 @@ export class Git {
   async mergeRef(dir: string, ref: string, message: string): Promise<{ conflicts: string[]; changed: boolean }> {
     const before = await this.head(dir);
     const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir, env: this.env })).stdout.trim();
-    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
     const r = await run(this.bin, [...identity, 'merge', '--no-ff', '--no-edit', '-m', message, ref], { cwd: dir, env: this.env, timeoutMs: 120_000 });
     if (r.code === 0) return { conflicts: [], changed: (await this.head(dir)) !== before };
     const u = await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir, env: this.env });
@@ -270,19 +270,19 @@ export class Git {
   }
 
   /**
-   * Снимок рабочей копии вместе с новыми файлами — коммитом в отдельный ref (refs/psflow/…).
+   * Снимок рабочей копии вместе с новыми файлами — коммитом в отдельный ref (refs/purpleflow/…).
    * Ветку, index и файлы не трогает: работу до отката можно достать потом через `git checkout <ref> -- .`.
    */
   snapshot(worktree: string, ref: string, message: string): Promise<string> {
     return serialized(worktree, async () => {
-      const index = path.join(os.tmpdir(), `psflow-index-${process.pid}-${Date.now()}`);
+      const index = path.join(os.tmpdir(), `purpleflow-index-${process.pid}-${Date.now()}`);
       const env = { ...this.env, GIT_INDEX_FILE: index };
       try {
         await exec(this.bin, ['read-tree', 'HEAD'], worktree, env);
         await exec(this.bin, ['add', '-A'], worktree, env, 60_000);
         const tree = (await exec(this.bin, ['write-tree'], worktree, env)).trim();
         const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
-        const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+        const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
         const commit = (await exec(this.bin, [...identity, 'commit-tree', tree, '-p', 'HEAD', '-m', message], worktree, env)).trim();
         await this.git(worktree, ['update-ref', ref, commit]);
         return commit;
@@ -331,7 +331,7 @@ export class Git {
     if (!staged.trim()) return this.head(worktree);
     // Своё имя автора только если в репозитории не настроено — глобальный конфиг не трогаем.
     const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
-    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
     await this.git(worktree, [...identity, 'commit', '-m', message, '--no-verify']);
     return this.head(worktree);
   }
@@ -401,7 +401,7 @@ export class Git {
     }
     try {
       const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir!, env: this.env })).stdout.trim();
-      const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=psflow@localhost'];
+      const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
       const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], { cwd: dir!, env: this.env, timeoutMs: 120_000 });
       if (r.code !== 0) {
         const conflicts = (await run(this.bin, ['diff', '--name-only', '--diff-filter=U'], { cwd: dir!, env: this.env })).stdout.trim();

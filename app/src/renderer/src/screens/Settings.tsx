@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, CheckCircle2, FolderSearch, KeyRound, PlugZap, RefreshCw, LogOut, Wand2, XCircle } from 'lucide-react';
-import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@psflow/core';
+import type { AgentKind, ConnectionCheck, Models, Role, StorageItem, ToolName } from '@purpleflow/core';
 import { Button, Field, Input, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 
@@ -62,7 +62,7 @@ export function SettingsScreen() {
   const accountEmail = s?.account?.email;
   useEffect(() => {
     if (tab !== 'account' || !accountEmail) return;
-    void window.psflow.account.profile().then((r) => {
+    void window.purpleflow.account.profile().then((r) => {
       if (r.ok || r.code === 'unauthorized') void reloadSettings();
     });
   }, [tab, accountEmail]);
@@ -94,7 +94,7 @@ export function SettingsScreen() {
 
   /** Выход удаляет токен аккаунта; ключ прокси остаётся — его можно удалить отдельно. */
   const logout = async () => {
-    await window.psflow.account.logout();
+    await window.purpleflow.account.logout();
     await reloadSettings();
     setChecks(null);
   };
@@ -104,7 +104,7 @@ export function SettingsScreen() {
     setChecking(true);
     setChecks(null);
     try {
-      setChecks(await window.psflow.core.testConnection());
+      setChecks(await window.purpleflow.core.testConnection());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -327,7 +327,7 @@ export function SettingsScreen() {
                         title="Выбрать файл"
                         icon={<FolderSearch size={15} />}
                         onClick={async () => {
-                          const p = await window.psflow.pickFile();
+                          const p = await window.purpleflow.pickFile();
                           if (p) setPaths({ ...paths, [t]: p });
                         }}
                       />
@@ -449,7 +449,7 @@ export function SettingsScreen() {
                 <h2>Уведомления</h2>
                 <p>Когда прогону нужно ваше решение (план, приёмка, исчерпанные попытки), он готов или остановился с ошибкой. Если окно в фокусе — только звук; если свёрнуто или в фоне — системное уведомление, клик по нему открывает прогон. Число прогонов, ждущих решения, — на значке в доке.</p>
               </div>
-              <Button tone="quiet" onClick={() => void window.psflow.testNotification()}>Проверить</Button>
+              <Button tone="quiet" onClick={() => void window.purpleflow.testNotification()}>Проверить</Button>
             </header>
             <div className="notify-toggles">
               {([
@@ -514,7 +514,7 @@ function StoragePanel() {
     setLoading(true);
     setError(null);
     try {
-      const [items, cache] = await Promise.all([window.psflow.core.getStorage(), window.psflow.appCache.size()]);
+      const [items, cache] = await Promise.all([window.purpleflow.core.getStorage(), window.purpleflow.appCache.size()]);
       setRows([...items, { id: 'app-cache', title: 'Кэш приложения', hint: 'Кэш Chromium: загруженные ресурсы, скомпилированный код, данные сайтов во вкладке «Браузер». Восстановится сам.', bytes: cache, count: 0, clean: 'Очистить' }]);
     } catch (e) {
       setError((e as Error).message);
@@ -535,9 +535,9 @@ function StoragePanel() {
       const before = rows?.find((r) => r.id === id)?.bytes ?? 0;
       let n: number;
       if (id === 'app-cache') {
-        await window.psflow.appCache.clear();
-        n = Math.max(0, before - (await window.psflow.appCache.size()));
-      } else n = await window.psflow.core.cleanStorage(id);
+        await window.purpleflow.appCache.clear();
+        n = Math.max(0, before - (await window.purpleflow.appCache.size()));
+      } else n = await window.purpleflow.core.cleanStorage(id);
       setFreed({ id, bytes: n });
       await load();
     } catch (e) {

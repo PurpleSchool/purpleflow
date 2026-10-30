@@ -1,4 +1,4 @@
-import type { CheckResult, ReviewItem, RunFile, StageId } from '@psflow/core';
+import type { CheckResult, ReviewItem, RunFile, StageId } from '@purpleflow/core';
 import { limitRow } from '../../lib/stages';
 
 /** Заголовок попытки в файле лога (orchestrator STAGE_TITLES). */

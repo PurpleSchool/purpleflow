@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, safeStorage, session, shell, utilityProcess, webContents, type UtilityProcess } from 'electron';
-import type { CoreEvent } from '@psflow/core';
+import type { CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
 
 // Отдельный профиль для тестов и разработки.
-if (process.env.PSFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PSFLOW_USER_DATA));
+if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
 else {
   // До переименования в PurpleFlow профиль жил в «PS Flow»: там настройки, история и worktree прогонов — остаёмся в нём.
   const legacy = path.join(app.getPath('appData'), 'PS Flow');
@@ -156,10 +156,10 @@ function createWindow() {
   const isMac = process.platform === 'darwin';
   material = materialFor(publicSettings().windowGlass);
   win = new BrowserWindow({
-    // PSFLOW_WIN=ШxВ — размер окна для скриншотов адаптивной вёрстки.
-    width: Number(process.env.PSFLOW_WIN?.split('x')[0]) || 1440,
-    height: Number(process.env.PSFLOW_WIN?.split('x')[1]) || 920,
-    minWidth: process.env.PSFLOW_WIN ? 600 : 900,
+    // PURPLEFLOW_WIN=ШxВ — размер окна для скриншотов адаптивной вёрстки.
+    width: Number(process.env.PURPLEFLOW_WIN?.split('x')[0]) || 1440,
+    height: Number(process.env.PURPLEFLOW_WIN?.split('x')[1]) || 920,
+    minWidth: process.env.PURPLEFLOW_WIN ? 600 : 900,
     minHeight: 680,
     show: false,
     backgroundColor: material === 'none' ? OPAQUE_BG : '#00000000',
@@ -177,13 +177,13 @@ function createWindow() {
       // Вкладка «Браузер» — <webview> в отдельной сессии; параметры жёстко задаются в will-attach-webview.
       webviewTag: true,
       // Фоновое окно скриншотов не должно притормаживать отрисовку.
-      backgroundThrottling: !process.env.PSFLOW_CAPTURE,
+      backgroundThrottling: !process.env.PURPLEFLOW_CAPTURE,
     },
   });
   nativeTheme.themeSource = 'dark';
   win.once('ready-to-show', () => {
     // Режим скриншотов не должен перехватывать фокус и клавиатуру у человека.
-    if (process.env.PSFLOW_CAPTURE) win?.showInactive();
+    if (process.env.PURPLEFLOW_CAPTURE) win?.showInactive();
     else win?.show();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -194,7 +194,7 @@ function createWindow() {
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
   win.on('closed', () => (win = null));
   // Захват скриншотов — инструмент разработки, в собранном приложении не подключается.
-  if (process.env.PSFLOW_CAPTURE && !app.isPackaged) void import('./dev-capture').then((m) => m.setupCapture(win!));
+  if (process.env.PURPLEFLOW_CAPTURE && !app.isPackaged) void import('./dev-capture').then((m) => m.setupCapture(win!));
 }
 
 ipcMain.handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
@@ -247,7 +247,7 @@ ipcMain.handle('dialog:file', async () => {
 });
 // ——— Вкладка «Браузер»: приложение проекта во встроенном webview ———
 
-const PREVIEW_PARTITION = 'psflow-preview';
+const PREVIEW_PARTITION = 'purpleflow-preview';
 const isLocalUrl = (u: string) => {
   try {
     const { protocol, hostname } = new URL(u);
@@ -343,7 +343,7 @@ app.whenReady().then(() => {
   if (!primary) return;
   // Сайт проекта во вкладке «Браузер» не получает разрешений (камера, геолокация, уведомления…).
   session.fromPartition(PREVIEW_PARTITION).setPermissionRequestHandler((_wc, _p, cb) => cb(false));
-  if (process.env.PSFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
+  if (process.env.PURPLEFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
   void startHost();
   createWindow();
   app.on('activate', () => {

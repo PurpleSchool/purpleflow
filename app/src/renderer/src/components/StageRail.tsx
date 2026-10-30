@@ -1,6 +1,6 @@
 import { Archive, ClipboardCheck, MessageCircleQuestion, FlaskConical, Hammer, Map as MapIcon, MonitorCheck, ScanEye, ShieldCheck, UserRoundCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { StageId } from '@psflow/core';
+import type { StageId } from '@purpleflow/core';
 
 /** У каждой стадии всегда своя иконка; статус — цветом узла и значком в углу. */
 export const STAGE_ICON: Record<StageId, ReactNode> = {

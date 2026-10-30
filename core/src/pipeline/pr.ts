@@ -5,6 +5,7 @@ import { c } from '../agents/common.js';
 import { which } from '../env.js';
 import { createPr, failedJobLog, mergePr, prComments, prReadiness, prStatus, pushBranch } from '../github.js';
 import { Git } from '../git.js';
+import { isRunBranch } from '../ids.js';
 import { modeOf } from '../modes.js';
 import type { PrStatus, PrDetails, PrFollowupItem, RunFile } from '../types.js';
 import type { Orchestrator } from '../orchestrator.js';
@@ -30,7 +31,7 @@ export async function openPr(h: Orchestrator, id: string, base: string) {
   if (why || !gh) throw new Error(why ?? 'Нет gh');
   h.log(r, c.sky(`$ git push -u origin ${r.branch}`) + '\n');
   await pushBranch(tools.git, r.projectPath, r.branch, h.opts.env);
-  const bodyFile = path.join(os.tmpdir(), `psflow-pr-${r.id}.md`);
+  const bodyFile = path.join(os.tmpdir(), `purpleflow-pr-${r.id}.md`);
   fs.writeFileSync(bodyFile, await h.prBody(r));
   try {
     const pr = await createPr(gh, r.projectPath, h.opts.env, { base, head: r.branch, title: r.title, bodyFile });
@@ -228,7 +229,7 @@ export async function listBranches(h: Orchestrator, id: string) : Promise<{ bran
   const r = h.mustLoad(id);
   const tools = await h.tools(['git']);
   const b = await new Git(tools.git, h.opts.env).branches(r.projectPath);
-  const branches = b.branches.filter((x) => x !== r.branch && !x.startsWith('psflow/'));
+  const branches = b.branches.filter((x) => x !== r.branch && !isRunBranch(x));
   // Куда вливать по умолчанию: ветка, от которой начинали задачу, иначе main/master, иначе текущая.
   const from = r.baseBranch?.replace(/^origin\//, '');
   const suggested = [from, 'main', 'master', b.current].find((x): x is string => Boolean(x && branches.includes(x))) ?? branches[0] ?? null;

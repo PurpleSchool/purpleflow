@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 import { forwardRef } from 'react';
-import type { RunStatus } from '@psflow/core';
+import type { RunStatus } from '@purpleflow/core';
 import { STATUS_LABEL } from '../lib/format';
 
 type Tone = 'primary' | 'ghost' | 'quiet' | 'danger' | 'approve';

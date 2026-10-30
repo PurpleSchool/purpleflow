@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Archive, ChevronDown, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
-import type { ProjectBranches, Workspace, NextPartDraft } from '@psflow/core';
+import type { ProjectBranches, Workspace, NextPartDraft } from '@purpleflow/core';
 import { Button, Topbar } from '../components/ui';
 import { Select } from '../components/Dropdown';
 import { useStore } from '../lib/store';
@@ -9,8 +9,8 @@ import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
 import { ProjectPicker, WORKSPACES, cleanErr, loadProject, saveLoaded, type LoadedProject } from './Projects';
 
-const LAST_PROJECT = 'psflow.lastProject';
-const AUTOPILOT_KEY = 'psflow.autopilot';
+const LAST_PROJECT = 'purpleflow.lastProject';
+const AUTOPILOT_KEY = 'purpleflow.autopilot';
 
 export function NewTaskScreen({ initialProject, draft }: { initialProject?: string; draft?: NextPartDraft }) {
   const { go, state } = useStore();
@@ -75,7 +75,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
   const loadBranches = async (dir: string, fetch: boolean) => {
     setFetching(fetch);
     try {
-      const b = await window.psflow.core.projectBranches(dir, fetch);
+      const b = await window.purpleflow.core.projectBranches(dir, fetch);
       setBranches(b);
       const preferred = draft?.baseBranch && b.branches.some((x) => x.name === draft.baseBranch) ? draft.baseBranch : null;
       setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : preferred ?? b.current ?? b.branches[0]?.name ?? ''));
@@ -98,7 +98,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     try {
       // Команды, найденные по файлам проекта, запоминаются при первом запуске.
       if (!p.cfg) await saveLoaded({ ...p, path: p.info.path });
-      const { runId } = await window.psflow.core.dispatch({
+      const { runId } = await window.purpleflow.core.dispatch({
         type: 'run.start',
         input: {
           projectPath: p.info.path, task, testCommand: cmds.test, setupCommand: cmds.setup, lintCommand: cmds.lint,
@@ -126,7 +126,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     if (how === 'discard' && !confirmDiscard) return setConfirmDiscard(true);
     setCleaning(how);
     try {
-      await window.psflow.core.cleanWorkingCopy(p.info.path, how);
+      await window.purpleflow.core.cleanWorkingCopy(p.info.path, how);
     } catch (e) {
       setError(cleanErr(e));
       setCleaning(null);
@@ -156,7 +156,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     setSuggesting(true);
     setError(null);
     try {
-      const r = await window.psflow.core.suggestMode(task);
+      const r = await window.purpleflow.core.suggestMode(task);
       setSuggest({ mode: r.mode as Mode, reason: r.reason });
       setMode(r.mode as Mode);
     } catch (e) {
@@ -209,7 +209,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
               />
               <div className="task-foot">
                 <span className="muted">{task.trim() ? `${task.trim().length} символов` : 'Опишите результат, а не шаги — план составит планировщик'}</span>
-                <span className="kbd-hint"><kbd>{window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
+                <span className="kbd-hint"><kbd>{window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd></span>
               </div>
               {carried.length > 0 && (
                 <div className="carried">

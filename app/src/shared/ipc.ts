@@ -1,6 +1,6 @@
 import type {
   AgentKind, ChatFile, ChatSummary, ManagerMessage, Models, AiCommands, EnvCheck, NextPartDraft, CommandIssue, PrStatus, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, PrDetails, ProjectBranches, StorageItem, ConnectionCheck, ModeSuggestion, PreviewState, ProjectConfig, CoreCommand, CoreEvent, DiffFile, ProjectCommands, Role, RunFile, RunSummary, ToolInfo, ToolName,
-} from '@psflow/core';
+} from '@purpleflow/core';
 
 /** Настройки, как их видит окно: ключ прокси никогда не уходит в renderer. */
 export interface PublicSettings {
@@ -158,7 +158,7 @@ export interface CoreApi {
 
 export type CoreMethod = keyof CoreApi;
 
-export interface PsFlowBridge {
+export interface PurpleFlowBridge {
   core: CoreApi;
   onEvent(fn: (e: CoreEvent) => void): () => void;
   account: AccountApi;

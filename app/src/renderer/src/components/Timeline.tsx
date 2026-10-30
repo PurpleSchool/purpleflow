@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import type { RunFile, StageId } from '@psflow/core';
+import type { RunFile, StageId } from '@purpleflow/core';
 import { nodeState, runStages, plannedRoute } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
 import { activeClock, agentTime, ms } from '../lib/clock';

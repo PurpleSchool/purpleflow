@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUp, Clock, FilePen, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
-import type { AgentKind, ChatFile, ChatMessage, ChatPart, ProjectListItem } from '@psflow/core';
+import type { AgentKind, ChatFile, ChatMessage, ChatPart, ProjectListItem } from '@purpleflow/core';
 import { Markdown } from '../components/Markdown';
 import { Button } from '../components/ui';
 import { ComboInput, Select } from '../components/Dropdown';
@@ -15,7 +15,7 @@ const SUGGEST_PROJECT = ['Как устроен этот проект?', 'Где
 const SUGGEST_FREE = ['Объясни разницу между rebase и merge', 'Напиши регулярку для email', 'Набросай SQL-миграцию для таблицы заказов'];
 
 const MAX_MB = 20;
-const PANE_KEY = 'psflow.chatPane';
+const PANE_KEY = 'purpleflow.chatPane';
 const isImage = (f: File) => /^image\/(png|jpe?g|gif|webp|bmp)$/.test(f.type);
 const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const shownName = (p: string) => baseName(p).replace(/^[a-z0-9]+-/, '');
@@ -60,13 +60,13 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   };
 
   useEffect(() => {
-    window.psflow.core.listProjects().then((p) => setProjects(p.filter((x) => x.exists))).catch(() => {});
+    window.purpleflow.core.listProjects().then((p) => setProjects(p.filter((x) => x.exists))).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!chatId) return;
     let alive = true;
-    window.psflow.core.getChat(chatId).then((r) => {
+    window.purpleflow.core.getChat(chatId).then((r) => {
       if (!alive) return;
       setLoading(false);
       if (r) {
@@ -130,7 +130,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     setError(null);
     if (!chat) return setDraft((d) => ({ ...d, ...patch, ...(patch.agent ? { model: '' } : {}) }));
     try {
-      setChat(await window.psflow.core.updateChat(chat.id, { ...patch, ...(patch.agent ? { model: '' } : {}) }));
+      setChat(await window.purpleflow.core.updateChat(chat.id, { ...patch, ...(patch.agent ? { model: '' } : {}) }));
     } catch (e) {
       setError(cleanErr(e));
     }
@@ -147,10 +147,10 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
       const attachments = await Promise.all(files.map(async (f) => ({ name: f.file.name || 'screenshot.png', data: new Uint8Array(await f.file.arrayBuffer()) })));
       let id = chat?.id;
       if (!id) {
-        const created = await window.psflow.core.createChat(draft);
+        const created = await window.purpleflow.core.createChat(draft);
         id = created.id;
       }
-      await window.psflow.core.sendChat(id, t, attachments);
+      await window.purpleflow.core.sendChat(id, t, attachments);
       setText('');
       for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
       setFiles([]);
@@ -172,7 +172,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     setToTask(true);
     setError(null);
     try {
-      const d = await window.psflow.core.chatToTask(chat.id);
+      const d = await window.purpleflow.core.chatToTask(chat.id);
       go({ name: 'new', project: d.projectPath || undefined, draft: d });
     } catch (e) {
       setError(cleanErr(e));
@@ -184,13 +184,13 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const remove = async () => {
     if (!chat) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    await window.psflow.core.deleteChat(chat.id);
+    await window.purpleflow.core.deleteChat(chat.id);
     go({ name: 'chat' });
   };
 
   const pickProject = async (value: string) => {
     if (value === '__pick') {
-      const dir = await window.psflow.pickFolder('Папка проекта для чата');
+      const dir = await window.purpleflow.pickFolder('Папка проекта для чата');
       if (dir) setDraft((d) => ({ ...d, projectPath: dir }));
       return;
     }
@@ -221,7 +221,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               value={chat.title}
               aria-label="Название чата"
               onChange={(e) => setChat({ ...chat, title: e.target.value })}
-              onBlur={(e) => void window.psflow.core.updateChat(chat.id, { title: e.target.value }).catch(() => {})}
+              onBlur={(e) => void window.purpleflow.core.updateChat(chat.id, { title: e.target.value }).catch(() => {})}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
           ) : <h1 className="chat-title">Новый чат</h1>}
@@ -347,7 +347,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               onKeyDown={onKey}
             />
             {busy && (
-              <button type="button" className="chat-send is-stop" title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'} onClick={() => chat && void window.psflow.core.stopChat(chat.id)}><Square size={13} /></button>
+              <button type="button" className="chat-send is-stop" title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'} onClick={() => chat && void window.purpleflow.core.stopChat(chat.id)}><Square size={13} /></button>
             )}
             {(!busy || text.trim() || files.length > 0) && (
               <button type="submit" className="chat-send" disabled={!text.trim() && !files.length} aria-label={busy ? 'В очередь: уйдёт после ответа' : 'Отправить'} title={busy ? 'В очередь: уйдёт после ответа' : undefined}><ArrowUp size={16} /></button>
@@ -369,7 +369,7 @@ function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
       {m.attachments?.length ? (
         <div className="chat-msg-files">
           {m.attachments.map((f) => (
-            <button key={f} className="chat-file" title={f} onClick={() => void window.psflow.openPath(f)}>
+            <button key={f} className="chat-file" title={f} onClick={() => void window.purpleflow.openPath(f)}>
               <FileText size={13} /><span>{shownName(f)}</span>
             </button>
           ))}
@@ -379,8 +379,8 @@ function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
       {m.queued && (
         <div className="chat-queued">
           <Clock size={12} /><span>Уйдёт после ответа</span>
-          <button type="button" onClick={() => void window.psflow.core.stopChat(chatId)} title="Остановить текущий ответ и сразу отправить это сообщение">Прервать и отправить</button>
-          <button type="button" onClick={() => void window.psflow.core.unqueueChat(chatId, m.id)}>Убрать</button>
+          <button type="button" onClick={() => void window.purpleflow.core.stopChat(chatId)} title="Остановить текущий ответ и сразу отправить это сообщение">Прервать и отправить</button>
+          <button type="button" onClick={() => void window.purpleflow.core.unqueueChat(chatId, m.id)}>Убрать</button>
         </div>
       )}
     </div>

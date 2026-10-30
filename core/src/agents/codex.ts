@@ -15,7 +15,7 @@ export interface CodexOptions extends AgentRunOptions {
   resumeThread?: string;
 }
 
-const KEY_ENV = 'PSFLOW_OPENAI_API_KEY';
+const KEY_ENV = 'PURPLEFLOW_OPENAI_API_KEY';
 
 export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string {
   if (p.codexBaseUrl?.trim()) return p.codexBaseUrl.trim();
@@ -36,13 +36,13 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
     // С настройками пользователя его config.toml (MCP и прочее) остаётся, провайдер переопределяется поверх через -c.
     if (!o.userConfig) args.push('--ignore-user-config');
     args.push(
-      '-c', 'model_provider=psflow',
-      '-c', 'model_providers.psflow.name=psflow',
-      '-c', `model_providers.psflow.base_url=${codexProxyBase(o.proxy)}`,
-      '-c', `model_providers.psflow.env_key=${KEY_ENV}`,
-      '-c', 'model_providers.psflow.wire_api=responses',
+      '-c', 'model_provider=purpleflow',
+      '-c', 'model_providers.purpleflow.name=purpleflow',
+      '-c', `model_providers.purpleflow.base_url=${codexProxyBase(o.proxy)}`,
+      '-c', `model_providers.purpleflow.env_key=${KEY_ENV}`,
+      '-c', 'model_providers.purpleflow.wire_api=responses',
       // Прокси PurpleSchool не поддерживает WebSocket-транспорт Responses API.
-      '-c', 'model_providers.psflow.supports_websockets=false',
+      '-c', 'model_providers.purpleflow.supports_websockets=false',
     );
   }
   // Исполнителю и планировщику на codex нужна сеть (зависимости, openspec) — в песочнице workspace-write она выключена по умолчанию.
@@ -58,7 +58,7 @@ export function codexArgs(o: Pick<CodexOptions, 'cwd' | 'model' | 'sandbox' | 'p
 }
 
 export async function runCodex(o: CodexOptions): Promise<AgentResult> {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-codex-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-codex-'));
   const lastFile = path.join(tmp, 'last.txt');
   let schemaFile: string | undefined;
   if (o.outputSchema) {

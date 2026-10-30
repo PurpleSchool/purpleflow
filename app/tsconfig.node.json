@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "paths": { "@psflow/core": ["../core/src/index.ts"] }
+    "paths": { "@purpleflow/core": ["../core/src/index.ts"] }
   },
   "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
 }

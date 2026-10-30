@@ -1,4 +1,4 @@
-# psflow-sample
+# purpleflow-sample
 
 Тестовый проект для PurpleFlow. Зависимостей нет, тесты — `npm test` (`node --test`, Node ≥ 22.18 запускает `.ts` без сборки).
 

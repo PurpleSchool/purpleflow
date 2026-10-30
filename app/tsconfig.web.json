@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
-    "paths": { "@/*": ["./src/renderer/src/*"], "@psflow/core": ["../core/src/types.ts"], "@psflow/route": ["../core/src/route.ts"] }
+    "paths": { "@/*": ["./src/renderer/src/*"], "@purpleflow/core": ["../core/src/types.ts"], "@purpleflow/route": ["../core/src/route.ts"] }
   },
   "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/*.d.ts", "../core/src/route.ts", "../core/src/modes.ts"]
 }

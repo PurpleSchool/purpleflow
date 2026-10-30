@@ -15,14 +15,14 @@ const PROMPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'p
 
 /** Ядро с «установленными» claude и codex (скрипты отвечают версией) и подменёнными запусками. */
 function makeCore(runners: { claude?: unknown; codex?: unknown }) {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-bin-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   for (const n of ['codex', 'claude']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   const settings = {
     toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') }, proxy: { baseUrl: '', apiKey: '' },
     models: { planner: 'opus', executor: 'sonnet', reviewer: '' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
     agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2,
   } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-')), promptsDir: PROMPTS, env: process.env, getSettings: () => settings, runners: runners as never });
+  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env: process.env, getSettings: () => settings, runners: runners as never });
   return core;
 }
 
@@ -113,7 +113,7 @@ test('чат: только чтение, смена агента переска�
 });
 
 test('чат с правками в git-репозитории: ответ перечисляет изменённые за ход файлы', async () => {
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-chat-repo-')));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-chat-repo-')));
   const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'ignore' });
   git('init', '-q');
   fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');

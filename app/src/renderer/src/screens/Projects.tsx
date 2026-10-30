@@ -3,7 +3,7 @@ import {
   BookText, Check, ChevronDown, Settings2, FileLock2, FileText, FlaskConical, FolderGit2, FolderOpen, FolderSearch, FolderTree, GitBranch, GitPullRequest, Globe, KeyRound, Layers,
   DatabaseZap, Lightbulb, Minus, MonitorPlay, PackageOpen, PencilLine, Play, Plus, ScanSearch, Sparkles, TestTubeDiagonal, TriangleAlert, Stethoscope, Workflow, X, Zap,
 } from 'lucide-react';
-import type { CommandIssue, EnvCheck, ProjectCommands, ProjectConfig, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, RelatedRepo, Workspace } from '@psflow/core';
+import type { CommandIssue, EnvCheck, ProjectCommands, ProjectConfig, ProjectKnowledge, ProjectListItem, ProjectOverview, ProjectStats, RelatedRepo, Workspace } from '@purpleflow/core';
 import { Button, Input, TextArea, Topbar } from '../components/ui';
 import { PillTabs } from '../components/PillTabs';
 import { Markdown } from '../components/Markdown';
@@ -36,9 +36,9 @@ export const cleanErr = (e: unknown) => String((e as Error)?.message ?? e).repla
 export const projectName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
 export async function loadProject(dir: string): Promise<LoadedProject> {
-  const det = await window.psflow.core.detectProject(dir);
+  const det = await window.purpleflow.core.detectProject(dir);
   const info = { ...det, path: dir };
-  const cfg = det.isRepo ? await window.psflow.core.getProjectConfig(dir).catch(() => null) : null;
+  const cfg = det.isRepo ? await window.purpleflow.core.getProjectConfig(dir).catch(() => null) : null;
   if (cfg) {
     return {
       info, cfg,
@@ -64,7 +64,7 @@ export async function loadProject(dir: string): Promise<LoadedProject> {
 }
 
 export function saveLoaded(p: Pick<LoadedProject, 'cmds' | 'notes' | 'workspace' | 'visualNotes' | 'envFiles' | 'quickTest' | 'prepare' | 'related'> & { path: string }) {
-  return window.psflow.core.saveProjectConfig(p.path, {
+  return window.purpleflow.core.saveProjectConfig(p.path, {
     setupCommand: p.cmds.setup, lintCommand: p.cmds.lint, testCommand: p.cmds.test, quickTestCommand: p.quickTest, prepareCommand: p.prepare, runCommand: p.cmds.run, appUrl: p.cmds.url,
     visualNotes: p.visualNotes, envFiles: p.envFiles, relatedRepos: p.related, workspace: p.workspace,
     notes: { setup: p.notes.setup, lint: p.notes.lint, test: p.notes.test, run: p.notes.run },
@@ -98,12 +98,12 @@ export const WORKSPACES: { id: Workspace; title: string; hint: ReactNode }[] = [
   {
     id: 'worktree',
     title: 'Worktree',
-    hint: <>Отдельная копия проекта — ваша рабочая копия не меняется. Результат — коммит в ветке <code>psflow/&lt;id&gt;</code>, влить можно кнопкой в конце прогона.</>,
+    hint: <>Отдельная копия проекта — ваша рабочая копия не меняется. Результат — коммит в ветке <code>purpleflow/&lt;id&gt;</code>, влить можно кнопкой в конце прогона.</>,
   },
   {
     id: 'branch',
     title: 'Ветка',
-    hint: <>Работа прямо в проекте на новой ветке <code>psflow/&lt;id&gt;</code> — изменения сразу видны в редакторе. Нужна чистая рабочая копия; подготовка не запускается, зависимости — ваши.</>,
+    hint: <>Работа прямо в проекте на новой ветке <code>purpleflow/&lt;id&gt;</code> — изменения сразу видны в редакторе. Нужна чистая рабочая копия; подготовка не запускается, зависимости — ваши.</>,
   },
 ];
 
@@ -113,7 +113,7 @@ export function ProjectPicker({ project, draft, onPick }: { project: ProjectInfo
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<ProjectListItem[]>([]);
   useEffect(() => {
-    if (open) void window.psflow.core.listProjects().then((l) => setList(l.filter((p) => p.exists))).catch(() => setList([]));
+    if (open) void window.purpleflow.core.listProjects().then((l) => setList(l.filter((p) => p.exists))).catch(() => setList([]));
   }, [open]);
   const pick = (dir: string | null) => {
     setOpen(false);
@@ -162,7 +162,7 @@ export function ProjectPicker({ project, draft, onPick }: { project: ProjectInfo
                 ))}
               </div>
             )}
-            <button role="menuitem" className="project-menu-item is-new" onClick={async () => pick(await window.psflow.pickFolder())}>
+            <button role="menuitem" className="project-menu-item is-new" onClick={async () => pick(await window.purpleflow.pickFolder())}>
               <Plus size={15} />
               <span>Новый проект — выбрать папку…</span>
             </button>
@@ -179,11 +179,11 @@ export function ProjectsScreen() {
   const { go, state } = useStore();
   const [list, setList] = useState<ProjectListItem[] | null>(null);
   useEffect(() => {
-    void window.psflow.core.listProjects().then(setList).catch(() => setList([]));
+    void window.purpleflow.core.listProjects().then(setList).catch(() => setList([]));
   }, [state.runs]);
 
   const open = async () => {
-    const dir = await window.psflow.pickFolder();
+    const dir = await window.purpleflow.pickFolder();
     if (!dir) return;
     const known = list?.find((p) => p.path === dir);
     go({ name: 'project', path: dir, tab: known?.configured ? 'overview' : 'commands' });
@@ -306,8 +306,8 @@ function Overview({ p, onTab }: { p: LoadedProject; onTab: (t: ProjectTab) => vo
   const repo = p.info.path;
   useEffect(() => {
     if (!p.info.isRepo) return;
-    void window.psflow.core.projectOverview(repo).then(setO).catch(() => {});
-    void window.psflow.core.getKnowledge(repo).then(setK).catch(() => {});
+    void window.purpleflow.core.projectOverview(repo).then(setO).catch(() => {});
+    void window.purpleflow.core.getKnowledge(repo).then(setK).catch(() => {});
   }, [repo, p.info.isRepo]);
   const runs = state.runs.filter((r) => r.projectPath === repo);
   const sections = (k?.profile?.match(/^##\s/gm) ?? []).length;
@@ -329,7 +329,7 @@ function Overview({ p, onTab }: { p: LoadedProject; onTab: (t: ProjectTab) => vo
           <h3>Репозиторий</h3>
           <dl className="facts">
             <dt>Папка</dt>
-            <dd><span className="mono">{shortPath(repo)}</span><button className="link" onClick={() => void window.psflow.openPath(repo)}>Открыть</button></dd>
+            <dd><span className="mono">{shortPath(repo)}</span><button className="link" onClick={() => void window.purpleflow.openPath(repo)}>Открыть</button></dd>
             <dt>Ветка</dt>
             <dd>{o ? <><GitBranch size={13} /> <span className="mono">{o.branch ?? '—'}</span><span className="muted">{o.dirty ? ` · изменённых файлов: ${o.dirty}` : ' · без изменений'}</span></> : <span className="muted">…</span>}</dd>
             <dt>origin</dt>
@@ -388,7 +388,7 @@ function Overview({ p, onTab }: { p: LoadedProject; onTab: (t: ProjectTab) => vo
             <>
               <span className="muted">Команды и знания проекта удалятся, прогоны останутся.</span>
               <Button tone="quiet" onClick={() => setForgetting(false)}>Отмена</Button>
-              <Button tone="danger" onClick={() => void window.psflow.core.forgetProject(repo).then(() => go({ name: 'projects' }))}>Удалить настройки</Button>
+              <Button tone="danger" onClick={() => void window.purpleflow.core.forgetProject(repo).then(() => go({ name: 'projects' }))}>Удалить настройки</Button>
             </>
           ) : (
             <Button tone="quiet" onClick={() => setForgetting(true)}>Удалить настройки проекта…</Button>
@@ -416,7 +416,7 @@ const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 function StatsPanel({ repo, runsKey }: { repo: string; runsKey: string }) {
   const [s, setS] = useState<ProjectStats | null>(null);
   useEffect(() => {
-    void window.psflow.core.projectStats(repo).then(setS).catch(() => setS(null));
+    void window.purpleflow.core.projectStats(repo).then(setS).catch(() => setS(null));
   }, [repo, runsKey]);
   if (!s || s.total === 0) return null;
 
@@ -545,7 +545,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
 
   useEffect(() => {
     const t = setTimeout(() => {
-      void window.psflow.core.checkCommands(repo, { setup: cmds.setup, lint: cmds.lint, test: cmds.test, run: cmds.run }).then(setIssues).catch(() => setIssues({}));
+      void window.purpleflow.core.checkCommands(repo, { setup: cmds.setup, lint: cmds.lint, test: cmds.test, run: cmds.run }).then(setIssues).catch(() => setIssues({}));
     }, 350);
     return () => clearTimeout(t);
   }, [repo, cmds.setup, cmds.lint, cmds.test, cmds.run]);
@@ -560,7 +560,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
     setAiBusy(true);
     setError(null);
     try {
-      const r = await window.psflow.core.detectCommandsAI(repo);
+      const r = await window.purpleflow.core.detectCommandsAI(repo);
       setCmds({ setup: r.setupCommand, lint: r.lintCommand, test: r.testCommand, run: r.runCommand, url: r.appUrl });
       if (r.visualNotes) setVisualNotes(r.visualNotes);
       setNotes({ setup: r.notes.setup, lint: r.notes.lint, test: r.notes.test, run: r.notes.run, url: '' });
@@ -650,7 +650,7 @@ function CommandsPanel({ p, onSaved, onDirty }: { p: LoadedProject; onSaved: () 
             ))}
             <div>
               <Button tone="quiet" icon={<Plus size={14} />} onClick={async () => {
-                const dir = await window.psflow.pickFolder('Соседний репозиторий — агенты будут его читать');
+                const dir = await window.purpleflow.pickFolder('Соседний репозиторий — агенты будут его читать');
                 if (!dir || dir === repo || related.some((r) => r.path === dir)) return;
                 setRelated([...related, { path: dir }]);
                 touch();
@@ -694,7 +694,7 @@ function EnvCheckRow({ repo, canRun, dirty }: { repo: string; canRun: boolean; d
     setErr(null);
     setRes(null);
     try {
-      setRes(await window.psflow.core.checkEnvironment(repo));
+      setRes(await window.purpleflow.core.checkEnvironment(repo));
     } catch (e) {
       setErr(cleanErr(e));
     } finally {
@@ -792,7 +792,7 @@ function KnowledgeView({ repo, name }: { repo: string; name: string }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void window.psflow.core.getKnowledge(repo).then((x) => {
+    void window.purpleflow.core.getKnowledge(repo).then((x) => {
       if (!alive) return;
       setK(x);
       setProfile(x.profile ?? '');
@@ -819,7 +819,7 @@ function KnowledgeView({ repo, name }: { repo: string; name: string }) {
   if (!k) return <div className="center"><span className="spinner big" /></div>;
   const docs = splitProfile(k.profile ?? '');
   const lessons = k.lessons ?? [];
-  const removeLesson = (i: number) => void run('save', () => window.psflow.core.saveKnowledge(repo, { ...k, lessons: lessons.filter((_, j) => j !== i) }));
+  const removeLesson = (i: number) => void run('save', () => window.purpleflow.core.saveKnowledge(repo, { ...k, lessons: lessons.filter((_, j) => j !== i) }));
   return (
     <div className="knowledge-view">
       <section className="panel knowledge-intro">
@@ -830,7 +830,7 @@ function KnowledgeView({ repo, name }: { repo: string; name: string }) {
           </div>
           <div className="knowledge-actions">
             {k.profile && !editing && <Button tone="quiet" icon={<PencilLine size={15} />} onClick={() => setEditing(true)}>Редактировать</Button>}
-            <Button tone="ghost" icon={<Sparkles size={15} />} busy={busy === 'refresh'} disabled={busy !== null} onClick={() => void run('refresh', () => window.psflow.core.refreshProfile(repo))}>
+            <Button tone="ghost" icon={<Sparkles size={15} />} busy={busy === 'refresh'} disabled={busy !== null} onClick={() => void run('refresh', () => window.purpleflow.core.refreshProfile(repo))}>
               {busy === 'refresh' ? 'Изучаю проект…' : k.profile ? 'Пересобрать профиль' : 'Изучить проект'}
             </Button>
           </div>
@@ -846,7 +846,7 @@ function KnowledgeView({ repo, name }: { repo: string; name: string }) {
             <p className="cmd-foot">Разделы — заголовками «## Стек», «## Структура»… — каждый станет отдельной карточкой.</p>
             <span className="grow" />
             <Button tone="quiet" onClick={() => { setProfile(k.profile ?? ''); setEditing(false); }}>Отмена</Button>
-            <Button tone="primary" busy={busy === 'save'} onClick={() => void run('save', () => window.psflow.core.saveKnowledge(repo, { ...k, profile }))}>Сохранить</Button>
+            <Button tone="primary" busy={busy === 'save'} onClick={() => void run('save', () => window.purpleflow.core.saveKnowledge(repo, { ...k, profile }))}>Сохранить</Button>
           </div>
         </section>
       ) : docs.length ? (

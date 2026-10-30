@@ -61,7 +61,7 @@ const env = prependPath(loadLoginShellEnv(), path.resolve(path.dirname(fileURLTo
 const hasOpenspec = (() => { try { execFileSync('openspec', ['--version'], { env, stdio: 'ignore' }); return true; } catch { return false; } })();
 
 function makeRepo(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-pipe-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-pipe-'));
   const g = (...a: string[]) => execFileSync('git', a, { cwd: dir });
   g('init', '-q', '-b', 'main');
   fs.mkdirSync(path.join(dir, 'src'));
@@ -124,7 +124,7 @@ async function untilGate(core: Orchestrator, runId: string, gate: string, timeou
 
 function makeCore(fake: ReturnType<typeof fakeClaude>) {
   const settings = { toolPaths: {}, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-'));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-'));
   return new Orchestrator({ dataDir, promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: fake.fn as never } });
 }
 
@@ -359,10 +359,10 @@ test('только codex: прогон без claude, служебные выз�
   const sandboxes: string[] = [];
   const codex = (async (o: { prompt: string; cwd: string; systemPrompt?: string; sandbox: string }) => { sandboxes.push(o.sandbox); return fake.fn(o); }) as never;
   // codex «установлен» (скрипт отвечает версией), claude — нет.
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-bin-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\necho "codex-cli 1.0.0"\n', { mode: 0o755 });
   const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'нет-claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '' }, agents: { planner: 'codex', executor: 'codex', reviewer: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: (() => { throw new Error('claude не должен запускаться'); }) as never, codex } });
+  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: (() => { throw new Error('claude не должен запускаться'); }) as never, codex } });
 
   const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree', visual: true, runCommand: 'node -e 1', appUrl: 'http://localhost:{port}' } as never });
   assert.equal(core.getRun(runId)!.visual, undefined, 'без claude визуальной проверки нет');
@@ -378,11 +378,11 @@ test('менеджер на codex по выбору в настройках, д�
   const repo = fs.realpathSync(makeRepo());
   const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
   const calls: string[] = [];
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-bin-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   for (const n of ['codex', 'claude']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   const via = (name: string) => (async (o: { prompt: string; cwd: string }) => { if (/Ты — менеджер прогона/.test(o.prompt)) calls.push(name); return fake.fn(o); }) as never;
   const settings = { toolPaths: { codex: path.join(bin, 'codex'), claude: path.join(bin, 'claude') }, proxy: { baseUrl: '', apiKey: '' }, models: { planner: '', executor: '', reviewer: '', manager: 'gpt-mini' }, agents: { planner: 'claude', executor: 'claude', reviewer: 'claude', manager: 'codex' }, agentTimeoutMin: 5, testTimeoutMin: 2, maxParallel: 2 } as unknown as CoreSettings;
-  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'psflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: via('claude'), codex: via('codex') } });
+  const core = new Orchestrator({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')), promptsDir: PROMPTS, env, getSettings: () => settings, runners: { claude: via('claude'), codex: via('codex') } });
   const { runId } = await core.dispatch({ type: 'run.start', input: { projectPath: repo, task: 'Добавь функцию mul(a, b) в src/math.js.', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never });
   await untilGate(core, runId, 'gate1');
   await core.askManager(runId, 'Как дела?');

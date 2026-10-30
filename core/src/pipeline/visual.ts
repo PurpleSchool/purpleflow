@@ -59,7 +59,7 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
     h.log(run, c.mint(`✓ приложение отвечает на ${url}`) + '\n');
 
     // pw: обёртка над Playwright CLI с отдельной сессией и рабочей папкой для скриншотов.
-    const session = `psflow-${run.id.slice(0, 8)}`;
+    const session = `purpleflow-${run.id.slice(0, 8)}`;
     const isWin = process.platform === 'win32';
     if (isWin) {
       fs.writeFileSync(path.join(dir, 'pw.cmd'), `@echo off\r\ncd /d "${dir}"\r\nnpx -y @playwright/cli@latest -s=${session} %*\r\n`);
@@ -148,7 +148,7 @@ export async function stageVisual(h: Orchestrator, run: RunFile) {
   } finally {
     cast?.stop();
     h.emit({ type: 'visual.frame', runId: run.id, frame: null });
-    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=psflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: h.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
+    await runProc('npx', ['-y', '@playwright/cli@latest', `-s=purpleflow-${run.id.slice(0, 8)}`, 'close'], { cwd: dir, env: h.opts.env, timeoutMs: 20_000 }).catch(() => undefined);
     await killGroup(serverGroup);
     // Профиль Chrome (десятки МБ) после проверки не нужен — скриншоты остаются.
     fs.rmSync(path.join(dir, 'chrome-profile'), { recursive: true, force: true });

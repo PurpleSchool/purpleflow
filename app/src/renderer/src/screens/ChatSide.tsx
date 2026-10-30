@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { CircleAlert, FileCode2, Globe, PanelRightClose, RefreshCw } from 'lucide-react';
-import type { ChatFile, DiffFile, ProjectConfig } from '@psflow/core';
+import type { ChatFile, DiffFile, ProjectConfig } from '@purpleflow/core';
 import { BrowserPane, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/DiffReview';
 import { PillTabs } from '../components/PillTabs';
@@ -18,7 +18,7 @@ export function useChatChanged(chat: ChatFile | null, busy: boolean): string[] |
   useEffect(() => {
     if (!id || !project) return setFiles(null);
     let alive = true;
-    window.psflow.core.getChatChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
+    window.purpleflow.core.getChatChangedFiles(id).then((f) => alive && setFiles(f)).catch(() => {});
     return () => {
       alive = false;
     };
@@ -26,7 +26,7 @@ export function useChatChanged(chat: ChatFile | null, busy: boolean): string[] |
   return files;
 }
 
-const WIDTH_KEY = 'psflow.chatSideW';
+const WIDTH_KEY = 'purpleflow.chatSideW';
 const MIN_W = 380;
 
 /** Ширина правой панели чата: тянется за ручку слева, запоминается для всех чатов. */
@@ -82,7 +82,7 @@ export function ChatSide({ chat, busy, pane, onPane, changed, width, onResize, o
   const [cfg, setCfg] = useState<ProjectConfig | null>(null);
   const preview = usePreview(chat.id);
   useEffect(() => {
-    if (chat.projectPath) window.psflow.core.getProjectConfig(chat.projectPath).then(setCfg).catch(() => {});
+    if (chat.projectPath) window.purpleflow.core.getProjectConfig(chat.projectPath).then(setCfg).catch(() => {});
   }, [chat.projectPath]);
   const canRun = Boolean(cfg?.runCommand && cfg.appUrl);
 
@@ -149,7 +149,7 @@ function ChatCode({ chat, busy }: { chat: ChatFile; busy: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      setDiff(await window.psflow.core.getChatDiff(chat.id));
+      setDiff(await window.purpleflow.core.getChatDiff(chat.id));
       setAt(new Date());
     } catch (e) {
       setError(cleanErr(e));

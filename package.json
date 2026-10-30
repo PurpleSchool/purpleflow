@@ -1,14 +1,14 @@
 {
-  "name": "psflow",
+  "name": "purpleflow",
   "private": true,
   "version": "0.1.0",
   "workspaces": ["core", "app"],
   "scripts": {
-    "build:core": "npm run build -w @psflow/core",
-    "dev": "npm run dev -w @psflow/app",
-    "build": "npm run build -w @psflow/core && npm run build -w @psflow/app",
-    "typecheck": "npm run typecheck -w @psflow/core && npm run typecheck -w @psflow/app",
-    "test": "npm test -w @psflow/core",
+    "build:core": "npm run build -w @purpleflow/core",
+    "dev": "npm run dev -w @purpleflow/app",
+    "build": "npm run build -w @purpleflow/core && npm run build -w @purpleflow/app",
+    "typecheck": "npm run typecheck -w @purpleflow/core && npm run typecheck -w @purpleflow/app",
+    "test": "npm test -w @purpleflow/core",
     "make-test-repo": "node scripts/make-test-repo.mjs"
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { LineComment, ReviewItem } from '@psflow/core';
+import type { LineComment, ReviewItem } from '@purpleflow/core';
 
 /**
  * Состояние решения на гейте: комментарий, замечания по строкам, отмеченные к исправлению замечания ревьюера,

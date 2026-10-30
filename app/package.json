@@ -1,5 +1,5 @@
 {
-  "name": "@psflow/app",
+  "name": "@purpleflow/app",
   "productName": "PurpleFlow",
   "desktopName": "purpleflow.desktop",
   "version": "0.1.0",
@@ -22,7 +22,7 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@monaco-editor/react": "^4.7.0",
-    "@psflow/core": "*",
+    "@purpleflow/core": "*",
     "@types/dompurify": "^3.0.5",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",

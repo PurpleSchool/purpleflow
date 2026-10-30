@@ -2,7 +2,7 @@
 import path from 'node:path';
 import {
   Git, Orchestrator, checkCommand, detectProjectCommands, findEnvFiles, killAll, loadLoginShellEnv, which, type CoreSettings,
-} from '@psflow/core';
+} from '@purpleflow/core';
 import type { CoreApi, HostMessage, HostRequest } from '../shared/ipc';
 
 const port = process.parentPort;

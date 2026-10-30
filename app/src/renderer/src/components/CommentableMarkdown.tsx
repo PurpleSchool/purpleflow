@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { marked, type Token, type Tokens } from 'marked';
 import { MessageSquarePlus, Trash2 } from 'lucide-react';
-import type { LineComment } from '@psflow/core';
+import type { LineComment } from '@purpleflow/core';
 import { Markdown } from './Markdown';
 import { Button, TextArea } from './ui';
 

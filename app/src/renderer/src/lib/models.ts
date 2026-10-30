@@ -1,4 +1,4 @@
-import type { AgentKind } from '@psflow/core';
+import type { AgentKind } from '@purpleflow/core';
 import type { DropOption } from '../components/Dropdown';
 
 /**

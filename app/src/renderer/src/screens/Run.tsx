@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCircleQuestion, ArrowRight, ChevronDown, CircleAlert, FileText, Paperclip, CircleStop, FolderOpen, MousePointerClick, GitBranch, Play, SkipForward, Sparkles, TriangleAlert, X } from 'lucide-react';
-import type { StageId } from '@psflow/core';
+import type { StageId } from '@purpleflow/core';
 import { STAGE_ICON } from '../components/StageRail';
 import { PillTabs } from '../components/PillTabs';
 import { Timeline } from '../components/Timeline';
@@ -48,7 +48,7 @@ export function RunScreen({ runId }: { runId: string }) {
   useEffect(() => {
     if (!projectPath) return;
     let alive = true;
-    void window.psflow.core.getProjectConfig(projectPath).then((c) => alive && setProjectRun(Boolean(c?.runCommand && c.appUrl))).catch(() => {});
+    void window.purpleflow.core.getProjectConfig(projectPath).then((c) => alive && setProjectRun(Boolean(c?.runCommand && c.appUrl))).catch(() => {});
     return () => {
       alive = false;
     };
@@ -92,7 +92,7 @@ export function RunScreen({ runId }: { runId: string }) {
 
   const showPlan = drawer === 'plan' || drawer === 'gate1';
 
-  const refreshDocs = () => window.psflow.core.getChangeDocs(runId).then(setDocs).catch(() => setDocs(null));
+  const refreshDocs = () => window.purpleflow.core.getChangeDocs(runId).then(setDocs).catch(() => setDocs(null));
   useEffect(() => {
     if (showPlan) void refreshDocs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,7 +183,7 @@ export function RunScreen({ runId }: { runId: string }) {
       setBusy(null);
     }
   };
-  const dispatch = window.psflow.core.dispatch;
+  const dispatch = window.purpleflow.core.dispatch;
   const agentLive = Boolean(agentScreen.frame) || (run.status === 'running' && run.next === 'visual');
   const canRunApp = projectRun || Boolean(run.runCommand && run.appUrl) || preview.state.status !== 'idle';
   const openApp = () => {
@@ -276,7 +276,7 @@ export function RunScreen({ runId }: { runId: string }) {
           <MetricsInline run={run} />
         </div>
         <div className="run-actions">
-          <Button tone="quiet" icon={<FolderOpen size={16} />} title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'} onClick={() => void window.psflow.openPath(run.worktreePath)} />
+          <Button tone="quiet" icon={<FolderOpen size={16} />} title={run.workspace === 'branch' ? 'Открыть папку проекта' : 'Открыть worktree'} onClick={() => void window.purpleflow.openPath(run.worktreePath)} />
           <DeleteRun run={run} runId={runId} />
           {(resumable || run.status === 'queued') && !gate && (
             <Button tone="ghost" icon={<Play size={14} />} busy={busy === 'resume'} onClick={() => act('resume', () => dispatch({ type: 'run.resume', runId }))}>
@@ -290,7 +290,7 @@ export function RunScreen({ runId }: { runId: string }) {
               busy={busy === 'next'}
               title="Новая задача со следующей частью из раздела «Next Parts» плана — с исходным ТЗ и вложениями"
               onClick={() => act('next', async () => {
-                const d = await window.psflow.core.nextPartDraft(runId);
+                const d = await window.purpleflow.core.nextPartDraft(runId);
                 if (d) go({ name: 'new', project: d.projectPath, draft: d });
               })}
             >

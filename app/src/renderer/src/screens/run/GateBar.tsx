@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Globe, Wrench, CircleCheck, ClipboardCheck, RotateCcw, UserRoundCheck } from 'lucide-react';
-import type { StageId } from '@psflow/core';
+import type { StageId } from '@purpleflow/core';
 import { Button, TextArea } from '../../components/ui';
 
 export function GateBar(props: {
@@ -43,7 +43,7 @@ export function GateBar(props: {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
-  const mod = window.psflow.platform === 'darwin' ? '⌘' : 'Ctrl+';
+  const mod = window.purpleflow.platform === 'darwin' ? '⌘' : 'Ctrl+';
   const title = gate === 'gate1' ? 'Утверждение плана' : gate === 'gate2' ? 'Приёмка' : 'Попытки исчерпаны';
   const needsComment = gate !== 'limit';
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircleCheck, CircleX, ExternalLink, FileCode2, GitMerge, GitPullRequest, MessageSquare, RotateCw, ShieldAlert, Wrench } from 'lucide-react';
-import type { PrComment, PrDetails, PrFollowupItem, PrStatus, RunFile } from '@psflow/core';
+import type { PrComment, PrDetails, PrFollowupItem, PrStatus, RunFile } from '@purpleflow/core';
 import { Button, TextArea } from './ui';
 import { Markdown } from './Markdown';
 import { when } from '../lib/format';
@@ -43,7 +43,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setLoading(true);
     setError(null);
     try {
-      const x = await window.psflow.core.getPrDetails(runId);
+      const x = await window.purpleflow.core.getPrDetails(runId);
       setD(x);
       if (x) {
         refreshed.forEach((fn) => fn(runId, x.status));
@@ -89,7 +89,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setBusy('followup');
     setError(null);
     try {
-      await window.psflow.core.dispatch({ type: 'run.prFollowup', runId, items, note: note.trim() || undefined });
+      await window.purpleflow.core.dispatch({ type: 'run.prFollowup', runId, items, note: note.trim() || undefined });
       setNote('');
       onStarted();
     } catch (e) {
@@ -103,7 +103,7 @@ export function PrPane({ run, runId, onStarted }: { run: RunFile; runId: string;
     setBusy('update');
     setError(null);
     try {
-      await window.psflow.core.dispatch({ type: 'run.updateBranch', runId });
+      await window.purpleflow.core.dispatch({ type: 'run.updateBranch', runId });
       onStarted();
     } catch (e) {
       setError(cleanErr(e));
