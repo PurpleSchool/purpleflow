@@ -14,7 +14,7 @@ const MARK = '__PURPLEFLOW_ENV__';
  * Берём окружение login+interactive шелла пользователя — так же, как это делают shell-env/fix-path.
  */
 export function loadLoginShellEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  if (isWin) return stripSessionEnv({ ...base });
+  if (isWin) return withExtraPath(stripSessionEnv({ ...base }));
   const shell = base.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
   // Шелл стартует с минимальным окружением — как при запуске из Finder. Иначе приложение,
   // запущенное из чужого терминала (например, из сессии Claude Code), унаследует её ключи и токены.
@@ -71,6 +71,10 @@ export function stripSessionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Куда приложение ставит свой Node.js, если в системе его нет. */
+export const nodeHome = () => path.join(os.homedir(), '.purpleflow', 'node');
+export const nodeBinDir = () => (isWin ? nodeHome() : path.join(nodeHome(), 'bin'));
+
 /** Типичные места установки CLI, если их нет в PATH. */
 function extraDirs(): string[] {
   const h = os.homedir();
@@ -78,6 +82,7 @@ function extraDirs(): string[] {
     const appData = process.env.APPDATA ?? path.join(h, 'AppData', 'Roaming');
     const local = process.env.LOCALAPPDATA ?? path.join(h, 'AppData', 'Local');
     return [
+      nodeBinDir(),
       path.join(appData, 'npm'),
       path.join(h, '.local', 'bin'),
       path.join(h, '.bun', 'bin'),
@@ -87,6 +92,7 @@ function extraDirs(): string[] {
     ];
   }
   return [
+    nodeBinDir(),
     path.join(h, '.local', 'bin'),
     path.join(h, '.bun', 'bin'),
     path.join(h, '.npm-global', 'bin'),
@@ -136,6 +142,12 @@ export function prependPath(env: NodeJS.ProcessEnv, dir: string): NodeJS.Process
   const key = pathKey(env);
   const cur = (env[key] ?? '').split(path.delimiter).filter((d) => d && d !== dir);
   return { ...env, [key]: [dir, ...cur].join(path.delimiter) };
+}
+
+/** То же на месте: только что поставленное должно найтись без перезапуска, а env ядра общий. */
+export function addToPath(env: NodeJS.ProcessEnv, dir: string) {
+  const key = pathKey(env);
+  env[key] = prependPath(env, dir)[key];
 }
 
 const VERSION_ARGS: Record<ToolName, string[]> = {

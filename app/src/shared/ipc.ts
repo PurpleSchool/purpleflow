@@ -127,6 +127,8 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
   getChangeDocs: true,
   detectTools: true,
   installTool: true,
+  detectNode: true,
+  installNode: true,
   testConnection: true,
   detectProject: true,
   isDriving: true,

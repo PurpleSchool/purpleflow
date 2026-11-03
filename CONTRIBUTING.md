@@ -23,7 +23,7 @@ npm run dev
 npm run check
 ```
 
-Это typecheck (ядро, тесты, e2e, приложение), ESLint, Prettier и тесты ядра и окна — то же самое гоняет CI (ubuntu, macOS, Windows). Форматирование поправит `npm run format`, часть замечаний линтера — `npm run lint:fix`.
+Это typecheck (ядро, тесты, e2e, приложение), ESLint, Prettier и тесты ядра и окна — то же самое гоняет CI (ubuntu, Windows; macOS — на тегах версий). Форматирование поправит `npm run format`, часть замечаний линтера — `npm run lint:fix`.
 
 
 Сквозные тесты окна и проверка настоящих CLI запускаются отдельно:

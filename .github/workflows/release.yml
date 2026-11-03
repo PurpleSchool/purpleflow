@@ -1,10 +1,10 @@
 name: Release
 
-# Тег v* (npm run release -- X.Y.Z) → сборки всех ОС в черновике релиза. Обновление дойдёт до пользователей,
+# Тег X.Y.Z (npm run release -- X.Y.Z) → сборки всех ОС в черновике релиза. Обновление дойдёт до пользователей,
 # когда черновик опубликован вручную: electron-updater черновики не видит.
 on:
   push:
-    tags: ['v*']
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - run: npm ci
       - name: Тег совпадает с версией приложения
         shell: bash
-        run: test "v$(node -p "require('./app/package.json').version")" = "$GITHUB_REF_NAME"
+        run: test "$(node -p "require('./app/package.json').version")" = "$GITHUB_REF_NAME"
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
       - name: Сборка и загрузка в черновик

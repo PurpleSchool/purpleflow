@@ -69,6 +69,13 @@ test('installTool: npm отработал, но инструмента нет в
   assert.match(r.error ?? '', /не найден в PATH/);
 });
 
+test('installTool: каталог npm появился только сейчас — находит инструмент через npm prefix', { skip }, async (t) => {
+  const s = sandbox(t, `if [ "$1" = prefix ]; then echo "$(dirname "$0")/../fresh"; else tool "$(dirname "$0")/../fresh/bin"; fi`);
+  const r = await installTool('openspec', s.env);
+  assert.equal(r.ok, true, r.error);
+  assert.match(r.info?.path ?? '', /fresh\/bin\/openspec$/);
+});
+
 test('installTool: путь вручную и git не запускают npm', { skip }, async (t) => {
   const s = sandbox(t, 'exit 0');
   const manual = await installTool('openspec', s.env, '/где/то/openspec');

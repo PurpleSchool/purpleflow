@@ -17,7 +17,16 @@ import type {
 } from './project.js';
 import type { CoreCommand } from './protocol.js';
 import type { DiffFile, ManagerMessage, ModeSuggestion, PreviewState, RunFile, RunSummary } from './run.js';
-import type { AgentKind, ConnectionCheck, StorageItem, ToolInfo, ToolInstallResult, ToolName } from './settings.js';
+import type {
+  AgentKind,
+  ConnectionCheck,
+  NodeInfo,
+  NodeInstallResult,
+  StorageItem,
+  ToolInfo,
+  ToolInstallResult,
+  ToolName,
+} from './settings.js';
 
 export interface ChangeDocs {
   proposal: string;
@@ -38,6 +47,9 @@ export interface CoreApi {
   detectTools(): Promise<Record<ToolName, ToolInfo>>;
   /** Поставить недостающий инструмент; окно передаёт только имя, команда зашита в ядре. */
   installTool(name: ToolName): Promise<ToolInstallResult>;
+  detectNode(): Promise<NodeInfo>;
+  /** Поставить Node.js в свою папку: адрес и контрольная сумма зашиты в ядре. */
+  installNode(): Promise<NodeInstallResult>;
   testConnection(): Promise<ConnectionCheck[]>;
   detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
   isDriving(id: string): Promise<boolean>;

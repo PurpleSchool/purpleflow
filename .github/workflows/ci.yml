@@ -3,12 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
   pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# macOS — только на тегах версий: раннеров у GitHub не хватает, и на каждом коммите такой job часто отменялся.
 # Job'ы не ждут друг друга: очередь на раннеры macOS не должна задерживать проверки на других ОС.
 jobs:
   check:
@@ -17,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ startsWith(github.ref, 'refs/tags/') && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     env:
       # Бинарник Electron для проверок не нужен — только для сборки.
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -51,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ startsWith(github.ref, 'refs/tags/') && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

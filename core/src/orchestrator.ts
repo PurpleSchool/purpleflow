@@ -18,6 +18,7 @@ import * as pr from './services/pr.js';
 import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import * as projects from './services/projects.js';
 import { getChangeDocs, getChangedFiles, getDiff } from './services/runs.js';
+import { detectNode, installNode } from './services/node.js';
 import { installTool } from './services/setup.js';
 import { answer } from './stages/plan.js';
 import { getVisualShot } from './stages/visual.js';
@@ -199,6 +200,12 @@ export class Orchestrator implements CoreApi {
   installTool(name: ToolName) {
     const { env, getSettings } = this.kernel.opts;
     return installTool(name, env, getSettings().toolPaths[name]);
+  }
+  detectNode() {
+    return detectNode(this.kernel.opts.env);
+  }
+  installNode() {
+    return installNode(this.kernel.opts.env);
   }
   testConnection() {
     return testConnection(this.kernel);

@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { detectTool, pathKey, prependPath, which } from '../env.js';
+import { addToPath, detectTool, prependPath, which } from '../env.js';
 import { run } from '../proc.js';
 import type { ToolInstallResult, ToolName } from '../types.js';
 
@@ -30,7 +30,7 @@ export async function installTool(name: ToolName, env: NodeJS.ProcessEnv, manual
   // Установка не исправит чужой путь: окно продолжит запускать файл, указанный вручную.
   if (manual?.trim()) return { name, ok: false, error: 'Указан путь вручную. Очистите его, чтобы установить инструмент автоматически.' };
   const npm = which('npm', env);
-  if (!npm) return { name, ok: false, error: 'Не найден npm. Установите Node.js с nodejs.org и повторите.' };
+  if (!npm) return { name, ok: false, error: 'Не найден npm: сначала нужен Node.js.' };
 
   const npmEnv = prependPath(env, path.dirname(npm));
   const install = (extra: string[] = []) =>
@@ -47,14 +47,22 @@ export async function installTool(name: ToolName, env: NodeJS.ProcessEnv, manual
     const prefix = path.join(os.homedir(), '.npm-global');
     fs.mkdirSync(prefix, { recursive: true });
     r = await install(['--prefix', prefix]);
-    if (r.code === 0) env[pathKey(env)] = prependPath(env, path.join(prefix, 'bin'))[pathKey(env)];
+    if (r.code === 0) addToPath(env, path.join(prefix, 'bin'));
   }
   if (r.spawnError || r.timedOut || r.code !== 0) {
     const why = r.timedOut ? 'Установка не уложилась в 5 минут' : r.spawnError || tail(r.stderr || r.stdout) || `код ${r.code}`;
     return { name, ok: false, error: `Не удалось установить ${pkg}: ${why}` };
   }
 
-  const info = await detectTool(name, env);
+  let info = await detectTool(name, env);
+  if (!info.path) {
+    // Каталог npm мог появиться только сейчас (на Windows это %APPDATA%\npm), поэтому в начальном PATH его не было.
+    const prefix = (await run(npm, ['prefix', '--global'], { cwd: os.homedir(), env: npmEnv, timeoutMs: 15_000 })).stdout.trim();
+    if (prefix) {
+      addToPath(env, process.platform === 'win32' ? prefix : path.join(prefix, 'bin'));
+      info = await detectTool(name, env);
+    }
+  }
   if (!info.path) return { name, ok: false, info, error: `${pkg} установлен, но ${name} не найден в PATH.` };
   if (info.error) return { name, ok: false, info, error: info.error };
   return { name, ok: true, info };

@@ -20,7 +20,7 @@ if (git('status', '--porcelain')) fail('В рабочей копии есть н
 if (git('branch', '--show-current') !== 'main') fail('Выпускать можно только из main.');
 git('fetch', 'origin', 'main', '--tags');
 if (git('rev-parse', 'HEAD') !== git('rev-parse', 'origin/main')) fail('main расходится с origin/main.');
-if (git('tag', '--list', `v${version}`)) fail(`Тег v${version} уже есть.`);
+if (git('tag', '--list', version)) fail(`Тег ${version} уже есть.`);
 
 for (const file of ['package.json', 'app/package.json', 'core/package.json']) {
   const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -31,6 +31,6 @@ execFileSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund'
 
 git('add', 'package.json', 'app/package.json', 'core/package.json', 'package-lock.json');
 git('commit', '-m', `Версия ${version}`);
-git('tag', `v${version}`);
-git('push', 'origin', 'main', `v${version}`);
-console.log(`Тег v${version} отправлен. Когда CI соберёт черновик релиза, опубликуйте его на GitHub.`);
+git('tag', version);
+git('push', 'origin', 'main', version);
+console.log(`Тег ${version} отправлен. Когда CI соберёт черновик релиза, опубликуйте его на GitHub.`);

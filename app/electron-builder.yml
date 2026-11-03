@@ -17,6 +17,8 @@ publish:
   provider: github
   owner: PurpleSchool
   repo: purpleflow
+  # Теги версий без префикса: 0.1.1, а не v0.1.1.
+  vPrefixedTagName: false
 mac:
   category: public.app-category.developer-tools
   target:

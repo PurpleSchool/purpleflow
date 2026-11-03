@@ -23,6 +23,7 @@ test('после пропуска входа открывается окно н�
 
   const dialog = l.page.getByRole('dialog', { name: 'Подготовим окружение' });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Node.js', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Готово, к задаче' }).click();
 
   await expect(dialog).toBeHidden();

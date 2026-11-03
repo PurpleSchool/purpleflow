@@ -9,6 +9,33 @@ import { CheckButton, ChecksList, TOOL_INFO } from './parts';
 import type { SettingsDraft } from './useSettingsDraft';
 import { TOOL_NAMES, type ToolSetup } from './useToolSetup';
 
+function NodeRow({ setup }: { setup: ToolSetup }) {
+  const { node, current, errors, needsNode } = setup;
+  const installing = current === 'node';
+  const tone = installing || !node ? 'is-loading' : node.path ? 'is-ok' : errors.node || needsNode ? 'is-bad' : 'is-off';
+  return (
+    <div className={`setup-row ${tone}`}>
+      <span className="setup-led" />
+      <strong>Node.js</strong>
+      <span className="setup-state">
+        {installing ? (
+          'Скачиваю и устанавливаю…'
+        ) : !node ? (
+          'Ищем…'
+        ) : node.path ? (
+          <span className="mono">{node.version}</span>
+        ) : errors.node ? (
+          errors.node
+        ) : needsNode ? (
+          'Не найден. Поставим в ~/.purpleflow/node'
+        ) : (
+          'Не нужен: все инструменты уже найдены'
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function SetupDialog({
   draft,
   setup,
@@ -39,8 +66,8 @@ export function SetupDialog({
           <div>
             <h2 id="setup-title">Подготовим окружение</h2>
             <p>
-              Недостающие инструменты поставим глобально через npm, затем отправим агентам короткий проверочный запрос. Всё это можно
-              сделать и позже на вкладке «Инструменты».
+              Node.js при необходимости поставим в отдельную папку, инструменты — глобально через npm, затем отправим агентам короткий
+              проверочный запрос. Всё это можно сделать и позже на вкладке «Инструменты».
             </p>
           </div>
           <button className="qs-close" aria-label="Закрыть" disabled={busy} onClick={close}>
@@ -49,6 +76,7 @@ export function SetupDialog({
         </header>
 
         <div className="setup-rows">
+          <NodeRow setup={setup} />
           {TOOL_NAMES.map((t) => {
             const info = tools?.[t];
             const ok = info?.path && !info.error;

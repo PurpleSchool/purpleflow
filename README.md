@@ -67,15 +67,15 @@ flowchart LR
 
 ## Быстрый старт
 
-**1. Установите агентов** — нужен хотя бы один из `claude` и `codex`, а также git и OpenSpec:
+**1. Скачайте PurpleFlow** со страницы [Releases](https://github.com/PurpleSchool/purpleflow/releases/latest) для macOS, Windows или Linux. При первом запуске кнопка «Настроить» сама поставит недостающие Node.js, `claude`, `codex` и OpenSpec. Отдельно понадобится только git. Дальше приложение будет предлагать обновления.
+
+Можно поставить агентов и вручную:
 
 ```bash
 npm i -g @anthropic-ai/claude-code @openai/codex @fission-ai/openspec
 ```
 
-**2. Скачайте PurpleFlow** со страницы [Releases](https://github.com/PurpleSchool/purpleflow/releases/latest) для macOS, Windows или Linux. Приложение само найдёт `git`, `claude` и `codex` и дальше будет предлагать обновления.
-
-**3. Опишите задачу:** выберите папку проекта и режим. PurpleFlow позовёт вас только на утверждение плана и приёмку.
+**2. Опишите задачу:** выберите папку проекта и режим. PurpleFlow позовёт вас только на утверждение плана и приёмку.
 
 <details>
 <summary>Запуск из исходников</summary>
@@ -118,7 +118,7 @@ npm run dev
 
 | ОС | Поддержка |
 | --- | --- |
-| macOS | ✅ проверки и сквозные тесты окна в CI, живая проверка |
+| macOS | ✅ проверки и сквозные тесты окна в CI при выпуске версии, живая проверка |
 | Linux | ✅ проверки и сквозные тесты окна в CI |
 | Windows | 🧪 экспериментально: проверки ядра и окна в CI, без сквозных тестов и живой проверки |
 

@@ -42,6 +42,24 @@ export function ToolsTab({ draft, setup }: { draft: SettingsDraft; setup: ToolSe
       </header>
       {checks && <ChecksList checks={checks} />}
       <div className="tools bezel">
+        {setup.node && !setup.node.path && (setup.needsNode || setup.errors.node) && (
+          <div className={`tool ${setup.current === 'node' ? 'is-loading' : 'is-bad'}`}>
+            <span className="tool-led" />
+            <div className="tool-id">
+              <strong>Node.js</strong>
+              <span className="mono muted">—</span>
+            </div>
+            <div className="tool-path">
+              {setup.current === 'node' ? (
+                <span>Скачиваю и устанавливаю…</span>
+              ) : (
+                <span className="tool-miss">
+                  {setup.errors.node ?? 'Не найден. Нужен для установки инструментов через npm, кнопка «Настроить» поставит его сама.'}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
           const info = tools?.[t];
           const ok = info?.path && !info.error;

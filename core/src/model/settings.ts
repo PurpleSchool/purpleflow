@@ -16,6 +16,17 @@ export interface ToolInstallResult {
   error?: string;
 }
 
+export interface NodeInfo {
+  path: string | null;
+  version: string | null;
+}
+
+export interface NodeInstallResult {
+  ok: boolean;
+  info?: NodeInfo;
+  error?: string;
+}
+
 export type Role = 'planner' | 'executor' | 'reviewer';
 
 /** CLI-агент, который выполняет роль. */
