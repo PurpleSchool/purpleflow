@@ -9,6 +9,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Job'ы не ждут друг друга: очередь на раннеры macOS не должна задерживать проверки на других ОС.
 jobs:
   check:
     name: Typecheck, lint, tests (${{ matrix.os }})
@@ -35,7 +36,6 @@ jobs:
   build:
     name: Build app
     runs-on: ubuntu-latest
-    needs: check
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,7 +48,6 @@ jobs:
   e2e:
     name: Window end-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: check
     strategy:
       fail-fast: false
       matrix:
