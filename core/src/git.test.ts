@@ -106,6 +106,7 @@ test('restoreFromBase: изменённый артефакт — из базы, 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-git-'));
   const g = (...a: string[]) => execFileSync('git', a, { cwd: dir });
   g('init', '-q');
+  g('config', 'core.autocrlf', 'false');
   fs.writeFileSync(path.join(dir, 'tsconfig.tsbuildinfo'), 'old\n');
   fs.writeFileSync(path.join(dir, 'app.ts'), 'a\n');
   g('add', '-A');
@@ -228,6 +229,7 @@ test('stash: параллельные прогоны в двух worktree не �
   fs.mkdirSync(main);
   const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: main }).toString();
   g('init', '-q', '-b', 'main');
+  g('config', 'core.autocrlf', 'false');
   fs.writeFileSync(path.join(main, 'a.txt'), 'a\n');
   g('add', '-A');
   g('commit', '-qm', 'init');

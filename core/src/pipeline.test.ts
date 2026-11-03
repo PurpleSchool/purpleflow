@@ -164,8 +164,11 @@ async function untilGate(core: Orchestrator, runId: string, gate: string, timeou
 }
 
 function makeCore(fake: ReturnType<typeof fakeClaude>) {
+  // Сами запуски подменены, но ядро проверяет, что CLI установлен: в CI настоящего claude нет.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\necho "claude 1.0.0"\n', { mode: 0o755 });
   const settings = {
-    toolPaths: {},
+    toolPaths: { claude: path.join(bin, 'claude') },
     proxy: { baseUrl: '', apiKey: '' },
     models: { planner: '', executor: '', reviewer: '' },
     agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' },
