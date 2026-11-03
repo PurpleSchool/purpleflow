@@ -1,0 +1,28 @@
+name: Real agents
+
+# Настоящие CLI меняют формат вывода без предупреждения, а тесты работают на фейках. Запросы тратят токены,
+# поэтому еженедельный запуск включается переменной репозитория RUN_AGENT_CHECKS и секретами ключей.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  check:
+    if: github.event_name == 'workflow_dispatch' || vars.RUN_AGENT_CHECKS == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm install -g @anthropic-ai/claude-code @openai/codex
+      - run: npm run check:agents -w core -- --live
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ github.token }}

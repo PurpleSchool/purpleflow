@@ -13,11 +13,27 @@ loader.config({ monaco });
   const ts = m.typescript ?? m.languages?.typescript;
   for (const d of [ts?.typescriptDefaults, ts?.javascriptDefaults]) {
     d?.setDiagnosticsOptions?.({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });
+    // Отключить мало только диагностику: символы и подсказки пошли бы в общий воркер, а он этих методов не знает.
+    d?.setModeConfiguration?.({
+      completionItems: false,
+      hovers: false,
+      documentSymbols: false,
+      definitions: false,
+      references: false,
+      documentHighlights: false,
+      rename: false,
+      diagnostics: false,
+      documentRangeFormattingEdits: false,
+      signatureHelp: false,
+      onTypeFormattingEdits: false,
+      codeActions: false,
+      inlayHints: false,
+    });
   }
 }
 interface TsApi {
-  typescriptDefaults?: { setDiagnosticsOptions?: (o: object) => void };
-  javascriptDefaults?: { setDiagnosticsOptions?: (o: object) => void };
+  typescriptDefaults?: { setDiagnosticsOptions?: (o: object) => void; setModeConfiguration?: (o: object) => void };
+  javascriptDefaults?: { setDiagnosticsOptions?: (o: object) => void; setModeConfiguration?: (o: object) => void };
 }
 
 monaco.editor.defineTheme('purpleflow-night', {

@@ -249,6 +249,15 @@ export function DiffReview({
 
   const onMount: DiffOnMount = (mounted) => {
     editorRef.current = mounted;
+    // Библиотека удаляет модели раньше редактора, и тот падает с необработанной ошибкой. Поэтому модели она не трогает
+    // (keepCurrent…), а мы удаляем их сами, когда редактора уже нет.
+    const models = mounted.getModel();
+    mounted.onDidDispose(() =>
+      queueMicrotask(() => {
+        models?.original.dispose();
+        models?.modified.dispose();
+      }),
+    );
     // Редактор монтируется асинхронно, уже после эффектов: карточки ставятся по смене состояния, у нового — с нуля.
     zones.current = [];
     decos.current = null;
@@ -374,6 +383,8 @@ export function DiffReview({
                 language={langOf(file.path)}
                 theme="purpleflow-night"
                 onMount={onMount}
+                keepCurrentOriginalModel
+                keepCurrentModifiedModel
                 options={{
                   readOnly: true,
                   originalEditable: false,

@@ -2,6 +2,14 @@
 
 [Русский](README.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [MIT](LICENSE) license
 
+> **Status: beta.** The main scenarios are covered by tests, but expect rough edges — start with projects that are easy to roll back, and please report [issues](https://github.com/PurpleSchool/purpleflow/issues).
+>
+> | OS | Status |
+> | --- | --- |
+> | macOS | supported: checks and window end-to-end tests in CI, tried by hand |
+> | Linux | supported: checks and window end-to-end tests in CI |
+> | Windows | experimental: core and window checks in CI only, no end-to-end tests or hands-on testing |
+
 PurpleFlow is a desktop app that walks a coding task through fixed stages: **clarify → plan → approval → implementation → checks → review by another model → acceptance → archive and commit**.
 
 PurpleFlow has no agent of its own. Each stage runs the CLI you already have installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) or [Codex CLI](https://github.com/openai/codex) (`codex`). PurpleFlow handles orchestration, human approval gates and the UI.
@@ -58,6 +66,14 @@ npm run check
 ```
 
 This runs typecheck, ESLint, Prettier and tests, the same as CI. The pipeline tests drive a whole run on a temporary git repository with real git and openspec and fake agents. They need neither `claude` nor `codex` and finish in seconds.
+
+Window end-to-end tests and the real-CLI check run separately:
+
+```bash
+npm run test:e2e                      # real window and git, fake claude; spends no tokens
+npm run check:agents -w core          # claude and codex versions, gh output format
+npm run check:agents -w core -- --live  # also a short request to the agents; spends tokens
+```
 
 A sample project to try a run on:
 

@@ -33,7 +33,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.test.ts', 'core/scripts/**', 'scripts/**', 'app/src/main/dev-capture.ts'],
+    files: ['**/*.test.ts', 'app/e2e/**', 'core/scripts/**', 'scripts/**', 'app/src/main/dev-capture.ts'],
     rules: { 'no-console': 'off' },
   },
   prettier,

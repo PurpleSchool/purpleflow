@@ -5,3 +5,5 @@ release/
 *.log
 .DS_Store
 *.tsbuildinfo
+e2e-results/
+e2e-report/

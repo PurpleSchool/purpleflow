@@ -25,6 +25,15 @@ npm run check
 
 Это typecheck (ядро, тесты, e2e, приложение), ESLint, Prettier и тесты ядра и окна — то же самое гоняет CI (ubuntu, macOS, Windows). Форматирование поправит `npm run format`, часть замечаний линтера — `npm run lint:fix`.
 
+
+Сквозные тесты окна и проверка настоящих CLI запускаются отдельно:
+
+```bash
+npm run test:e2e                      # настоящее окно и git, фейковый claude; токены не тратятся
+npm run check:agents -w core          # версии claude, codex и формат gh
+npm run check:agents -w core -- --live  # ещё и короткий запрос к агентам: расходует токены
+```
+
 Если меняется интерфейс, проверьте его в `npm run dev` и приложите скриншот к PR.
 
 ## Как устроен код

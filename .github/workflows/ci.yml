@@ -13,8 +13,6 @@ jobs:
   check:
     name: Typecheck, lint, tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Windows пока не блокирует: прогоны на нём ещё не проверены вручную, CI покажет, что чинить.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -46,3 +44,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  e2e:
+    name: Window end-to-end (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Окно настоящее, поэтому на Linux нужен виртуальный дисплей.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e
+      - if: runner.os != 'Linux'
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-${{ matrix.os }}
+          path: |
+            app/e2e-report
+            app/e2e-results
+          retention-days: 7
