@@ -1,6 +1,14 @@
 {
   "extends": "./tsconfig.web.json",
   "compilerOptions": { "noEmit": true, "types": ["node"] },
-  "include": ["src/renderer/src/**/*.test.ts", "src/shared/urls.ts", "src/shared/urls.test.ts", "e2e/**/*.ts", "playwright.config.ts"],
+  "include": [
+    "src/renderer/src/**/*.test.ts",
+    "src/shared/urls.ts",
+    "src/shared/urls.test.ts",
+    "src/shared/update.ts",
+    "src/shared/update.test.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts"
+  ],
   "exclude": []
 }

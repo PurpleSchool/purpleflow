@@ -1,5 +1,6 @@
 // Контракт IPC: мост окна (preload), сообщения main ↔ utilityProcess ядра. Сам API ядра — CoreApi в @purpleflow/core.
 import type { CoreApi, AgentKind, Models, CoreEvent, Role, ToolName } from '@purpleflow/core';
+import type { UpdateState } from './update';
 
 export type { ChangeDocs, CoreApi } from '@purpleflow/core';
 
@@ -194,6 +195,13 @@ export interface PurpleFlowBridge {
   onChime(fn: () => void): () => void;
   onGo(fn: (runId: string) => void): () => void;
   testNotification(): Promise<void>;
+  /** Автообновление: состояние и шаги, которые решает пользователь. */
+  update: {
+    state(): Promise<UpdateState>;
+    onState(fn: (s: UpdateState) => void): () => void;
+    download(): Promise<void>;
+    install(): Promise<void>;
+  };
   platform: string;
   /** Материал окна при запуске: нативное стекло ОС или непрозрачный фон. */
   material: 'vibrancy' | 'acrylic' | 'none';

@@ -11,6 +11,8 @@ if (args.includes('--version')) {
 
 let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;
+// Для скриншотов: шкала прогона с мгновенными стадиями выглядела бы пустой.
+if (process.env.FAKE_CLAUDE_DELAY_MS) await new Promise((r) => setTimeout(r, Number(process.env.FAKE_CLAUDE_DELAY_MS)));
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : '');
 const sys = opt('--append-system-prompt');
 if (process.env.FAKE_CLAUDE_LOG) fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, prompt })}\n`);
@@ -24,7 +26,7 @@ function reply(text) {
     subtype: 'success',
     is_error: false,
     result: text,
-    usage: { input_tokens: 10, output_tokens: 5 },
+    usage: { input_tokens: 21400, output_tokens: 1860 },
     total_cost_usd: 0.001,
   });
   process.exit(0);
@@ -43,6 +45,18 @@ if (/ревьюер в конвейере PurpleFlow/.test(prompt)) reply('{"blo
 if (/планировщик/.test(sys)) {
   const id = prompt.match(/используй ровно его\): `([^`]+)`/)?.[1];
   const dir = path.join('openspec', 'changes', id);
+  if (/slugify/.test(prompt)) {
+    write(
+      path.join(dir, 'proposal.md'),
+      '# Функция slugify с транслитерацией\n\n## Why\nАдреса страниц строятся из русских заголовков: нужен предсказуемый и читаемый slug.\n\n## What Changes\n- Функция `slugify(s)` в `src/slugify.js`: транслитерация, нижний регистр, дефисы\n- Тесты на кириллицу, знаки препинания и пустую строку\n\n## Impact\nНовый модуль, существующий код не меняется.\n',
+    );
+    write(path.join(dir, 'tasks.md'), '## 1. Код\n- [ ] 1.1 slugify в src/slugify.js\n- [ ] 1.2 Тесты в src/slugify.test.js\n');
+    write(
+      path.join(dir, 'specs', 'strings', 'spec.md'),
+      '## ADDED Requirements\n### Requirement: Slug из заголовка\nФункция SHALL переводить строку в латиницу в формате kebab-case.\n\n#### Scenario: Русский заголовок\n- **WHEN** вызвали slugify("Привет, мир!")\n- **THEN** результат privet-mir\n',
+    );
+    reply('План готов.');
+  }
   write(
     path.join(dir, 'proposal.md'),
     '# Умножение\n\n## Why\nНужно умножать два числа, сейчас есть только сложение, а задача его требует.\n\n## What Changes\n- Функция mul в src/math.js\n',
@@ -59,6 +73,17 @@ if (/исполнитель/.test(sys) || /Реализуй изменение|�
   if (/СЛОМАЙ_АГЕНТА/.test(prompt)) {
     process.stderr.write('API Error: квота исчерпана\n');
     process.exit(1);
+  }
+  if (/slugify/.test(prompt)) {
+    write(
+      'src/slugify.js',
+      "const MAP = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };\n\nexport function slugify(s) {\n  return [...s.toLowerCase()]\n    .map((c) => MAP[c] ?? c)\n    .join('')\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '');\n}\n",
+    );
+    write(
+      'src/slugify.test.js',
+      "import assert from 'node:assert/strict';\nimport { test } from 'node:test';\nimport { slugify } from './slugify.js';\n\ntest('slugify', () => {\n  assert.equal(slugify('Привет, мир!'), 'privet-mir');\n  assert.equal(slugify('  Ёлка 2026  '), 'elka-2026');\n  assert.equal(slugify(''), '');\n});\n",
+    );
+    reply('Добавил slugify и тесты.');
   }
   fs.appendFileSync('src/math.js', 'export const mul = (a, b) => a * b;\n');
   reply('Добавил mul.');

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { coreMethodNames, type CoreApi, type CoreMethod, type PurpleFlowBridge } from '../shared/ipc';
 import type { CoreEvent } from '@purpleflow/core';
+import type { UpdateState } from '../shared/update';
 
 const call =
   (method: CoreMethod) =>
@@ -48,6 +49,16 @@ const bridge: PurpleFlowBridge = {
     return () => ipcRenderer.removeListener('app:go', h);
   },
   testNotification: () => ipcRenderer.invoke('notify:test'),
+  update: {
+    state: () => ipcRenderer.invoke('update:state'),
+    onState(fn) {
+      const h = (_: unknown, u: UpdateState) => fn(u);
+      ipcRenderer.on('update:state', h);
+      return () => ipcRenderer.removeListener('update:state', h);
+    },
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.invoke('update:install'),
+  },
   platform: process.platform,
   material: ipcRenderer.sendSync('app:material:get'),
   onMaterial(fn) {

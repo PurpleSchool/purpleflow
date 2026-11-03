@@ -1,0 +1,54 @@
+name: Release
+
+# Тег v* (npm run release -- X.Y.Z) → сборки всех ОС в черновике релиза. Обновление дойдёт до пользователей,
+# когда черновик опубликован вручную: electron-updater черновики не видит.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Тег совпадает с версией приложения
+        shell: bash
+        run: test "v$(node -p "require('./app/package.json').version")" = "$GITHUB_REF_NAME"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Сборка и загрузка в черновик
+        shell: bash
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Без подписи macOS сборка соберётся, но обновляться сама не сможет: Squirrel отвергает неподписанное.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npx electron-vite build
+          args=()
+          if [ "$RUNNER_OS" = macOS ] && [ -z "$CSC_LINK" ]; then
+            echo "::warning::Нет MAC_CSC_LINK: сборка macOS без подписи и автообновления"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            unset CSC_LINK CSC_KEY_PASSWORD
+            args+=(-c.mac.notarize=false)
+          fi
+          # На Windows и Linux секреты Apple не нужны, а пустой CSC_LINK electron-builder принял бы за путь.
+          if [ "$RUNNER_OS" != macOS ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi
+          npx electron-builder --publish always "${args[@]}"

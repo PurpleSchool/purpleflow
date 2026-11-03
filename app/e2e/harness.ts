@@ -21,9 +21,9 @@ export interface Sandbox {
   cleanup: () => void;
 }
 
-export function makeSandbox(): Sandbox {
+export function makeSandbox(o: { tmpRoot?: string; delayMs?: number } = {}): Sandbox {
   // realpath: на macOS os.tmpdir() — симлинк, а git и окно отдают уже настоящий путь.
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pf-e2e-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(o.tmpRoot ?? os.tmpdir(), 'pf-e2e-')));
   const profile = path.join(root, 'profile');
   const repo = path.join(root, 'demo');
   const bin = path.join(root, 'bin');
@@ -36,7 +36,7 @@ export function makeSandbox(): Sandbox {
   const claude = path.join(bin, 'claude');
   fs.writeFileSync(
     claude,
-    `#!/bin/sh\nFAKE_CLAUDE_LOG="${log}" exec "${process.execPath}" "${path.join(HERE, 'fake-claude.mjs')}" "$@"\n`,
+    `#!/bin/sh\nFAKE_CLAUDE_DELAY_MS="${o.delayMs ?? 0}" FAKE_CLAUDE_LOG="${log}" exec "${process.execPath}" "${path.join(HERE, 'fake-claude.mjs')}" "$@"\n`,
     {
       mode: 0o755,
     },
@@ -89,13 +89,13 @@ export interface Launched {
   errors: string[];
 }
 
-export async function launch(box: Sandbox): Promise<Launched> {
+export async function launch(box: Sandbox, env: Record<string, string> = {}): Promise<Launched> {
   const app = await electron.launch({
     cwd: APP_DIR,
     // В контейнере CI нет прав на песочницу Chromium.
     // «.», а не путь к файлу: от каталога приложения окно ищет промпты ядра, как и при обычном запуске.
     args: [...(process.platform === 'linux' ? ['--no-sandbox'] : []), '.'],
-    env: { ...process.env, PURPLEFLOW_USER_DATA: box.profile, ELECTRON_DISABLE_SECURITY_WARNINGS: '1' } as Record<string, string>,
+    env: { ...process.env, PURPLEFLOW_USER_DATA: box.profile, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', ...env } as Record<string, string>,
   });
   // Системный диалог выбора папки автоматизировать нельзя — на его месте сразу ответ.
   await app.evaluate(({ dialog }, repo) => {

@@ -329,3 +329,36 @@
 .pr-chip.ci-pending .pr-ci {
   color: var(--wait);
 }
+
+/* Предложение обновиться: поверх экрана, но не мешает работе. */
+.update-offer {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  width: 320px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--bg-3);
+  box-shadow: var(--shadow-pop);
+  font-size: 13px;
+  color: var(--text-1);
+}
+.update-offer p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.update-offer .update-offer-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.update-offer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

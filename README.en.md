@@ -1,22 +1,59 @@
-# PurpleFlow — a stage orchestrator for claude and codex, built on OpenSpec
+<div align="center">
 
-[Русский](README.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [MIT](LICENSE) license
+<img src="app/build/icon.png" width="96" height="96" alt="PurpleFlow logo">
 
-> **Status: beta.** The main scenarios are covered by tests, but expect rough edges — start with projects that are easy to roll back, and please report [issues](https://github.com/PurpleSchool/purpleflow/issues).
->
-> | OS | Status |
-> | --- | --- |
-> | macOS | supported: checks and window end-to-end tests in CI, tried by hand |
-> | Linux | supported: checks and window end-to-end tests in CI |
-> | Windows | experimental: core and window checks in CI only, no end-to-end tests or hands-on testing |
+# PurpleFlow
 
-PurpleFlow is a desktop app that walks a coding task through fixed stages: **clarify → plan → approval → implementation → checks → review by another model → acceptance → archive and commit**.
+**Mission control for your AI coding agents**
 
-PurpleFlow has no agent of its own. Each stage runs the CLI you already have installed — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) or [Codex CLI](https://github.com/openai/codex) (`codex`). PurpleFlow handles orchestration, human approval gates and the UI.
+A free desktop app that walks Claude Code and Codex through fixed stages: one agent writes code from a plan you approved, another reviews it, tests and a browser check the result — and you accept what's finished.
 
-Every task is a single [OpenSpec](https://github.com/Fission-AI/OpenSpec) change. By default it runs in its own git worktree on a `purpleflow/<change-id>` branch, so your working copy stays untouched. You decide when to merge, or open a PR straight from the app.
+[![CI](https://github.com/PurpleSchool/purpleflow/actions/workflows/ci.yml/badge.svg)](https://github.com/PurpleSchool/purpleflow/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/PurpleSchool/purpleflow?include_prereleases&color=7c5cff)](https://github.com/PurpleSchool/purpleflow/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7c5cff)](LICENSE)
+![Status: beta](https://img.shields.io/badge/status-beta-e0a458)
+![macOS · Linux · Windows](https://img.shields.io/badge/macOS_·_Linux_·_Windows_(experimental)-3b3d45)
+
+[**Download**](https://github.com/PurpleSchool/purpleflow/releases/latest) · [Getting started](#getting-started) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Русский](README.md)
+
+<img src="docs/screenshots/run-timeline.png" alt="Run screen: task stages on a timeline" width="900">
+
+</div>
 
 > The interface, prompts and code comments are in Russian. Issues and pull requests in English are welcome.
+
+## Why
+
+An agent in a terminal plans on its own, writes on its own and decides on its own that everything works. PurpleFlow separates those roles: **whoever writes the code doesn't accept it**. It has no agent of its own — each stage runs the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex) CLI you already have.
+
+| | Agent in a terminal | PurpleFlow |
+| --- | --- | --- |
+| Models | One for everything | Planner, executor and reviewer, each with its own model |
+| Tests and linter | When the agent feels like it | Required; red tests go back to the executor |
+| Review | None | A different model checks the diff against the plan |
+| Browser check | None | A separate agent looks at the running app |
+| Your part | Reread the whole diff | Approve the plan, accept the result |
+
+## How a task runs
+
+```mermaid
+flowchart LR
+  A[Clarify] --> B[Plan] --> C{{Approve}} --> D[Implement] --> E[Checks] --> F[Review] --> G{{Accept}} --> H[Commit and PR]
+  E -- red tests --> D
+  F -- findings --> D
+  G -- comments --> D
+```
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/gate1-plan.png" alt="Plan approval"></td>
+    <td width="50%"><img src="docs/screenshots/gate2-accept.png" alt="Acceptance: diff and decision"></td>
+  </tr>
+  <tr>
+    <td><b>Plan approval.</b> See what the agent will do before the first line of code.</td>
+    <td><b>Acceptance.</b> The diff, reviewer findings and your line comments, then merge or open a PR.</td>
+  </tr>
+</table>
 
 ## Features
 
@@ -50,6 +87,8 @@ npm run dev
 On first launch the app finds `git`, `claude`, `codex` and `openspec` in your login shell's PATH. You can also point to each tool manually.
 
 The optional PurpleSchool account provides an AI proxy for `claude` and `codex`. Without an account, the agents run on your own subscriptions. To remove the account entirely (sign-in screen, Account and Usage tabs, default proxy URLs), run or build with `PURPLEFLOW_ACCOUNT=off`. Everything provider-specific lives in `app/src/main/provider.ts`.
+
+**Updates and releases.** The app checks GitHub releases on launch and every 6 hours and offers to update; downloading and restarting happen on a button press. To release, run `npm run release -- 0.2.0` from `main`: the tag makes CI build all platforms into a draft release, and users get the update once you publish the draft. This needs a public repository and, for macOS, Developer ID signing secrets (see the Russian README): an unsigned macOS app can't update itself and shows a manual download link instead.
 
 ## Building
 

@@ -12,6 +12,11 @@ extraResources:
     to: prompts
 asarUnpack: []
 npmRebuild: false
+# Канал обновлений: окно читает latest*.yml из опубликованного релиза. Черновики electron-updater не видит.
+publish:
+  provider: github
+  owner: PurpleSchool
+  repo: purpleflow
 mac:
   category: public.app-category.developer-tools
   target:

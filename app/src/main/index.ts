@@ -21,6 +21,8 @@ import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../sha
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
 import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
+import type { UpdateState } from '../shared/update';
+import { downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
@@ -394,28 +396,54 @@ handle('cache:clear', async () => {
 handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined));
 
 let quitting = false;
+/** «Стоп» для всего: убиваем деревья процессов агентов и тестов и само ядро. Зависшее ядро не держит выход дольше 5 секунд. */
+function stopHost(): Promise<void> {
+  return new Promise((finish) => {
+    if (!host) return finish();
+    const id = ++seq;
+    const done = () => {
+      host?.kill();
+      finish();
+    };
+    const t = setTimeout(done, 5000);
+    pending.set(id, {
+      resolve: () => {
+        clearTimeout(t);
+        done();
+      },
+      reject: () => {
+        clearTimeout(t);
+        done();
+      },
+    });
+    host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
+  });
+}
+
 app.on('before-quit', (e) => {
   if (quitting || !host) return;
-  // «Стоп» для всего: перед выходом убиваем деревья процессов агентов и тестов.
   e.preventDefault();
   quitting = true;
-  const id = ++seq;
-  const done = () => {
-    host?.kill();
-    app.quit();
-  };
-  const t = setTimeout(done, 5000);
-  pending.set(id, {
-    resolve: () => {
-      clearTimeout(t);
-      done();
-    },
-    reject: () => {
-      clearTimeout(t);
-      done();
-    },
-  });
-  host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
+  void stopHost().then(() => app.quit());
+});
+
+// Установка началась: ядро уже остановлено. Если установщик откажет, приложение остаётся открытым, и ядро нужно вернуть.
+let installing = false;
+const onUpdateState = (u: UpdateState) => {
+  win?.webContents.send('update:state', u);
+  if (installing && u.kind === 'failed') {
+    installing = false;
+    quitting = false;
+    void startHost().catch(() => {});
+  }
+};
+handle('update:state', () => updateState());
+handle('update:download', () => downloadUpdate(onUpdateState));
+handle('update:install', async () => {
+  installing = true;
+  quitting = true;
+  await stopHost();
+  installUpdate();
 });
 
 handle('notify:test', () => {
@@ -436,6 +464,7 @@ app.whenReady().then(() => {
   if (process.env.PURPLEFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
   void startHost();
   createWindow();
+  startUpdater(onUpdateState);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

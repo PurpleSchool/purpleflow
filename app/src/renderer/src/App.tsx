@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { UpdateOffer } from './components/UpdateOffer';
 import { useActions, useStore } from './lib/store';
 import { NewTaskScreen } from './screens/NewTask';
 import { ProjectScreen } from './screens/projects/ProjectScreen';
@@ -89,6 +90,7 @@ export function App() {
           {v.name === 'chat' && <ChatScreen chatId={v.chatId} initialProject={v.project} />}
         </div>
       </main>
+      <UpdateOffer />
     </div>
   );
 }
