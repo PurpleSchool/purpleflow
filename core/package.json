@@ -1,6 +1,6 @@
 {
   "name": "@purpleflow/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PurpleFlow orchestrator core: stages, gates, agents. No Electron dependencies.",
   "type": "module",
   "main": "./dist/index.js",
