@@ -56,6 +56,12 @@ const bridge: PurpleFlowBridge = {
       ipcRenderer.on('update:state', h);
       return () => ipcRenderer.removeListener('update:state', h);
     },
+    onReveal(fn) {
+      const h = () => fn();
+      ipcRenderer.on('update:reveal', h);
+      return () => ipcRenderer.removeListener('update:reveal', h);
+    },
+    check: () => ipcRenderer.invoke('update:check'),
     download: () => ipcRenderer.invoke('update:download'),
     install: () => ipcRenderer.invoke('update:install'),
   },

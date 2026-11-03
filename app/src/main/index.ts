@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   BrowserWindow,
+  Menu,
   Notification,
   app,
   dialog,
@@ -14,6 +15,7 @@ import {
   utilityProcess,
   webContents,
   type IpcMainInvokeEvent,
+  type MenuItemConstructorOptions,
   type UtilityProcess,
 } from 'electron';
 import type { CoreEvent } from '@purpleflow/core';
@@ -22,7 +24,7 @@ import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
 import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
-import { downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
+import { checkForUpdatesNow, downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
@@ -35,18 +37,20 @@ else {
 // Один экземпляр на профиль: второй при старте принял бы живые процессы прогонов первого за брошенные и убил их.
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
-app.on('second-instance', () => {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
-});
+app.on('second-instance', () => focusWindow());
 
 let win: BrowserWindow | null = null;
 let host: UtilityProcess | null = null;
 let ready: Promise<void> | null = null;
 let seq = 0;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+
+function focusWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
 
 const promptsDir = () =>
   app.isPackaged ? path.join(process.resourcesPath, 'prompts') : path.join(app.getAppPath(), '..', 'core', 'prompts');
@@ -81,11 +85,8 @@ function notify(runId: string, title: string, body: string) {
   if (!s.notify || focused || !Notification.isSupported()) return;
   const n = new Notification({ title, body, silent: true });
   n.on('click', () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-    win.webContents.send('app:go', runId);
+    focusWindow();
+    win?.webContents.send('app:go', runId);
   });
   n.show();
   if (process.platform === 'darwin') app.dock?.bounce('informational');
@@ -200,6 +201,43 @@ function applyMaterial(w: BrowserWindow, m: Material) {
   if (process.platform === 'win32' && materialFor(true) === 'acrylic') w.setBackgroundMaterial(m === 'acrylic' ? 'acrylic' : 'none');
   w.setBackgroundColor(m === 'none' ? OPAQUE_BG : '#00000000');
   w.webContents.send('app:material', m);
+}
+
+/** Стандартное меню Electron плюс «Проверить обновления». На Windows и Linux у окна нет полосы меню: там кнопка есть в настройках. */
+function setupMenu() {
+  const check: MenuItemConstructorOptions = {
+    label: 'Проверить обновления…',
+    click: () => {
+      if (win) focusWindow();
+      else createWindow();
+      checkForUpdates();
+    },
+  };
+  const shared: MenuItemConstructorOptions[] = [{ role: 'fileMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }];
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      process.platform === 'darwin'
+        ? [
+            {
+              label: app.name,
+              submenu: [
+                { role: 'about' },
+                check,
+                { type: 'separator' },
+                { role: 'services' },
+                { type: 'separator' },
+                { role: 'hide' },
+                { role: 'hideOthers' },
+                { role: 'unhide' },
+                { type: 'separator' },
+                { role: 'quit' },
+              ],
+            },
+            ...shared,
+          ]
+        : [...shared, { label: 'Справка', submenu: [check] }],
+    ),
+  );
 }
 
 function createWindow() {
@@ -437,8 +475,14 @@ const onUpdateState = (u: UpdateState) => {
     void startHost().catch(() => {});
   }
 };
+/** Ручная проверка возвращает и скрытое кнопкой «Позже»: пользователь сам спросил про обновление. */
+const checkForUpdates = () => {
+  win?.webContents.send('update:reveal');
+  checkForUpdatesNow();
+};
 handle('update:state', () => updateState());
-handle('update:download', () => downloadUpdate(onUpdateState));
+handle('update:check', () => checkForUpdates());
+handle('update:download', () => downloadUpdate());
 handle('update:install', async () => {
   installing = true;
   quitting = true;
@@ -463,6 +507,7 @@ app.whenReady().then(() => {
   session.fromPartition(PREVIEW_PARTITION).setPermissionRequestHandler((_wc, _p, cb) => cb(false));
   if (process.env.PURPLEFLOW_CAPTURE && process.platform === 'darwin') app.dock?.hide();
   void startHost();
+  setupMenu();
   createWindow();
   startUpdater(onUpdateState);
   app.on('activate', () => {

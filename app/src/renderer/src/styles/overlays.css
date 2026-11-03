@@ -330,17 +330,25 @@
   color: var(--wait);
 }
 
-/* Предложение обновиться: поверх экрана, но не мешает работе. */
+/* Предложение обновиться: сверху окна. Фон задан цветом: --bg-3 в режиме стекла полупрозрачный, и сквозь плашку читался экран. */
 .update-offer {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 60;
-  width: 320px;
+  top: 16px;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  width: min(360px, calc(100vw - 32px));
+  margin-inline: auto;
   padding: 14px 16px;
   border-radius: 14px;
-  background: var(--bg-3);
+  background: #1d1e22;
   box-shadow: var(--shadow-pop);
+  animation: ddIn 0.18s var(--ease) both;
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   font-size: 13px;
   color: var(--text-1);
 }
@@ -352,13 +360,12 @@
 }
 .update-offer .update-offer-note {
   display: block;
-  margin-top: 6px;
+  flex-basis: 100%;
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
 .update-offer-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
+  margin-left: auto;
 }

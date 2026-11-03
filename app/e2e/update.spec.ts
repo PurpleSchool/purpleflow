@@ -8,6 +8,8 @@ let box: Sandbox;
 let l: Launched;
 let feed: http.Server;
 let requested: string[];
+let feedBroken: boolean;
+let latest: string;
 
 const LATEST = `version: 99.0.0
 files:
@@ -21,9 +23,12 @@ releaseDate: '2026-11-03T00:00:00.000Z'
 
 test.beforeEach(async () => {
   requested = [];
+  feedBroken = false;
+  latest = LATEST;
   feed = http.createServer((req, res) => {
     requested.push(req.url ?? '');
-    if (/latest.*\.yml/.test(req.url ?? '')) res.end(LATEST);
+    if (feedBroken) res.writeHead(500).end();
+    else if (/latest.*\.yml/.test(req.url ?? '')) res.end(latest);
     else res.writeHead(404).end();
   });
   await new Promise<void>((r) => feed.listen(0, '127.0.0.1', r));
@@ -50,6 +55,51 @@ test('новая версия в ленте: окно предлагает об�
   expect(requested.some((u) => /latest.*\.yml/.test(u))).toBe(true);
   await offer().getByRole('button', { name: 'Позже' }).click();
   await expect(offer()).toHaveCount(0);
+});
+
+/** Настоящий пункт меню приложения. */
+const clickCheckInMenu = () =>
+  l.app.evaluate(({ Menu }) => {
+    const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined =>
+      items.flatMap((i) => (i.submenu ? [i, ...i.submenu.items] : [i])).find((i) => i.label === 'Проверить обновления…');
+    find(Menu.getApplicationMenu()!.items)!.click();
+  });
+
+test('пункт меню проверяет заново и возвращает скрытое предложение', async () => {
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+  await offer().getByRole('button', { name: 'Позже' }).click();
+  await expect(offer()).toHaveCount(0);
+  await clickCheckInMenu();
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+});
+
+test('ручная проверка сообщает, что версия последняя, и показывает сбой', async () => {
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+  latest = LATEST.replaceAll('99.0.0', '0.0.1');
+  await clickCheckInMenu();
+  await expect(offer()).toContainText('У вас последняя версия');
+  feedBroken = true;
+  await clickCheckInMenu();
+  await expect(offer()).toContainText('Не удалось проверить обновления');
+  await offer().getByRole('button', { name: 'Закрыть' }).click();
+  await expect(offer()).toHaveCount(0);
+});
+
+test('кнопка в настройках запускает ту же проверку: на Windows и Linux меню не видно', async () => {
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+  await offer().getByRole('button', { name: 'Позже' }).click();
+  await l.page.getByRole('button', { name: 'Настройки' }).click();
+  await l.page.getByRole('tab', { name: 'Приложение' }).click();
+  await l.page.getByRole('button', { name: 'Проверить обновления' }).click();
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+});
+
+test('плашка наверху и непрозрачная, даже в режиме стекла', async () => {
+  await expect(offer()).toContainText('Доступна версия 99.0.0');
+  const box = await offer().boundingBox();
+  expect(box!.y).toBeLessThan(40);
+  const bg = await offer().evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).toBe('rgb(29, 30, 34)');
 });
 
 test('готовое обновление предлагает перезапуск, сбой — ручную загрузку', async () => {

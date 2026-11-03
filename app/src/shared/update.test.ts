@@ -31,6 +31,22 @@ test('обновление: сбой фоновой проверки не вид
   assert.equal(nextUpdateState({ kind: 'ready', version: '1.2.0' }, error).kind, 'failed');
 });
 
+test('обновление: ручная проверка показывает результат, фоновая — нет', () => {
+  assert.deepEqual(nextUpdateState({ kind: 'idle' }, { type: 'not-available', version: '1.1.0' }), { kind: 'idle' });
+  const checking = nextUpdateState({ kind: 'idle' }, { type: 'check-started' });
+  assert.deepEqual(checking, { kind: 'checking' });
+  assert.deepEqual(nextUpdateState(checking, { type: 'not-available', version: '1.1.0' }), { kind: 'latest', version: '1.1.0' });
+  assert.deepEqual(nextUpdateState(checking, { type: 'error', message: 'нет сети' }), { kind: 'check-failed', message: 'нет сети' });
+  assert.deepEqual(nextUpdateState(checking, { type: 'available', version: '1.2.0' }), { kind: 'available', version: '1.2.0' });
+});
+
+test('обновление: ручная проверка не сбрасывает начатую загрузку и готовое обновление', () => {
+  const downloading: UpdateState = { kind: 'downloading', version: '1.2.0', percent: 50 };
+  const ready: UpdateState = { kind: 'ready', version: '1.2.0' };
+  assert.deepEqual(nextUpdateState(downloading, { type: 'check-started' }), downloading);
+  assert.deepEqual(nextUpdateState(ready, { type: 'check-started' }), ready);
+});
+
 test('обновление: прогресс и старт загрузки вне своего состояния игнорируются', () => {
   assert.deepEqual(nextUpdateState({ kind: 'idle' }, { type: 'progress', percent: 10 }), { kind: 'idle' });
   assert.deepEqual(nextUpdateState({ kind: 'idle' }, { type: 'download-started' }), { kind: 'idle' });

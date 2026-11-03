@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, RotateCw, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Download, LoaderCircle, RotateCw, TriangleAlert } from 'lucide-react';
 import { RELEASES_URL, type UpdateState } from '../../../shared/update';
 import { bridge } from '../lib/api';
 import { Button } from './ui';
@@ -12,12 +12,17 @@ export function UpdateOffer() {
 
   useEffect(() => {
     void bridge.update.state().then(setS);
-    return bridge.update.onState(setS);
+    const offState = bridge.update.onState(setS);
+    const offReveal = bridge.update.onReveal(() => setHidden(null));
+    return () => {
+      offState();
+      offReveal();
+    };
   }, []);
 
   if (s.kind === 'idle') return null;
   // Отложить можно каждый шаг отдельно: сбой после «Позже» на предложении всё равно должен быть виден.
-  const key = `${s.kind}:${s.version}`;
+  const key = `${s.kind}:${'version' in s ? s.version : ''}`;
   if (hidden === key) return null;
   const later = (label = 'Позже') => (
     <Button tone="quiet" onClick={() => setHidden(key)}>
@@ -39,6 +44,28 @@ export function UpdateOffer() {
 
   return (
     <aside className="update-offer" role="status" aria-label="Обновление">
+      {s.kind === 'checking' && (
+        <p>
+          <LoaderCircle size={15} className="spin" /> Проверяю обновления…
+        </p>
+      )}
+      {s.kind === 'latest' && (
+        <>
+          <p>
+            <CircleCheck size={15} /> У вас последняя версия: {s.version}
+          </p>
+          <div className="update-offer-actions">{later('Закрыть')}</div>
+        </>
+      )}
+      {s.kind === 'check-failed' && (
+        <>
+          <p>
+            <TriangleAlert size={15} /> Не удалось проверить обновления
+          </p>
+          <p className="update-offer-note">{s.message}</p>
+          <div className="update-offer-actions">{later('Закрыть')}</div>
+        </>
+      )}
       {s.kind === 'available' && (
         <>
           <p>
@@ -53,9 +80,12 @@ export function UpdateOffer() {
         </>
       )}
       {s.kind === 'downloading' && (
-        <p>
-          <Download size={15} /> Скачиваю версию {s.version} — {s.percent}%
-        </p>
+        <>
+          <p>
+            <Download size={15} /> Скачиваю версию {s.version} — {s.percent}%
+          </p>
+          <div className="update-offer-actions">{later('Скрыть')}</div>
+        </>
       )}
       {s.kind === 'ready' && (
         <>

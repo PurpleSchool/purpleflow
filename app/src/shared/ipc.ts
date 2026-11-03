@@ -202,6 +202,9 @@ export interface PurpleFlowBridge {
   update: {
     state(): Promise<UpdateState>;
     onState(fn: (s: UpdateState) => void): () => void;
+    /** Пользователь сам запустил проверку: показать снова то, что он скрыл. */
+    onReveal(fn: () => void): () => void;
+    check(): Promise<void>;
     download(): Promise<void>;
     install(): Promise<void>;
   };

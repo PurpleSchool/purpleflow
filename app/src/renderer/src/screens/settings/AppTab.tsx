@@ -1,4 +1,4 @@
-// Вкладка «Приложение»: прозрачность окна, уведомления и место на диске.
+// Вкладка «Приложение»: прозрачность окна, уведомления, обновления и место на диске.
 import { Button } from '../../components/ui';
 import { bridge } from '../../lib/api';
 import { useStore } from '../../lib/store';
@@ -62,6 +62,17 @@ export function AppTab() {
             </button>
           ))}
         </div>
+      </section>
+      <section className="panel">
+        <header className="panel-head">
+          <div>
+            <h2>Обновления</h2>
+            <p>Приложение само проверяет новые версии при запуске и раз в 6 часов. Скачивание и перезапуск — только по вашей кнопке.</p>
+          </div>
+          <Button tone="quiet" onClick={() => void bridge.update.check()}>
+            Проверить обновления
+          </Button>
+        </header>
       </section>
       <StoragePanel />
     </>
