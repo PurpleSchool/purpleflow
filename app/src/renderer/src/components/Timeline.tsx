@@ -3,8 +3,8 @@ import { ChevronRight } from 'lucide-react';
 import type { RunFile, StageId } from '@purpleflow/core';
 import { nodeState, runStages, plannedRoute } from '../lib/stages';
 import { STAGE_ICON } from './StageRail';
-import { activeClock, agentTime, ms } from '../lib/clock';
-import { isGate, stageBars, type BarKind } from '../lib/bars';
+import { activeClock, ms } from '../lib/clock';
+import { stageBars, type BarKind } from '../lib/bars';
 
 const LEGEND: { kind: BarKind; label: string }[] = [
   { kind: 'done', label: 'Работа агента или оркестратора' },
@@ -166,29 +166,6 @@ export function Timeline({
           </li>
         )}
       </ul>
-    </div>
-  );
-}
-
-/** Вкладка «Таймлайн»: итог по времени и большой гант. */
-export function TimelinePanel({ run, onSelect }: { run: RunFile; onSelect: (s: StageId) => void }) {
-  const now = useNow(run);
-  const runs = run.attempts.filter((a) => !isGate(a.stage)).length;
-  return (
-    <div className="scroll">
-      <div className="timeline-panel">
-        <dl className="timeline-sum">
-          <div>
-            <dt>Время агентов</dt>
-            <dd>{ms(agentTime(run, now))}</dd>
-          </div>
-          <div>
-            <dt>Запусков стадий</dt>
-            <dd>{runs}</dd>
-          </div>
-        </dl>
-        <Timeline run={run} onSelect={onSelect} />
-      </div>
     </div>
   );
 }

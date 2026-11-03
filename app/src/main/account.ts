@@ -67,7 +67,11 @@ function tokenEmail(token: string): string {
 
 async function signedIn(token: string | undefined, email: string, name?: string): Promise<AccountResult> {
   if (!token) return { ok: false, error: 'PurpleSchool не вернул токен. Попробуйте ещё раз.' };
-  setAccount({ token, email: tokenEmail(token) || email, name });
+  try {
+    setAccount({ token, email: tokenEmail(token) || email, name });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   // Имя и аватар — не повод проваливать вход: не загрузились сейчас, подтянутся при открытии аккаунта.
   await profile();
   return { ok: true, data: null };
@@ -201,7 +205,11 @@ export async function createKey(): Promise<AccountResult> {
   const r = await authed<ApiKeyView>('POST', '/public/ai-proxy/api-keys', { name: KEY_NAME });
   if (!r.ok) return r;
   if (!r.data?.proxyKey) return { ok: false, error: 'PurpleSchool не вернул ключ. Попробуйте ещё раз.' };
-  setProxyKey(r.data.proxyKey);
+  try {
+    setProxyKey(r.data.proxyKey);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
   return { ok: true, data: null };
 }
 

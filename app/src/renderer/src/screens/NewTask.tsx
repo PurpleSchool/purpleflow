@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Archive, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
 import type { ProjectBranches, Workspace, NextPartDraft } from '@purpleflow/core';
 import { Button, Topbar } from '../components/ui';
@@ -52,9 +52,13 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [cleaning, setCleaning] = useState<'stash' | 'discard' | null>(null);
 
+  /** Выбранная папка: ответ по прошлому проекту, пришедший позже, не должен лечь на новый. */
+  const chosen = useRef<string | null>(null);
   const choose = async (dir: string | null) => {
     if (!dir) return;
+    chosen.current = dir;
     const x = await loadProject(dir);
+    if (chosen.current !== dir) return;
     setP(x);
     setWorkspace(x.workspace);
     setBranches(null);
@@ -84,13 +88,14 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
     setFetching(fetch);
     try {
       const b = await bridge.core.projectBranches(dir, fetch);
+      if (chosen.current !== dir) return;
       setBranches(b);
       const preferred = draft?.baseBranch && b.branches.some((x) => x.name === draft.baseBranch) ? draft.baseBranch : null;
       setBaseBranch((cur) => (cur && b.branches.some((x) => x.name === cur) ? cur : (preferred ?? b.current ?? b.branches[0]?.name ?? '')));
     } catch {
-      setBranches({ branches: [], current: null });
+      if (chosen.current === dir) setBranches({ branches: [], current: null });
     } finally {
-      setFetching(false);
+      if (chosen.current === dir) setFetching(false);
     }
   };
 

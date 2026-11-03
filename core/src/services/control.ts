@@ -32,18 +32,20 @@ export async function control(k: Kernel, id: string, action: ControlAction) {
   const now = new Date().toISOString();
 
   if (action.kind === 'note' || action.kind === 'pause') {
-    before.pending = [
-      ...(before.pending ?? []).filter((p) => !(p.kind === 'pause' && action.kind === 'pause')),
+    // Стадия идёт — правим копию цикла drive: запись только на диск он затёр бы следующим сохранением.
+    const target = k.live.get(id) ?? before;
+    target.pending = [
+      ...(target.pending ?? []).filter((p) => !(p.kind === 'pause' && action.kind === 'pause')),
       { ...action, ...(text ? { text } : {}), at: now } as ControlAction & { at: string },
     ];
-    before.interventions = [...(before.interventions ?? []), { at: now, kind: action.kind, text: text || undefined }];
+    target.interventions = [...(target.interventions ?? []), { at: now, kind: action.kind, text: text || undefined }];
     k.log(
-      before,
+      target,
       c.violet(
         action.kind === 'pause' ? '⏸ пауза перед следующей стадией' : `✎ заметка человека — уйдёт агенту при следующем запуске:\n${text}`,
       ) + '\n',
     );
-    k.save(before);
+    k.save(target);
     return;
   }
 

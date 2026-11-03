@@ -183,6 +183,8 @@ export async function reopenWorkspace(k: Kernel, r: RunFile): Promise<{ git: Git
   } else if (r.worktreeRemoved || !fs.existsSync(r.worktreePath)) {
     await git.addWorktreeAt(r.projectPath, r.worktreePath, r.branch);
     r.worktreeRemoved = undefined;
+    // Сразу на диск: ошибка дальше (pull, слияние) иначе оставит флаг, и следующая попытка упрётся в «already exists».
+    k.save(r);
     copyEnvFiles(k, r);
   }
   const pulled = await git.pullFastForward(r.worktreePath, r.branch);

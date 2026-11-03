@@ -13,7 +13,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx --tsconfig tsconfig.web.json --test \"src/renderer/src/**/*.test.ts\"",
+    "test": "tsx --tsconfig tsconfig.web.json --test \"src/**/*.test.ts\"",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",

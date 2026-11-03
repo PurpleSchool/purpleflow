@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { portEnv } from './net.js';
-import { errorCount, failedTestNames } from './parse.js';
+import { errorCount, failedTestNames, parseReview } from './parse.js';
+import { lineStats } from './reviewdiff.js';
+import { compareWithBase, startNextPhase } from './stages/checks.js';
+import type { Kernel } from './kernel.js';
+import type { RunFile, TestResult } from './types.js';
 
 test('errorCount: ESLint, суммирует несколько пакетов монорепо', () => {
   const out = 'apps/web ...\n✖ 3 problems (2 errors, 1 warning)\n\napps/api ...\n\x1b[31m✖ 191 problems (191 errors, 0 warnings)\x1b[39m';
@@ -133,4 +137,67 @@ test('тесты задачи: команда из «## Checks» proposal.md; «
   assert.equal(parseFocusTests('## Checks\n\n- `pytest tests/audio -q`\n\n## Next Parts\n- `другое`\n'), 'pytest tests/audio -q');
   assert.equal(parseFocusTests('## Checks\n- нет\n\n## Next Parts\n- `npm test`\n'), undefined);
   assert.equal(parseFocusTests('## Why\n`npm test`\n'), undefined);
+});
+
+const fakeKernel = { log: () => {} } as unknown as Kernel;
+const failedCheck = (output: string, command = 't') => ({
+  kind: 'test' as const,
+  command,
+  passed: false,
+  exitCode: 1,
+  durationMs: 1,
+  output,
+});
+const withBase = (output: string) => ({ baseChecks: [failedCheck(output)] }) as unknown as RunFile;
+const resultOf = (output: string) => ({ passed: false, exitCode: 1, checks: [failedCheck(output)] }) as unknown as TestResult;
+
+test('compareWithBase: другой упавший тест при том же счёте — новая поломка', () => {
+  const was = 'not ok 1 - старый тест\n# fail 1\n';
+  const same = compareWithBase(fakeKernel, withBase(was), resultOf(was));
+  assert.equal(same.result.passed, true);
+  assert.equal(same.failed.length, 0);
+  const other = compareWithBase(fakeKernel, withBase(was), resultOf('not ok 1 - новый тест\n# fail 1\n'));
+  assert.equal(other.result.passed, false);
+  assert.equal(other.failed.length, 1);
+});
+
+test('compareWithBase: имён нет — сравнение по числу ошибок; своего эталона нет — блокирует', () => {
+  const run = withBase('Found 2 errors');
+  assert.equal(compareWithBase(fakeKernel, run, resultOf('Found 1 error')).result.passed, true);
+  assert.equal(compareWithBase(fakeKernel, run, resultOf('Found 3 errors')).result.passed, false);
+  assert.equal(compareWithBase(fakeKernel, {} as RunFile, resultOf('Found 1 error')).result.passed, false);
+});
+
+test('errorCount: итог Vitest без двоеточия не подменяется подсчётом строк со словом error', () => {
+  assert.equal(errorCount('Error: boom\nAssertionError: x\nerror y\n Tests  1 failed | 3 passed (4)\n'), 1);
+  assert.equal(errorCount('Tests:       2 failed, 5 passed, 7 total'), 2);
+});
+
+test('parseReview: ответ в последнем блоке кода, перед ним пример кода', () => {
+  const text = 'Смотри:\n```ts\nconst a = { b: 1 };\n```\nИтог:\n```json\n{"blocking":["x"],"notes":[]}\n```';
+  assert.deepEqual(parseReview(text)?.blocking, [{ file: null, line: null, message: 'x' }]);
+});
+
+test('lineStats: добавленная строка «++i» считается, заголовки файла — нет', () => {
+  const diff = 'diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n--i;\n+++i;\n keep\n';
+  assert.deepEqual(lineStats(diff), { add: 1, del: 1 });
+});
+
+test('startNextPhase: этапы большой задачи идут по порядку, последний — false', () => {
+  const r = {
+    mode: 'epic',
+    phase: 1,
+    phases: 2,
+    implAttemptsUsed: 3,
+    implAttemptsLimit: 3,
+    executorSession: 's',
+    next: 'tests',
+  } as unknown as RunFile;
+  assert.equal(startNextPhase(fakeKernel, r), true);
+  assert.equal(r.phase, 2);
+  assert.equal(r.next, 'implement');
+  assert.equal(r.implAttemptsUsed, 0);
+  assert.equal(r.executorSession, undefined);
+  assert.equal(startNextPhase(fakeKernel, r), false);
+  assert.equal(startNextPhase(fakeKernel, { mode: 'task' } as RunFile), false);
 });

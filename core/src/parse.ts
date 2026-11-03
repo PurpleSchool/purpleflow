@@ -1,6 +1,6 @@
 // Разбор ответов агентов и вывода проверок: всё чистое, без ввода-вывода.
 
-import { parseJsonReply } from './json.js';
+import { jsonCandidates, parseJsonReply } from './json.js';
 import type { ClarifyQuestion, ReviewItem } from './types.js';
 
 /** Название изменения от планировщика: первая строка proposal.md вида «# Название». */
@@ -84,7 +84,7 @@ export function errorCount(output: string): number | null {
   const patterns = [
     /✖\s*\d+\s+problems?\s*\((\d+)\s+errors?/g, // ESLint
     /Found (\d+) errors?/g, // tsc
-    /Tests?:\s+(\d+) failed/g, // Jest, Vitest
+    /Tests?:?\s+(\d+) failed/g, // Jest («Tests: 1 failed»), Vitest («Tests  1 failed | 3 passed»)
     /^[ℹ#]\s*fail (\d+)/gm, // node:test, TAP
     /(\d+) failed(?:,| in )/g, // pytest
     /(\d+) failing/g, // mocha
@@ -163,13 +163,7 @@ export function firstLine(s: string): string {
 
 /** Достаём { blocking, notes } даже если модель обернула JSON в текст или ```json. */
 export function parseReview(text: string): { blocking: ReviewItem[]; notes: ReviewItem[] } | null {
-  const candidates: string[] = [text.trim()];
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) candidates.push(fence[1]);
-  const a = text.indexOf('{');
-  const b = text.lastIndexOf('}');
-  if (a >= 0 && b > a) candidates.push(text.slice(a, b + 1));
-  for (const cand of candidates) {
+  for (const cand of jsonCandidates(text)) {
     try {
       const j = JSON.parse(cand);
       if (j && Array.isArray(j.blocking) && Array.isArray(j.notes)) {

@@ -4,7 +4,7 @@ import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
 import { MODE_LIMIT, QUICK_REVIEW_LINES, TEST_FILE } from '../modes.js';
 import { errorCount, failedTestNames } from '../parse.js';
-import { afterChecks, afterReview, reviewInParallel } from '../route.js';
+import { afterChecks, afterReview, epicHasMore, reviewInParallel } from '../route.js';
 import type { BasePrep } from '../runtime.js';
 import { CHECK_NAME, MAX_TEST_OUTPUT, RUN_JSON_GLOB, StopSignal } from '../runtime.js';
 import { getProjectConfig } from '../services/projects.js';
@@ -128,14 +128,21 @@ export async function probeTests(k: Kernel, run: RunFile, check: CheckResult, be
     k.warn(run, `Не удалось проверить тесты на исходном коде (git stash): ${(e as Error).message}`);
     return undefined;
   });
-  if (stash === undefined) return retry;
-  run.baseProbeStash = stash ?? undefined;
+  // Прятать нечего (агент сам закоммитил работу): «исходный код» был бы тем же кодом, и падения выглядели бы унаследованными.
+  if (!stash) return retry;
+  run.baseProbeStash = stash;
   k.save(run);
   let base: CheckResult;
   try {
     base = await runCheck(k, run, 'test', check.command, s.testTimeoutMin, 'на исходном коде, без изменений задачи');
   } finally {
-    if (stash) await git.restoreStash(run.worktreePath, stash);
+    // Не вернулось — baseProbeStash остаётся: «Продолжить» не пойдёт дальше на коде без изменений прогона.
+    await git.restoreStash(run.worktreePath, stash).catch((e) => {
+      throw new Error(
+        `Не удалось вернуть изменения прогона после проверки на исходном коде. Они в git stash (${stash.slice(0, 8)}): ${(e as Error).message}`,
+        { cause: e },
+      );
+    });
     run.baseProbeStash = undefined;
     k.save(run);
   }
@@ -181,7 +188,9 @@ function missingBase(k: Kernel, run: RunFile, withTests: boolean): { lint: boole
   const lint = Boolean(run.lintCommand) && !hasBase(run, 'lint', run.lintCommand!);
   // В баге планировщик уже написал падающий тест: тесты после плана — не «код до задачи».
   const afterBugPlan = run.mode === 'bug' && run.attempts.some((a) => a.stage === 'plan');
-  const cmd = withTests && !afterBugPlan ? iterationTestCommand(k, run) : '';
+  // После возврата к плану код уже с правками агента: снятое на нём — не «до задачи», его падения стали бы «старыми».
+  const afterImplement = run.attempts.some((a) => a.stage === 'implement');
+  const cmd = withTests && !afterBugPlan && !afterImplement ? iterationTestCommand(k, run) : '';
   return { lint, test: cmd && !hasBase(run, 'test', cmd) ? cmd : '' };
 }
 
@@ -344,12 +353,30 @@ export async function settleBaseChecks(k: Kernel, run: RunFile) {
   }
 }
 
+/** Большая задача: следующий этап реализации со свежим запасом попыток. false — этапов больше нет. */
+export function startNextPhase(k: Kernel, run: RunFile): boolean {
+  if (!epicHasMore(run)) return false;
+  run.phase = (run.phase ?? 1) + 1;
+  run.executorSession = undefined;
+  run.implAttemptsUsed = 0;
+  run.implAttemptsLimit = MODE_LIMIT.epic;
+  k.log(run, c.violet(`→ этап ${run.phase} из ${run.phases}`) + '\n');
+  run.next = 'implement';
+  return true;
+}
+
 /** Красная проверка, которая была красной и до задачи и ошибок в ней не прибавилось, не блокирует. */
 export function compareWithBase(k: Kernel, run: RunFile, result: TestResult): { result: TestResult; failed: CheckResult[] } {
   const checks = (result.checks ?? []).map((x) => {
     if (x.passed || x.timedOut) return x;
     const before = run.baseChecks?.find((b) => b.kind === x.kind && b.command === x.command && !b.passed);
     if (!before) return x;
+    // Имена тестов надёжнее числа: задача могла починить один старый тест и сломать другой — счёт тот же.
+    if (x.kind === 'test') {
+      const was = failedTestNames(before.output);
+      const now = failedTestNames(x.output);
+      if (was && now && now.some((t) => !was.includes(t))) return x;
+    }
     const a = errorCount(before.output);
     const b = errorCount(x.output);
     // Посчитать не удалось — сравниваем по коду выхода: тот же код считаем «тем же состоянием».
@@ -510,13 +537,7 @@ export async function stageTests(k: Kernel, run: RunFile) {
   if (result.passed) {
     run.feedback = undefined;
     // Большая задача: следующий этап реализации со свежим запасом попыток.
-    if (run.mode === 'epic' && run.phases && (run.phase ?? 1) < run.phases) {
-      run.phase = (run.phase ?? 1) + 1;
-      run.executorSession = undefined;
-      run.implAttemptsUsed = 0;
-      run.implAttemptsLimit = MODE_LIMIT.epic;
-      k.log(run, c.violet(`→ этап ${run.phase} из ${run.phases}`) + '\n');
-      run.next = 'implement';
+    if (startNextPhase(k, run)) {
       k.save(run);
       return;
     }

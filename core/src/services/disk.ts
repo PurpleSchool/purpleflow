@@ -1,6 +1,7 @@
 // Место на диске: что занимают данные PurpleFlow и что можно почистить.
 import fs from 'node:fs';
 import path from 'node:path';
+import { isInside } from '../files.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
 import { browserLeftovers, screenshots, sizeOfAll, subdirs } from '../storage.js';
@@ -13,7 +14,7 @@ export async function getStorage(k: Kernel): Promise<StorageItem[]> {
   const runs = runsWithFiles(k);
   const wtRoot = k.store.worktreesDir();
   const own = (r: RunFile) =>
-    r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && r.worktreePath.startsWith(wtRoot);
+    r.workspace !== 'branch' && !r.worktreeRemoved && fs.existsSync(r.worktreePath) && isInside(wtRoot, r.worktreePath);
   const ended = (r: RunFile) => r.status === 'finished' || r.status === 'cancelled';
   const done = runs.filter((r) => own(r) && ended(r));
   const active = runs.filter((r) => own(r) && !ended(r));
@@ -82,7 +83,7 @@ export async function cleanStorage(k: Kernel, id: StorageItem['id']): Promise<nu
   if (id === 'worktrees-done') {
     for (const r of runsWithFiles(k)) {
       if (r.workspace === 'branch' || r.worktreeRemoved || !(r.status === 'finished' || r.status === 'cancelled')) continue;
-      if (!r.worktreePath.startsWith(wtRoot) || k.driving.has(r.id)) continue;
+      if (!isInside(wtRoot, r.worktreePath) || k.driving.has(r.id)) continue;
       await stopPreview(k, r.id);
       // Сначала помечаем: дальше run.json пишется только в данные приложения и worktree не пересоздаётся.
       r.worktreeRemoved = true;

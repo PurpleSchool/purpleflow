@@ -64,6 +64,7 @@ export async function launchPreview(
     env: { ...k.opts.env, ...portEnv(runCommand, port), BROWSER: 'none' },
     shell: true,
     group,
+    waitForOutput: true,
     onStdout: tail,
     onStderr: tail,
   });

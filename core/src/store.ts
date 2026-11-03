@@ -161,7 +161,8 @@ export class RunStore {
   }
 
   private pidFile(group: string): string {
-    return path.join(this.dataDir, 'pids', `${group}.json`);
+    // «:» в имени файла на NTFS означал бы альтернативный поток, а не файл.
+    return path.join(this.dataDir, 'pids', `${group.replaceAll(':', '%3A')}.json`);
   }
 
   readPids(group: string): number[] {

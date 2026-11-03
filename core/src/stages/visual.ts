@@ -56,6 +56,7 @@ export async function stageVisual(k: Kernel, run: RunFile) {
     env: { ...k.opts.env, ...portEnv(run.runCommand!, port), BROWSER: 'none', CI: '1' },
     shell: true,
     group: serverGroup,
+    waitForOutput: true,
     onStdout: (t) => {
       serverOut = (serverOut + t).slice(-6000);
       k.log(run, c.dim(crlf(t)), false);

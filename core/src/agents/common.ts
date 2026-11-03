@@ -89,17 +89,19 @@ export function cleanEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 /** Понятное сообщение для типовых сбоев агента. */
 export function explainError(agent: string, raw: string, auth: 'proxy' | 'login' | 'env' = 'proxy'): string {
   const t = raw.toLowerCase();
-  if (/invalid api key|invalid x-api-key|authentication_error|unauthorized|401|not logged in|please run \/login|login required/.test(t)) {
+  if (
+    /invalid api key|invalid x-api-key|authentication_error|unauthorized|\b401\b|not logged in|please run \/login|login required/.test(t)
+  ) {
     if (auth === 'env')
       return `${agent}: ключ из окружения (ANTHROPIC_API_KEY в ~/.zshrc или другом файле шелла) недействителен. Исправьте его или в настройках выберите вход Claude Code.`;
     if (auth === 'login')
       return `${agent}: агент не авторизован. Выполните в терминале «${agent}» и войдите в аккаунт, либо войдите в аккаунт PurpleSchool в настройках.`;
     return `${agent}: прокси PurpleSchool отклонил ключ. Выберите действующий ключ в настройках, во вкладке «Аккаунт».`;
   }
-  if (/credit balance|insufficient|quota|billing|payment required|402|out of (tokens|credits)/.test(t)) {
+  if (/credit balance|insufficient|quota|billing|payment required|\b402\b|out of (tokens|credits)/.test(t)) {
     return `${agent}: закончились токены или кредиты на балансе PurpleSchool.`;
   }
-  if (/rate.?limit|429|overloaded|529/.test(t)) {
+  if (/rate.?limit|\b429\b|overloaded|\b529\b/.test(t)) {
     return `${agent}: превышен лимит запросов или модель перегружена. Повторите позже.`;
   }
   if (/model.*(not found|does not exist|not available|unsupported)|unknown model|invalid model/.test(t)) {

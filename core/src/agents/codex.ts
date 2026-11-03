@@ -175,7 +175,8 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
     };
   if (r.spawnError) return { ok: false, text: '', usage, error: `codex не запустился: ${r.spawnError}` };
   if (r.code !== 0 || (errors.length && !text.trim())) {
-    return { ok: false, text, usage, error: explainError('codex', [...errors, r.stderr].join('\n') || `код выхода ${r.code}`) };
+    const auth = o.proxy?.baseUrl ? 'proxy' : 'login';
+    return { ok: false, text, usage, error: explainError('codex', [...errors, r.stderr].join('\n') || `код выхода ${r.code}`, auth) };
   }
   return { ok: true, text, usage };
 }

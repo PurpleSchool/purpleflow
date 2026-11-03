@@ -259,10 +259,23 @@ export async function checkEnvironment(k: Kernel, repo: string): Promise<EnvChec
     return { ready: false, steps: [], fix: 'Задайте команду запуска приложения и адрес в командах проекта.', at };
   if (k.envChecks.has(key)) throw new Error('Проверка окружения уже идёт');
   k.envChecks.add(key);
+  // Любой выход, и ошибка тоже, снимает отметку: иначе проект «проверяется» до перезапуска приложения.
+  try {
+    return await runEnvCheck(k, key, { ...cfg, runCommand: cfg.runCommand, appUrl: cfg.appUrl }, at);
+  } finally {
+    k.envChecks.delete(key);
+  }
+}
+
+async function runEnvCheck(
+  k: Kernel,
+  key: string,
+  cfg: ProjectConfig & { runCommand: string; appUrl: string },
+  at: string,
+): Promise<EnvCheck> {
   const s = k.opts.getSettings();
   const agent = s.agents?.visual ?? 'claude';
   if (!(await k.hasTool(agent))) {
-    k.envChecks.delete(key);
     return {
       ready: false,
       steps: [],
@@ -290,7 +303,6 @@ export async function checkEnvironment(k: Kernel, repo: string): Promise<EnvChec
       },
     });
   } catch (e) {
-    k.envChecks.delete(key);
     return {
       ready: false,
       url,
@@ -307,6 +319,7 @@ export async function checkEnvironment(k: Kernel, repo: string): Promise<EnvChec
     env: { ...k.opts.env, ...portEnv(cfg.runCommand, port), BROWSER: 'none', CI: '1' },
     shell: true,
     group,
+    waitForOutput: true,
     onStdout: (t) => {
       out = (out + t).slice(-8000);
     },
@@ -394,7 +407,6 @@ export async function checkEnvironment(k: Kernel, repo: string): Promise<EnvChec
     // Dev-сервер мог переписать отслеживаемые артефакты (next-env.d.ts, tsbuildinfo) — рабочая копия остаётся как была.
     const touched = (await git.dirtyFiles(key).catch(() => [] as string[])).filter((f) => !dirtyBefore.has(f) && ARTIFACT_RE.test(f));
     if (touched.length) await git.restoreFromBase(key, 'HEAD', touched).catch(traced('checkEnvironment: restore artifacts'));
-    k.envChecks.delete(key);
   }
 }
 

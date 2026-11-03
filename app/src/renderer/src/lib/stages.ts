@@ -103,9 +103,6 @@ export const runStages = (run: Pick<RunFile, 'mode' | 'visual'> & { attempts?: R
   return rows;
 };
 
-/** Стадии обычной задачи — для мест, где режим не важен. */
-export const STAGES: StageDef[] = stagesFor('task');
-
 export const stageTitle = (run: Pick<RunFile, 'mode' | 'visual'>, id: StageId) =>
   runStages(run).find((s) => s.id === id)?.title ?? BASE[id]?.title ?? id;
 
@@ -143,8 +140,4 @@ export function nodeState(run: RunFile, stage: StageId): NodeState {
   if (a.status === 'failed') return me < cur ? 'done' : 'failed';
   if (a.status === 'stopped') return 'stopped';
   return 'done';
-}
-
-export function attemptsOf(run: RunFile, stage: StageId): StageAttempt[] {
-  return run.attempts.filter((a) => a.stage === stage);
 }

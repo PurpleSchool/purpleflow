@@ -5,6 +5,12 @@ import path from 'node:path';
 
 export const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
+/** Путь внутри каталога. Не startsWith: иначе /data/worktrees-x считался бы частью /data/worktrees. */
+export function isInside(dir: string, p: string): boolean {
+  const rel = path.relative(dir, p);
+  return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 /** Растровое изображение — его можно показать агенту как картинку. */
 export function isImageFile(p: string): boolean {
   return IMAGE_EXT.has(path.extname(p).toLowerCase());

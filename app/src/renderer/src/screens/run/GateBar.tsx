@@ -44,10 +44,13 @@ export function GateBar(props: {
       const fix = () => (hasText || (p.pickedCount ?? 0) > 0 ? p.onFix?.() : setOpen(true));
       e.preventDefault();
       e.stopPropagation();
-      if (p.gate === 'limit') return e.shiftKey ? p.onCancel() : p.onApprove();
+      // Отмена прогона необратима и подсказки у неё нет — только кнопкой.
+      if (p.gate === 'limit') return e.shiftKey ? undefined : p.onApprove();
       if (e.altKey && p.gate === 'gate2' && p.onFix) return fix();
       if (e.shiftKey) return back();
       if (inGateComment && hasText) return p.gate === 'gate2' && p.onFix ? fix() : back();
+      // Принятие молча выбросило бы замечания: ⌘↵, добавивший замечание к строке, легко нажать второй раз.
+      if (hasText) return setOpen(true);
       p.onApprove();
     };
     window.addEventListener('keydown', onKey, true);

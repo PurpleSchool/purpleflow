@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import './styles/tokens.css';
 import './styles/app.css';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { StoreProvider } from './lib/store';
 import { bridge } from './lib/api';
 
@@ -25,7 +26,9 @@ document.documentElement.dataset.material = bridge.material;
 bridge.onMaterial((m) => (document.documentElement.dataset.material = m));
 
 createRoot(document.getElementById('root')!).render(
-  <StoreProvider>
-    <App />
-  </StoreProvider>,
+  <ErrorBoundary>
+    <StoreProvider>
+      <App />
+    </StoreProvider>
+  </ErrorBoundary>,
 );

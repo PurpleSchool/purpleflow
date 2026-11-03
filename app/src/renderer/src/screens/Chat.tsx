@@ -154,9 +154,12 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
 
   const queued = Boolean(chat?.messages.some((m) => m.queued));
 
+  /** Текст очищается только после ответа ядра — без этого двойной Enter отправил бы сообщение дважды. */
+  const sending = useRef(false);
   const send = async (override?: string) => {
     const t = (override ?? text).trim();
-    if (!t && !files.length) return;
+    if ((!t && !files.length) || sending.current) return;
+    sending.current = true;
     setError(null);
     stick.current = true;
     try {
@@ -175,6 +178,8 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
       if (!chat) go({ name: 'chat', chatId: id });
     } catch (e) {
       setError(cleanErr(e));
+    } finally {
+      sending.current = false;
     }
   };
 

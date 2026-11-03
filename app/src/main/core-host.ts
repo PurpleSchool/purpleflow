@@ -21,9 +21,15 @@ port.on('message', async (e: { data: HostRequest }) => {
     settings = msg.settings as CoreSettings;
     const env = loadLoginShellEnv(process.env);
     core = new Orchestrator({ dataDir: msg.dataDir, promptsDir: msg.promptsDir, env, getSettings: () => settings });
-    await core.recover();
+    // Подписка до восстановления: события recover не должны теряться.
     core.on((event) => send({ kind: 'event', event }));
     methods = api(core);
+    try {
+      await core.recover();
+    } catch (err) {
+      // Прогоны не восстановились — но остальное работает, а вызовы окна не должны висеть вечно.
+      console.error('[core-host] recover', err);
+    }
     send({ kind: 'ready' });
     return;
   }

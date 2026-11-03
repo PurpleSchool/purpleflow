@@ -72,3 +72,18 @@ test('projectStats: первый раз, возвраты, время агент
   assert.equal(s.byMode.find((m) => m.mode === 'bug')?.total, 1);
   assert.equal(s.daily.at(-1)?.started, 3);
 });
+
+test('projectStats: перевод часов не теряет день в графике', () => {
+  const tz = process.env.TZ;
+  process.env.TZ = 'America/New_York';
+  try {
+    // 8 марта 2026 — перевод на летнее время, сутки короче на час.
+    const s = projectStats([], new Date(2026, 2, 9, 0, 30).getTime(), 5);
+    const keys = s.daily.map((d) => d.day);
+    assert.equal(new Set(keys).size, 5);
+    assert.deepEqual(keys, ['2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08', '2026-03-09']);
+  } finally {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  }
+});

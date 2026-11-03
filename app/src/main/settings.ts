@@ -65,7 +65,15 @@ function load(): StoredSettings {
       agents: { ...DEFAULTS.agents, ...raw.agents },
       toolPaths: { ...raw.toolPaths },
     };
-  } catch {
+  } catch (e) {
+    // Нет файла — первый запуск. Битый файл откладываем: следующая запись иначе сотрёт токен и ключи насовсем.
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      try {
+        fs.copyFileSync(file(), `${file()}.broken-${Date.now()}`);
+      } catch {
+        /* не вышло — остаёмся на настройках по умолчанию */
+      }
+    }
     cache = structuredClone(DEFAULTS);
   }
   return cache;
@@ -74,7 +82,10 @@ function load(): StoredSettings {
 function persist(s: StoredSettings) {
   cache = s;
   fs.mkdirSync(path.dirname(file()), { recursive: true });
-  fs.writeFileSync(file(), JSON.stringify(s, null, 2));
+  // Через временный файл: падение посреди записи не оставит обрезанный JSON.
+  const tmp = `${file()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+  fs.renameSync(tmp, file());
 }
 
 /** Ключ прокси и токен аккаунта хранятся только зашифрованными через safeStorage (Keychain / DPAPI / libsecret). */

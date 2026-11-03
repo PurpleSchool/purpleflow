@@ -10,6 +10,7 @@ import type { Kernel } from './kernel.js';
 import { RUN_VERSION } from './migrate.js';
 import { MODE_FIRST, MODE_LIMIT } from './modes.js';
 import { killGroup, killPid } from './proc.js';
+import { isInside } from './files.js';
 import { afterChecks } from './route.js';
 import { IMPL_LIMIT, StopSignal } from './runtime.js';
 import { attachmentsDir, saveAttachments } from './services/attachments.js';
@@ -19,7 +20,7 @@ import { getProjectConfig } from './services/projects.js';
 import { runsWithFiles } from './services/runs.js';
 import { copyEnvFiles, ensureOnBranch, prepareWorkspace } from './services/workspace.js';
 import { isGate } from './stage-info.js';
-import { needsReview, stageBaseline, stageTests } from './stages/checks.js';
+import { needsReview, stageBaseline, stageTests, startNextPhase } from './stages/checks.js';
 import { stageFinish } from './stages/finish.js';
 import { stageImplement } from './stages/implement.js';
 import { stageClarify, stagePlan } from './stages/plan.js';
@@ -225,24 +226,47 @@ export async function launchQueued(k: Kernel, run: RunFile) {
   run.status = 'running';
   run.message = undefined;
   k.save(run);
+  k.preparing.add(run.id);
   try {
     if (run.workspacePending) await prepareWorkspace(k, run);
     // Продолжение после перезапуска приложения: в режиме «ветка» проект могли переключить на другую ветку.
     else await ensureOnBranch(k, run);
+    if (k.stopping.delete(run.id)) return k.markStopped(run, 'Остановлено пользователем');
   } catch (e) {
+    if (k.stopping.delete(run.id)) return k.markStopped(run, 'Остановлено пользователем');
     run.status = 'stopped';
     run.message = `Не удалось начать прогон: ${(e as Error).message}`;
     k.save(run);
     k.emit({ type: 'run.finished', runId: run.id, status: 'stopped', message: run.message });
     return;
+  } finally {
+    k.preparing.delete(run.id);
   }
   void drive(k, run);
+}
+
+/** Проверка на исходном коде не смогла вернуть изменения прогона: без них продолжать нельзя — в коммит ушло бы пустое место. */
+async function restoreProbeStash(k: Kernel, r: RunFile) {
+  const sha = r.baseProbeStash!;
+  const git = new Git((await k.tools(['git'])).git, k.opts.env);
+  try {
+    await git.restoreStash(r.worktreePath, sha);
+  } catch (e) {
+    throw new Error(
+      `Изменения прогона лежат в git stash (${sha.slice(0, 8)}) и не возвращаются: ${(e as Error).message}\nУберите мешающие правки в рабочей копии и нажмите «Продолжить» снова.`,
+      { cause: e },
+    );
+  }
+  r.baseProbeStash = undefined;
+  k.save(r);
 }
 
 export async function resume(k: Kernel, id: string) {
   if (k.driving.has(id)) return;
   const r = k.mustLoad(id);
   if (r.status === 'finished' || r.status === 'cancelled') throw new Error('Прогон уже завершён');
+  if (k.preparing.has(id)) return;
+  if (r.baseProbeStash) await restoreProbeStash(k, r);
   // Из очереди или не начавшийся — «Запустить сейчас», без оглядки на лимит одновременных прогонов.
   if (r.status === 'queued' || r.workspacePending) return launchQueued(k, r);
   await ensureOnBranch(k, r);
@@ -268,10 +292,10 @@ export async function stop(k: Kernel, id: string) {
   k.basePrep.delete(id);
   await killGroup(`${id}:server`);
   await stopPreview(k, id);
-  if (k.driving.has(id)) {
+  if (k.driving.has(id) || k.preparing.has(id)) {
     k.stopping.add(id);
     await killGroup(id);
-    return; // цикл drive сам зафиксирует остановку
+    return; // цикл drive (или launchQueued) сам зафиксирует остановку
   }
   await killGroup(id);
   if (r.status === 'running' || r.status === 'waiting') {
@@ -335,8 +359,11 @@ export async function skipChecks(k: Kernel, id: string) {
   k.log(r, c.amber('↷ проверки пропущены человеком — дальше ревью') + '\n');
   r.feedback = undefined;
   r.message = undefined;
-  r.mergeOnly = undefined;
-  r.next = afterChecks(r, await needsReview(k, r));
+  // Большая задача: пропуск проверок этапа не должен терять остальные этапы.
+  if (!startNextPhase(k, r)) {
+    r.next = afterChecks(r, await needsReview(k, r));
+    r.mergeOnly = undefined;
+  }
   r.status = 'running';
   k.save(r);
   void drive(k, r);
@@ -345,11 +372,14 @@ export async function skipChecks(k: Kernel, id: string) {
 export async function drive(k: Kernel, run: RunFile) {
   if (k.driving.has(run.id)) return;
   k.driving.add(run.id);
+  k.live.set(run.id, run);
   k.stopping.delete(run.id);
   // Продолжение старого прогона: файлов окружения в worktree могло ещё не быть.
   copyEnvFiles(k, run);
   try {
     while (run.status === 'running') {
+      // «Стоп» между стадиями убивать некого — иначе он потерялся бы, а следующая стадия пошла как ни в чём не бывало.
+      k.checkStop(run);
       if (isGate(run.next)) {
         waitGate(k, run, run.next as GateId, gateMessage(k, run));
         break;
@@ -390,6 +420,7 @@ export async function drive(k: Kernel, run: RunFile) {
     }
   } finally {
     k.driving.delete(run.id);
+    k.live.delete(run.id);
     k.stopping.delete(run.id);
     // Место освободилось (гейт, конец, ошибка) — следующий из очереди.
     void pump(k);
@@ -412,18 +443,20 @@ export async function deleteRun(k: Kernel, id: string, deleteBranch: boolean) {
         `Проект сейчас на ветке ${r.branch} — переключитесь на другую (git checkout ${r.originalBranch ?? 'main'}), чтобы удалить её, или удалите прогон без ветки.`,
       );
   }
-  if (k.driving.has(id)) {
+  if (k.driving.has(id) || k.preparing.has(id)) {
     k.stopping.add(id);
     await killGroup(id);
     // drive сам выйдет из цикла; ждём, пока отпустит прогон.
-    for (let i = 0; i < 100 && k.driving.has(id); i++) await new Promise((res) => setTimeout(res, 100));
+    for (let i = 0; i < 100 && (k.driving.has(id) || k.preparing.has(id)); i++) await new Promise((res) => setTimeout(res, 100));
   }
+  // Стадия могла не успеть выйти (её finally бывает долгим): её запоздалое сохранение не должно вернуть прогон в список.
+  k.deleted.add(id);
   await killGroup(id);
   await killGroup(`${id}:server`);
   await killGroup(`${id}:manager`);
   await stopPreview(k, id);
   if (r) {
-    if (r.workspace !== 'branch' && fs.existsSync(r.worktreePath))
+    if (r.workspace !== 'branch' && isInside(k.store.worktreesDir(), r.worktreePath) && fs.existsSync(r.worktreePath))
       await git.removeWorktree(r.projectPath, r.worktreePath).catch(traced('deleteRun: worktree'));
     if (deleteBranch) await git.deleteBranch(r.projectPath, r.branch).catch(traced('deleteRun: branch'));
   }

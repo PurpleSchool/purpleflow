@@ -39,18 +39,37 @@ export interface FileDiff {
 export function lineStats(text: string): { add: number; del: number } {
   let add = 0;
   let del = 0;
+  // До первого @@ — заголовки файла. Внутри правок строка кода «++i» выглядит как «+++i» и должна считаться.
+  let inHunk = false;
   for (const l of text.split('\n')) {
-    if (l.startsWith('+') && !l.startsWith('+++')) add++;
-    else if (l.startsWith('-') && !l.startsWith('---')) del++;
+    if (l.startsWith('diff --git ')) inHunk = false;
+    else if (l.startsWith('@@')) inHunk = true;
+    else if (inHunk && l.startsWith('+')) add++;
+    else if (inHunk && l.startsWith('-')) del++;
   }
   return { add, del };
+}
+
+/**
+ * Путь файла из секции диффа. Строки +++/--- точнее заголовка: в «diff --git a/x y b/x y» с пробелами не видно границы.
+ * Заголовок — только для секций без них (смена режима, двоичный файл).
+ */
+function diffPath(text: string): string {
+  const unquote = (s: string) => s.replace(/\t$/, '').replace(/^"|"$/g, '');
+  const line = text.match(/^\+\+\+ "?b\/(.+)$/m) ?? text.match(/^rename to (.+)$/m) ?? text.match(/^--- "?a\/(.+)$/m);
+  if (line) return unquote(line[1]);
+  const header = text.split('\n', 1)[0].slice('diff --git '.length);
+  // Одно и то же имя с обеих сторон: «a/ИМЯ b/ИМЯ» — граница ровно посередине.
+  const name = header.slice(2, (header.length - 1) / 2);
+  if (header === `a/${name} b/${name}`) return name;
+  return header.match(/^a\/(.+?) b\//)?.[1] ?? '';
 }
 
 export function splitDiff(diff: string): FileDiff[] {
   return diff
     .split(/^(?=diff --git )/m)
     .filter((c) => c.startsWith('diff --git '))
-    .map((text) => ({ path: text.match(/^diff --git a\/(.+?) b\//)?.[1] ?? '', text }));
+    .map((text) => ({ path: diffPath(text), text }));
 }
 
 const CODE = /\.(m?[jt]sx?|cjs|py|go|rs|java|kt|kts|swift|rb|php|cs|cpp|cc|c|h|hpp|scala|ex|exs|vue|svelte|sql|prisma|graphql|gql|sh|tf)$/i;

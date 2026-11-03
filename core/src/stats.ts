@@ -2,7 +2,6 @@
 import type { ProjectStats, RunFile, RunMode, StageId } from './types.js';
 
 const GATES = new Set<StageId>(['gate0', 'gate1', 'gate2', 'limit']);
-const DAY = 86_400_000;
 
 const dayKey = (t: number) => {
   const d = new Date(t);
@@ -47,7 +46,9 @@ export function projectStats(runs: RunFile[], now = Date.now(), days = 28): Proj
   const daily = new Map<string, { started: number; finished: number }>();
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
-  for (let i = days - 1; i >= 0; i--) daily.set(dayKey(today.getTime() - i * DAY), { started: 0, finished: 0 });
+  // Через календарь, а не 24 часа: в день перевода часов сутки короче или длиннее.
+  for (let i = days - 1; i >= 0; i--)
+    daily.set(dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i).getTime()), { started: 0, finished: 0 });
   for (const r of runs) {
     const s = daily.get(dayKey(Date.parse(r.createdAt)));
     if (s) s.started++;

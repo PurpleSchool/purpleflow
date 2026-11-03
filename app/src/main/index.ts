@@ -19,6 +19,7 @@ import type { CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
+import { isLocalUrl, isSameDocument, isWebUrl } from './urls';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
@@ -98,12 +99,20 @@ function attention(e: CoreEvent) {
     notify(e.runId, 'Прогон остановлен', `${title()}: ${e.message.slice(0, 160)}`);
 }
 
+let restartDelay = 0;
+let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
 function startHost(): Promise<void> {
+  const startedAt = Date.now();
   host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), [], { serviceName: 'PurpleFlow Core', stdio: 'inherit' });
-  ready = new Promise((resolve) => {
+  let failStart: (e: Error) => void = () => {};
+  ready = new Promise((resolve, reject) => {
+    failStart = reject;
     host!.on('message', (m: HostMessage) => {
-      if (m.kind === 'ready') resolve();
-      else if (m.kind === 'event') {
+      if (m.kind === 'ready') {
+        restartDelay = 0;
+        resolve();
+      } else if (m.kind === 'event') {
         win?.webContents.send('core:event', m.event);
         attention(m.event);
       } else if (m.kind === 'reply') {
@@ -119,8 +128,15 @@ function startHost(): Promise<void> {
     for (const p of pending.values()) p.reject(new Error(`Процесс ядра завершился (код ${code})`));
     pending.clear();
     host = null;
-    // Ядро упало — поднимаем заново; прогоны восстановятся из run.json.
-    if (!quitting) void startHost();
+    // Вызовы, ждущие запуска этого процесса, иначе не завершились бы никогда.
+    failStart(new Error(`Процесс ядра завершился при запуске (код ${code})`));
+    if (quitting) return;
+    // Ядро упало — поднимаем заново; прогоны восстановятся из run.json. Падает сразу — не крутимся в холостую.
+    restartDelay = Date.now() - startedAt < 10_000 ? Math.min(30_000, restartDelay * 2 || 1000) : 0;
+    restartTimer = setTimeout(() => {
+      restartTimer = null;
+      if (!quitting && !host) void startHost().catch(() => {});
+    }, restartDelay);
   });
   const init: HostRequest = {
     kind: 'init',
@@ -129,10 +145,15 @@ function startHost(): Promise<void> {
     settings: coreSettings(),
   };
   host.postMessage(init);
+  ready.catch(() => {});
   return ready;
 }
 
 async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
   if (!host) await startHost();
   await ready;
   const id = ++seq;
@@ -204,8 +225,15 @@ function createWindow() {
     else win?.show();
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) void shell.openExternal(url);
+    if (isWebUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // Ссылка из Markdown (комментарий PR, ответ агента) или брошенный на окно файл не должны заменять приложение:
+  // чужая страница получила бы window.purpleflow со всеми правами окна.
+  win.webContents.on('will-navigate', (ev, url) => {
+    if (isSameDocument(url, win?.webContents.getURL() ?? '')) return;
+    ev.preventDefault();
+    if (isWebUrl(url)) void shell.openExternal(url);
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -275,15 +303,6 @@ ipcMain.handle('dialog:file', async () => {
 // ——— Вкладка «Браузер»: приложение проекта во встроенном webview ———
 
 const PREVIEW_PARTITION = 'purpleflow-preview';
-const isLocalUrl = (u: string) => {
-  try {
-    const { protocol, hostname } = new URL(u);
-    return /^https?:$/.test(protocol) && ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
-  } catch {
-    return false;
-  }
-};
-
 app.on('web-contents-created', (_e, contents) => {
   // webview — только для приложения проекта: без preload и Node, в своей сессии, только локальные адреса.
   contents.on('will-attach-webview', (ev, prefs, params) => {
@@ -298,15 +317,17 @@ app.on('web-contents-created', (_e, contents) => {
   if (contents.getType() === 'webview') {
     contents.setWindowOpenHandler(({ url }) => {
       if (isLocalUrl(url)) void contents.loadURL(url);
-      else if (/^https?:/.test(url)) void shell.openExternal(url);
+      else if (isWebUrl(url)) void shell.openExternal(url);
       return { action: 'deny' };
     });
-    contents.on('will-navigate', (ev, url) => {
-      if (!isLocalUrl(url)) {
-        ev.preventDefault();
-        if (/^https?:/.test(url)) void shell.openExternal(url);
-      }
-    });
+    const keepLocal = (ev: { preventDefault: () => void }, url: string) => {
+      if (isLocalUrl(url)) return;
+      ev.preventDefault();
+      if (isWebUrl(url)) void shell.openExternal(url);
+    };
+    contents.on('will-navigate', keepLocal);
+    // Редирект с локального адреса наружу will-navigate не ловит.
+    contents.on('will-redirect', keepLocal);
   }
 });
 

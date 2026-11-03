@@ -1,9 +1,10 @@
 // Черновик настроек, общий для вкладок «Инструменты» и «Модели»: правки копятся здесь и уходят одним «Сохранить».
 import type { AgentKind, ConnectionCheck, Models, Role, ToolName } from '@purpleflow/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { bridge } from '../../lib/api';
 import { useStore } from '../../lib/store';
 import { toolNeeded } from '../../lib/tools';
+import { rebase } from './rebase';
 
 export type SettingsDraft = ReturnType<typeof useSettingsDraft>;
 
@@ -26,14 +27,19 @@ export function useSettingsDraft() {
   const [checks, setChecks] = useState<ConnectionCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const seen = useRef(s);
+  const first = useRef(true);
   useEffect(() => {
     if (!s) return;
-    setModels(s.models);
-    setAgents(s.agents);
-    setPaths(s.toolPaths);
-    setAgentTimeout(s.agentTimeoutMin);
-    setTestTimeout(s.testTimeoutMin);
-    setParallel(s.maxParallel ?? 2);
+    const prev = first.current ? undefined : (seen.current ?? undefined);
+    first.current = false;
+    seen.current = s;
+    setModels((d) => rebase(d, prev?.models, s.models));
+    setAgents((d) => rebase(d, prev?.agents, s.agents));
+    setPaths((d) => rebase(d, prev?.toolPaths, s.toolPaths));
+    setAgentTimeout((d) => rebase(d, prev?.agentTimeoutMin, s.agentTimeoutMin));
+    setTestTimeout((d) => rebase(d, prev?.testTimeoutMin, s.testTimeoutMin));
+    setParallel((d) => rebase(d, prev ? (prev.maxParallel ?? 2) : undefined, s.maxParallel ?? 2));
   }, [s]);
 
   const flashSaved = () => {

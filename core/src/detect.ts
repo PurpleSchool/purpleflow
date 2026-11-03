@@ -124,11 +124,12 @@ export function checkCommand(repo: string, command: string): CommandIssue[] {
     else if (
       (words[0] === 'pnpm' || words[0] === 'yarn') &&
       words[1] &&
-      !['install', 'add', 'exec', 'dlx', 'i', 'remove', 'run'].includes(words[1])
+      !['install', 'add', 'exec', 'dlx', 'i', 'remove', 'run', 'workspace', 'workspaces'].includes(words[1])
     )
       script = words[1];
     else if ((words[0] === 'pnpm' || words[0] === 'yarn') && words[1] === 'run' && words[2]) script = words[2];
-    if (!script) continue;
+    // Флаг вместо имени («pnpm --filter web dev», «npm run -w web build») — какой пакет имеется в виду, отсюда не понять.
+    if (!script || script.startsWith('-')) continue;
     const pkgFile = path.join(repo, cwd, 'package.json');
     let scripts: Record<string, string>;
     try {

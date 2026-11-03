@@ -1,5 +1,5 @@
 import type { RunFile, StageAttempt, StageId } from '@purpleflow/core';
-import type { ActiveClock } from './clock';
+import { GATES, type ActiveClock } from './clock';
 import { duration } from './format';
 import { limitRow, stageTitle } from './stages';
 
@@ -15,7 +15,6 @@ export interface Bar {
   tip: string;
 }
 
-const GATES: StageId[] = ['gate0', 'gate1', 'gate2', 'limit'];
 export const isGate = (s: StageId) => GATES.includes(s);
 
 /** Строка попытки: «limit» — в строке стадии, которая не пропустила дальше; ответы на вопросы — в уточнении. */

@@ -408,6 +408,169 @@ test(
   },
 );
 
+test(
+  'управление: заметка и пауза, отправленные во время идущей стадии, не теряются',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const fake = fakeClaude({
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    // Агент «работает», пока тест не разрешит закончить: команды приходят посреди стадии.
+    let inStage: (role: 'plan' | 'impl') => void = () => {};
+    const stageStarted = (role: 'plan' | 'impl') => new Promise<void>((res) => (inStage = (r) => r === role && res()));
+    let release = () => {};
+    const hold = () => new Promise<void>((res) => (release = res));
+    const blocked = {
+      ...fake,
+      fn: async (o: Parameters<typeof fake.fn>[0]) => {
+        const sys = o.systemPrompt ?? '';
+        const role = /планировщик/.test(sys) ? 'plan' : /исполнитель/.test(sys) ? 'impl' : null;
+        if (role) {
+          const wait = hold();
+          inStage(role);
+          await wait;
+        }
+        return fake.fn(o);
+      },
+    };
+    const core = makeCore(blocked);
+    const planning = stageStarted('plan');
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    await planning;
+    await core.dispatch({ type: 'run.control', runId, action: { kind: 'note', text: 'назови параметры x и y' } });
+    release();
+    let r = await untilGate(core, runId, 'gate1');
+    assert.equal(r.pending?.length, 1, 'заметка пережила сохранения стадии');
+    assert.equal(r.interventions?.length, 1);
+
+    const implementing = stageStarted('impl');
+    await core.dispatch({ type: 'gate.approve', runId });
+    await implementing;
+    assert.match(fake.prompts().join('') + (await core.getRun(runId))!.feedback?.text, /назови параметры x и y/);
+    await core.dispatch({ type: 'run.control', runId, action: { kind: 'pause' } });
+    release();
+    for (let i = 0; i < 300 && (await core.getRun(runId))!.status === 'running'; i++) await new Promise((res) => setTimeout(res, 100));
+    r = (await core.getRun(runId))!;
+    assert.equal(r.status, 'stopped');
+    assert.match(r.message ?? '', /Пауза/);
+    assert.equal(r.next, 'tests');
+    assert.equal(r.pending, undefined);
+  },
+);
+
+test('удаление: запоздалое сохранение из стадии не возвращает прогон', { skip: !hasOpenspec, timeout: 120_000 }, async () => {
+  const repo = makeRepo();
+  const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
+  const core = makeCore(fake);
+  const { runId } = await core.dispatch({
+    type: 'run.start',
+    input: { projectPath: repo, task: 'Задача', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never,
+  });
+  const r = await untilGate(core, runId, 'gate1');
+  const k = (core as unknown as { kernel: { save: (x: RunFile) => void; store: { load: (id: string) => RunFile | null } } }).kernel;
+  await core.dispatch({ type: 'run.delete', runId } as never);
+  k.save(r);
+  assert.equal(k.store.load(runId), null);
+  assert.ok(!(await core.listRuns()).some((x) => x.id === runId));
+});
+
+test(
+  'продолжение: пока изменения прогона в stash и не возвращаются, дальше не идём; вернулись — идём',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: { projectPath: repo, task: 'Задача', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    const k = (core as unknown as { kernel: { save: (x: RunFile) => void; store: { load: (id: string) => RunFile } } }).kernel;
+    const run = k.store.load(runId);
+    run.status = 'stopped';
+    // Несуществующий stash: возврат заведомо не удастся.
+    run.baseProbeStash = '0'.repeat(40);
+    k.save(run);
+    await assert.rejects(core.dispatch({ type: 'run.resume', runId } as never), /git stash/);
+    assert.equal(k.store.load(runId).status, 'stopped');
+    assert.ok(k.store.load(runId).baseProbeStash);
+
+    // Настоящий stash возвращается, и прогон идёт дальше.
+    const file = path.join(run.worktreePath, 'src/math.js');
+    fs.appendFileSync(file, '// работа прогона\n');
+    const g = (...a: string[]) => execFileSync('git', a, { cwd: run.worktreePath }).toString().trim();
+    g('stash', 'push', '-m', 'проба', '--', 'src/math.js');
+    run.baseProbeStash = g('stash', 'list', '--format=%H').split('\n')[0];
+    k.save(run);
+    await core.dispatch({ type: 'run.resume', runId } as never);
+    assert.match(fs.readFileSync(file, 'utf8'), /работа прогона/);
+    assert.equal(k.store.load(runId).baseProbeStash, undefined);
+  },
+);
+
+test(
+  'завершение: приёмка — коммит в ветке с архивом OpenSpec, файлы окружения не в коммите; затем слияние',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = makeRepo();
+    fs.writeFileSync(path.join(repo, '.env'), 'SECRET=1\n');
+    const fake = fakeClaude({
+      implement: (_n, cwd) =>
+        fs.writeFileSync(path.join(cwd, 'src/math.js'), 'export const add = (a, b) => a + b;\nexport const mul = (a, b) => a * b;\n'),
+      review: () => ({ blocking: [], notes: [] }),
+    });
+    const core = makeCore(fake);
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: { projectPath: repo, task: 'Добавь mul', testCommand: 'node --test', mode: 'task', workspace: 'worktree' } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    await core.dispatch({ type: 'gate.approve', runId });
+    await untilGate(core, runId, 'gate2');
+    await core.dispatch({ type: 'gate.approve', runId });
+    let r = (await core.getRun(runId))!;
+    for (let i = 0; i < 300 && r.status !== 'finished'; i++) {
+      assert.notEqual(r.status, 'stopped', r.message);
+      await new Promise((res) => setTimeout(res, 100));
+      r = (await core.getRun(runId))!;
+    }
+    assert.equal(r.status, 'finished');
+    assert.ok(r.commit);
+    assert.ok(r.archivedPath && fs.existsSync(r.archivedPath), 'run.json в архиве изменения');
+
+    const g = (...a: string[]) => execFileSync('git', a, { cwd: repo }).toString();
+    const changed = g('show', '--name-only', '--format=', r.commit).split('\n');
+    assert.ok(changed.includes('src/math.js'));
+    assert.ok(changed.some((f) => f.startsWith('openspec/changes/archive/')));
+    assert.ok(!changed.includes('.env'), 'секреты разработчика не попадают в коммит');
+    assert.match(g('log', '-1', '--format=%B', r.commit), /PurpleFlow run: /);
+    assert.match(g('show', 'main:src/math.js'), /^export const add = \(a, b\) => a \+ b;\n$/, 'до слияния основная ветка не тронута');
+
+    // Дифф завершённого прогона — из ветки: тот же файл, без служебного run.json.
+    const diff = await core.getDiff(runId);
+    assert.ok(diff.some((f) => f.path === 'src/math.js'));
+    assert.ok(!diff.some((f) => f.path.endsWith('/run.json')));
+
+    await core.dispatch({ type: 'run.merge', runId, target: 'main' });
+    r = (await core.getRun(runId))!;
+    assert.equal(r.merged?.into, 'main');
+    assert.match(g('show', 'main:src/math.js'), /mul/);
+  },
+);
+
 test('менеджер: разбор ответа модели — JSON с действием, JSON в блоке кода, просто текст', () => {
   assert.deepEqual(parseReply('{"reply": "Верну к плану.", "action": {"kind": "replan", "text": "без mul"}}'), {
     reply: 'Верну к плану.',

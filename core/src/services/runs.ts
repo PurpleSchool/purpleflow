@@ -18,6 +18,7 @@ export async function getDiff(k: Kernel, id: string): Promise<DiffFile[]> {
   const tools = await k.tools(['git']);
   const git = new Git(tools.git, k.opts.env);
   const skip = diffSkip(k, r);
+  if (r.worktreeRemoved && r.status !== 'finished') return [];
   // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
   if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
   return git.diff(r.worktreePath, diffBase(k, r), skip);

@@ -139,6 +139,10 @@ export function DiffReview({
   const [draftLine, setDraftLine] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
+  const [editor, setEditor] = useState<monaco.editor.IStandaloneDiffEditor | null | null>(null);
+  // onMouseDown вешается один раз на редактор, а режим меняется: приёмка может наступить при открытом файле.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const zones = useRef<string[]>([]);
   const decos = useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
@@ -207,7 +211,7 @@ export function DiffReview({
 
   // Замечания — карточки прямо под строкой (view zones) + метки на полях.
   useEffect(() => {
-    const ed = editorRef.current?.getModifiedEditor();
+    const ed = editor?.getModifiedEditor();
     if (!ed) return;
     ed.changeViewZones((acc) => {
       for (const id of zones.current) acc.removeZone(id);
@@ -239,13 +243,17 @@ export function DiffReview({
         options: { isWholeLine: true, className: `ln-${m.kind}`, glyphMarginClassName: `glyph glyph-${m.kind}` },
       })),
     );
-  }, [markers, file?.path]);
+  }, [markers, editor]);
 
-  const onMount: DiffOnMount = (editor) => {
-    editorRef.current = editor;
-    const ed = editor.getModifiedEditor();
+  const onMount: DiffOnMount = (mounted) => {
+    editorRef.current = mounted;
+    // Редактор монтируется асинхронно, уже после эффектов: карточки ставятся по смене состояния, у нового — с нуля.
+    zones.current = [];
+    decos.current = null;
+    setEditor(mounted);
+    const ed = mounted.getModifiedEditor();
     ed.onMouseDown((e) => {
-      if (readOnly) return;
+      if (readOnlyRef.current) return;
       const t = e.target.type;
       const T = monaco.editor.MouseTargetType;
       if ((t === T.GUTTER_GLYPH_MARGIN || t === T.GUTTER_LINE_NUMBERS || t === T.GUTTER_LINE_DECORATIONS) && e.target.position) {

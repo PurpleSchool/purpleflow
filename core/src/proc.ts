@@ -1,6 +1,7 @@
 import spawn from 'cross-spawn';
 import type { ChildProcess } from 'node:child_process';
 import treeKill from 'tree-kill';
+import { trace } from './trace.js';
 
 export interface RunOptions {
   cwd: string;
@@ -17,6 +18,8 @@ export interface RunOptions {
   onStdout?: (chunk: string) => void;
   /** Группа для массовой остановки (обычно id прогона). */
   group?: string;
+  /** Сервер: шелл мог выйти, оставив приложение в фоне, — пока оно держит вывод, процесс считается живым. */
+  waitForOutput?: boolean;
 }
 
 export interface RunResult {
@@ -33,6 +36,8 @@ export interface RunResult {
 }
 
 const MAX_BUFFER = 4 * 1024 * 1024;
+/** Процесс вышел, а его фоновый потомок держит stdout: столько ждём вывод, потом перестаём. */
+const OUTPUT_GRACE_MS = 3000;
 
 export interface PidTracker {
   add(group: string, pid: number): void;
@@ -60,10 +65,20 @@ export function killPid(pid: number): Promise<void> {
 const live = new Map<string, Set<ChildProcess>>();
 const killedByUs = new WeakSet<ChildProcess>();
 
+function closeOutput(child: ChildProcess) {
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+}
+
 function killTree(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => {
-    if (child.pid == null || child.exitCode !== null || child.signalCode !== null) return resolve();
+    if (child.pid == null) return resolve();
     killedByUs.add(child);
+    // Сам процесс уже вышел, вывод держит его фоновый потомок: без этого close не наступит, а «Стоп» и таймаут ничего не сделают.
+    if (child.exitCode !== null || child.signalCode !== null) {
+      closeOutput(child);
+      return resolve();
+    }
     treeKill(child.pid, 'SIGTERM', () => {
       if (child.exitCode !== null || child.signalCode !== null) return resolve();
       // Если за 3 секунды не умер — добиваем.
@@ -83,7 +98,8 @@ export async function killGroup(group: string): Promise<void> {
   const set = live.get(group);
   if (!set) return;
   await Promise.all([...set].map(killTree));
-  live.delete(group);
+  // Пока ждали, в группе мог появиться новый процесс — он должен оставаться видимым для следующего «Стоп».
+  if (!set.size) live.delete(group);
 }
 
 export async function killAll(): Promise<void> {
@@ -121,7 +137,15 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
     if (!live.has(group)) live.set(group, new Set());
     live.get(group)!.add(child);
     const pid = child.pid;
-    if (pid != null) tracker?.add(group, pid);
+    // Учёт PID — страховка; сбой записи не должен оставить запущенный процесс без присмотра.
+    const track = (fn: () => void) => {
+      try {
+        fn();
+      } catch (e) {
+        trace('proc: учёт PID', e);
+      }
+    };
+    if (pid != null) track(() => tracker?.add(group, pid));
 
     let stdout = '';
     let stderr = '';
@@ -180,11 +204,19 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
       spawnError = err.message;
     });
 
+    let graceTimer: NodeJS.Timeout | null = null;
+    child.on('exit', () => {
+      if (!opts.waitForOutput) graceTimer = setTimeout(() => closeOutput(child), OUTPUT_GRACE_MS);
+    });
+
     child.on('close', (code, signal) => {
       if (timer) clearTimeout(timer);
       if (idleTimer) clearTimeout(idleTimer);
-      live.get(group)?.delete(child);
-      if (pid != null) tracker?.remove(group, pid);
+      if (graceTimer) clearTimeout(graceTimer);
+      const set = live.get(group);
+      set?.delete(child);
+      if (set && !set.size) live.delete(group);
+      if (pid != null) track(() => tracker?.remove(group, pid));
       if (pending && opts.onStdoutLine) opts.onStdoutLine(pending);
       resolve({
         code,

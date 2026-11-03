@@ -1,9 +1,9 @@
-import type { RunFile } from '@purpleflow/core';
+import type { RunFile, StageId } from '@purpleflow/core';
 
 /** Промежутки короче этого — обычные переходы между стадиями, их считаем. Длиннее — прогон стоял. */
 const GAP_MS = 5000;
 
-const GATES = ['gate0', 'gate1', 'gate2', 'limit'];
+export const GATES: StageId[] = ['gate0', 'gate1', 'gate2', 'limit'];
 
 export interface ActiveClock {
   /** Активное время прогона, мс: идут стадии или ждём решения человека. */

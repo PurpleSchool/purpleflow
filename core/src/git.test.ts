@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { Git } from './git.js';
+import { Git, parseStatusZ } from './git.js';
+import { splitDiff } from './reviewdiff.js';
 
 test('дифф для окна и коммит не конфликтуют за index.lock', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-git-'));
@@ -124,5 +125,98 @@ test('restoreFromBase: изменённый артефакт — из базы, 
   assert.ok(!fs.existsSync(path.join(dir, 'next-env.d.ts')));
   assert.equal(fs.readFileSync(path.join(dir, 'app.ts'), 'utf8'), 'b\n');
   assert.deepEqual(await git.changedFiles(dir, base), ['app.ts']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function repoWithCommit() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-git-'));
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir }).toString();
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
+  return { dir, g, base: g('rev-parse', 'HEAD').trim(), git: new Git('git', process.env) };
+}
+
+test('parseStatusZ: переименование, пробелы, кириллица', () => {
+  assert.deepEqual(parseStatusZ('R  новое имя.ts\0старое имя.ts\0 M папка с пробелом/файл.ts\0?? ф.txt\0'), [
+    'новое имя.ts',
+    'папка с пробелом/файл.ts',
+    'ф.txt',
+  ]);
+  assert.deepEqual(parseStatusZ(''), []);
+});
+
+test('dirtyFiles: кириллица без кавычек, файлы внутри новой папки, переименование', async () => {
+  const { dir, g, git } = repoWithCommit();
+  fs.writeFileSync(path.join(dir, 'файл с пробелом.txt'), 'x');
+  fs.mkdirSync(path.join(dir, 'новая'));
+  fs.writeFileSync(path.join(dir, 'новая', 'b.txt'), 'x');
+  g('mv', 'a.txt', 'c.txt');
+  assert.deepEqual((await git.dirtyFiles(dir)).sort(), ['c.txt', 'новая/b.txt', 'файл с пробелом.txt'].sort());
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('diff: папка-ссылка и вложенный репозиторий не роняют дифф', { skip: process.platform === 'win32' }, async () => {
+  const { dir, base, git } = repoWithCommit();
+  fs.mkdirSync(path.join(dir, 'real'));
+  fs.writeFileSync(path.join(dir, 'real', 'x.txt'), 'x\n');
+  fs.symlinkSync('real', path.join(dir, 'linkdir'));
+  fs.mkdirSync(path.join(dir, 'sub'));
+  execFileSync('git', ['init', '-q'], { cwd: path.join(dir, 'sub') });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], {
+    cwd: path.join(dir, 'sub'),
+  });
+  const files = await git.diff(dir, base);
+  const byPath = new Map(files.map((f) => [f.path.replace(/\/$/, ''), f]));
+  assert.equal(byPath.get('real/x.txt')?.modified, 'x\n');
+  assert.equal(byPath.get('linkdir')?.binary, true);
+  assert.equal(byPath.get('sub')?.binary, true);
+
+  // Откат к базе убирает и папку, а не падает на ней.
+  await git.restoreFromBase(
+    dir,
+    base,
+    files.map((f) => f.path),
+  );
+  assert.deepEqual(await git.dirtyFiles(dir), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('ошибка git в очереди: получает вызвавший, необработанной не становится, очередь идёт дальше', async () => {
+  const { dir, base, git } = repoWithCommit();
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await assert.rejects(git.diff(dir, 'нет-такой-ревизии'));
+    assert.deepEqual(await git.diff(dir, base), []);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('diffText и splitDiff: кириллица и пробелы в путях, удаление, переименование', async () => {
+  const { dir, g, base, git } = repoWithCommit();
+  fs.mkdirSync(path.join(dir, 'моя папка'));
+  fs.writeFileSync(path.join(dir, 'моя папка', 'файл.ts'), 'x\n');
+  fs.writeFileSync(path.join(dir, 'b b.ts'), 'y\n');
+  fs.writeFileSync(path.join(dir, 'gone.ts'), 'z\n');
+  g('add', 'gone.ts');
+  g('commit', '-qm', 'gone');
+  const after = g('rev-parse', 'HEAD').trim();
+  fs.rmSync(path.join(dir, 'gone.ts'));
+  g('mv', 'a.txt', 'renamed.txt');
+  const paths = (ref: string) =>
+    git.diffText(dir, ref).then((d) =>
+      splitDiff(d)
+        .map((f) => f.path)
+        .sort(),
+    );
+  assert.deepEqual(await paths(after), ['b b.ts', 'gone.ts', 'renamed.txt', 'моя папка/файл.ts'].sort());
+  assert.ok((await paths(base)).includes('моя папка/файл.ts'));
   fs.rmSync(dir, { recursive: true, force: true });
 });

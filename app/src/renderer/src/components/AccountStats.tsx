@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { BarChart3, ExternalLink, KeyRound, RefreshCw } from 'lucide-react';
 import type { AccountKey, AccountOverview, AccountUsage, UsageBucket } from '../../../shared/ipc';
 import { Button } from './ui';
@@ -94,16 +94,20 @@ export function AccountStats({ onSignIn }: { onSignIn: () => void }) {
     if (k.ok) setKeys(k.data.items);
   };
 
+  /** Номер последнего запроса: неделя, ответившая позже года, не должна лечь под подписи года. */
+  const usageSeq = useRef(0);
   const loadUsage = async () => {
+    const seq = ++usageSeq.current;
     setLoading(true);
     setError(null);
     try {
       const p = PERIODS.find((x) => x.id === period)!;
       const r = await bridge.account.usage({ ...periodRange(period), bucket: p.bucket, keyIds: keyId ? [keyId] : [] });
+      if (seq !== usageSeq.current) return;
       if (!r.ok) return fail(r);
       setUsage(r.data);
     } finally {
-      setLoading(false);
+      if (seq === usageSeq.current) setLoading(false);
     }
   };
 

@@ -3,7 +3,8 @@ import type { StageAttempt, StageId } from '@purpleflow/core';
 import { useEffect, useState } from 'react';
 import { Markdown } from '../../../components/Markdown';
 import { PillTabs } from '../../../components/PillTabs';
-import { LiveLog, cut, finalMessage, type LogSlice } from '../../../components/Terminal';
+import { LiveLog, type LogSlice } from '../../../components/Terminal';
+import { cut, finalMessage } from '../../../lib/logSlice';
 import { bridge } from '../../../lib/api';
 
 export const IN_PROGRESS: Partial<Record<StageId, { title: string; text: string }>> = {

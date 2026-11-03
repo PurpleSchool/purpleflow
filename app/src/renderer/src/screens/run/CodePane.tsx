@@ -7,6 +7,9 @@ import { PillTabs } from '../../components/PillTabs';
 import { Button, Empty } from '../../components/ui';
 import { bridge, cleanErr } from '../../lib/api';
 
+/** Один массив на все отрисовки: иначе карточки в редакторе пересоздавались бы на каждом обновлении прогона. */
+const NO_COMMENTS: LineComment[] = [];
+
 /** Изменённые файлы прогона для счётчика на вкладке: пока прогон идёт — раз в несколько секунд, иначе на смене стадии. */
 export function useChangedFiles(run: RunFile | undefined): string[] | null {
   const [files, setFiles] = useState<string[] | null>(null);
@@ -70,16 +73,21 @@ export function CodePane({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /** Номер последнего запроса: медленный старый дифф не должен заменить свежий. */
+  const loadSeq = useRef(0);
   const load = async () => {
+    const seq = ++loadSeq.current;
     setBusy(true);
     setError(null);
     try {
-      setDiff(await bridge.core.getDiff(run.id));
+      const next = await bridge.core.getDiff(run.id);
+      if (seq !== loadSeq.current) return;
+      setDiff(next);
       setAt(new Date());
     } catch (e) {
-      setError(cleanErr(e));
+      if (seq === loadSeq.current) setError(cleanErr(e));
     } finally {
-      setBusy(false);
+      if (seq === loadSeq.current) setBusy(false);
     }
   };
   useEffect(() => {
@@ -164,7 +172,7 @@ export function CodePane({
                   onTab: accept.onTab,
                   summary: accept.summary,
                 }
-              : { comments: [], onComments: () => {}, readOnly: true })}
+              : { comments: NO_COMMENTS, onComments: () => {}, readOnly: true })}
           />
         </>
       )}

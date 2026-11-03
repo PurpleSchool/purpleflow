@@ -21,6 +21,8 @@ export interface EngineHooks {
   halt(id: string): Promise<void>;
 }
 
+const TOOLS_TTL_MS = 15_000;
+
 export class Kernel {
   readonly store: RunStore;
   readonly prompts: Prompts;
@@ -38,6 +40,13 @@ export class Kernel {
   readonly managerBusy = new Set<string>();
   /** Чаты, в которых агент сейчас отвечает. */
   readonly chatBusy = new Set<string>();
+  private detected: { key: string; at: number; result: ReturnType<typeof detectTools> } | null = null;
+  /** Прогоны в цикле drive: у него своя копия run, и правки с диска он затёр бы следующим сохранением. */
+  readonly live = new Map<string, RunFile>();
+  /** Прогоны, для которых создаётся рабочая копия: цикла ещё нет, но «Стоп» и удаление должны его дождаться. */
+  readonly preparing = new Set<string>();
+  /** Удалённые прогоны: запоздалое сохранение из стадии не должно их воскресить. */
+  readonly deleted = new Set<string>();
   /** Проекты, для которых сейчас идёт проверка окружения. */
   readonly envChecks = new Set<string>();
   /** Очередь прогонов сейчас разбирается. */
@@ -75,6 +84,7 @@ export class Kernel {
   }
 
   save(run: RunFile) {
+    if (this.deleted.has(run.id)) return;
     this.store.save(run);
     this.emit({ type: 'run.updated', run: structuredClone(run) });
   }
@@ -167,10 +177,25 @@ export class Kernel {
     this.save(run);
   }
 
-  async tools(need: (keyof Tools)[]): Promise<Tools> {
+  /**
+   * Поиск инструментов с коротким кэшем: это четыре запуска --version, а нужен он перед каждым шагом.
+   * fresh — не верить кэшу: инструмент могли только что поставить.
+   */
+  private detect(fresh = false) {
     const manual = this.opts.getSettings().toolPaths;
-    const found = await detectTools(this.opts.env, manual);
-    const missing = need.filter((n) => !found[n].path || found[n].error);
+    const key = JSON.stringify(manual ?? {});
+    if (!fresh && this.detected?.key === key && Date.now() - this.detected.at < TOOLS_TTL_MS) return this.detected.result;
+    const result = detectTools(this.opts.env, manual);
+    this.detected = { key, at: Date.now(), result };
+    result.catch(() => (this.detected = null));
+    return result;
+  }
+
+  async tools(need: (keyof Tools)[]): Promise<Tools> {
+    const isMissing = (f: Awaited<ReturnType<typeof detectTools>>) => need.filter((n) => !f[n].path || f[n].error);
+    let found = await this.detect();
+    if (isMissing(found).length) found = await this.detect(true);
+    const missing = isMissing(found);
     if (missing.length) {
       throw new Error(`Не найдены: ${missing.join(', ')}. Укажите пути в настройках.`);
     }
@@ -178,7 +203,7 @@ export class Kernel {
   }
 
   async hasTool(name: keyof Tools): Promise<boolean> {
-    const t = (await detectTools(this.opts.env, this.opts.getSettings().toolPaths))[name];
+    const t = (await this.detect())[name];
     return Boolean(t.path && !t.error);
   }
 
@@ -192,6 +217,7 @@ export class Kernel {
   }
 
   shell(run: RunFile, command: string, timeoutMin: number) {
+    this.checkStop(run);
     return runProc(command, [], {
       cwd: run.worktreePath,
       env: { ...this.opts.env, CI: '1', FORCE_COLOR: '1' },

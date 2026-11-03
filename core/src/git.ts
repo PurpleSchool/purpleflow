@@ -5,17 +5,30 @@ import { exec, run } from './proc.js';
 import type { DiffFile } from './types.js';
 
 /** Очередь операций по worktree: дифф для окна и коммит стадии не должны одновременно брать index.lock. */
+/** Вывод git status --porcelain -z: пути как есть, без кавычек; у переименования следом идёт старый путь. */
+export function parseStatusZ(out: string): string[] {
+  const parts = out.split('\0');
+  const files: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].length < 4) continue;
+    files.push(parts[i].slice(3));
+    if (/[RC]/.test(parts[i].slice(0, 2))) i++;
+  }
+  return files;
+}
+
 const queues = new Map<string, Promise<unknown>>();
 function serialized<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const k = path.resolve(key);
   const prev = queues.get(k) ?? Promise.resolve();
-  const next = prev.catch(() => {}).then(fn);
-  queues.set(
-    k,
-    next.finally(() => {
-      if (queues.get(k) === next) queues.delete(k);
-    }),
-  );
+  const next = prev.then(fn);
+  // Хвост очереди никогда не отклоняется: ошибку получает вызвавший, а тут она стала бы необработанной.
+  const tail: Promise<unknown> = next
+    .catch(() => {})
+    .finally(() => {
+      if (queues.get(k) === tail) queues.delete(k);
+    });
+  queues.set(k, tail);
   return next;
 }
 
@@ -125,11 +138,7 @@ export class Git {
 
   /** Незакоммиченные изменения рабочей копии, включая неотслеживаемые файлы. */
   async dirtyFiles(dir: string): Promise<string[]> {
-    const out = await this.git(dir, ['status', '--porcelain']);
-    return out
-      .split('\n')
-      .map((l) => l.slice(3).trim())
-      .filter(Boolean);
+    return parseStatusZ(await this.git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']));
   }
 
   /** Спрятать все незакоммиченные изменения, включая неотслеживаемые файлы; вернуть их — git stash pop. */
@@ -259,8 +268,11 @@ export class Git {
       if (skip(newPath)) continue;
       const original = st === 'A' ? '' : await this.show(worktree, base, oldPath);
       const full = path.join(worktree, newPath);
-      const modified = st === 'D' ? '' : fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
-      const binary = original.includes('\0') || modified.includes('\0');
+      // Новая папка-ссылка или вложенный репозиторий (create-next-app) — не файл: чтение уронило бы весь дифф.
+      const kind = st === 'D' ? null : fs.lstatSync(full, { throwIfNoEntry: false });
+      const notFile = Boolean(kind && !kind.isFile());
+      const modified = kind?.isFile() ? fs.readFileSync(full, 'utf8') : '';
+      const binary = notFile || original.includes('\0') || modified.includes('\0');
       files.push({
         path: newPath,
         status: st === 'A' || st === 'M' || st === 'D' || st === 'R' ? st : 'M',
@@ -288,7 +300,7 @@ export class Git {
         if (inBase) await this.git(worktree, ['checkout', base, '--', f]);
         else {
           await run(this.bin, ['reset', '-q', '--', f], { cwd: worktree, env: this.env });
-          fs.rmSync(path.join(worktree, f), { force: true });
+          fs.rmSync(path.join(worktree, f), { force: true, recursive: true });
         }
       }
     });
@@ -327,7 +339,8 @@ export class Git {
   diffText(worktree: string, base: string, excludeGlobs: string[] = []): Promise<string> {
     return serialized(worktree, async () => {
       await this.git(worktree, ['add', '-A', '-N']);
-      const args = ['diff', '-M', base, '--', '.', ...excludeGlobs.map((p) => `:(exclude,glob)${p}`)];
+      // quotepath: иначе кириллица в путях приходит восьмеричными кодами в кавычках, и splitDiff не узнаёт файл.
+      const args = ['-c', 'core.quotepath=off', 'diff', '-M', base, '--', '.', ...excludeGlobs.map((p) => `:(exclude,glob)${p}`)];
       return this.git(worktree, args, 60_000);
     });
   }
