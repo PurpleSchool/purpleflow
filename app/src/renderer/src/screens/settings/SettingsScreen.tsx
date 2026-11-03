@@ -9,8 +9,10 @@ import { useStore } from '../../lib/store';
 import { AccountTab } from './AccountTab';
 import { AppTab } from './AppTab';
 import { ModelsTab } from './ModelsTab';
+import { SetupDialog } from './SetupDialog';
 import { ToolsTab } from './ToolsTab';
 import { useSettingsDraft } from './useSettingsDraft';
+import { useToolSetup } from './useToolSetup';
 
 type SettingsTab = 'account' | 'stats' | 'tools' | 'models' | 'window';
 export function SettingsScreen() {
@@ -18,6 +20,8 @@ export function SettingsScreen() {
   const s = state.settings;
   const draft = useSettingsDraft();
   const { saving, saved, error, save, allFound } = draft;
+  const setup = useToolSetup(draft);
+  const [setupClosed, setSetupClosed] = useState(false);
   // Первый запуск идёт после экрана входа — начинаем с инструментов; дальше первой открывается вкладка аккаунта.
   const [tab, setTab] = useState<SettingsTab>(() => (s && (!s.onboarded || !s.accountEnabled) ? 'tools' : 'account'));
 
@@ -83,7 +87,7 @@ export function SettingsScreen() {
         <div className="settings tab-enter" key={tab}>
           {tab === 'account' && <AccountTab draft={draft} />}
           {tab === 'stats' && <AccountStats onSignIn={() => setTab('account')} />}
-          {tab === 'tools' && <ToolsTab draft={draft} />}
+          {tab === 'tools' && <ToolsTab draft={draft} setup={setup} />}
           {tab === 'models' && <ModelsTab draft={draft} />}
           {tab === 'window' && <AppTab />}
         </div>
@@ -105,6 +109,10 @@ export function SettingsScreen() {
             </Button>
           )}
         </footer>
+      )}
+
+      {first && !setupClosed && (
+        <SetupDialog draft={draft} setup={setup} onClose={() => setSetupClosed(true)} onFinish={() => void finish()} />
       )}
     </div>
   );

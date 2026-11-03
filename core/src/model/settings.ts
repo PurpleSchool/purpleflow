@@ -9,6 +9,13 @@ export interface ToolInfo {
   error?: string;
 }
 
+export interface ToolInstallResult {
+  name: ToolName;
+  ok: boolean;
+  info?: ToolInfo;
+  error?: string;
+}
+
 export type Role = 'planner' | 'executor' | 'reviewer';
 
 /** CLI-агент, который выполняет роль. */

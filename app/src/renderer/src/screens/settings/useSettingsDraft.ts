@@ -115,6 +115,7 @@ export function useSettingsDraft() {
     saved,
     flashSaved,
     error,
+    setError,
     save,
     checking,
     checks,

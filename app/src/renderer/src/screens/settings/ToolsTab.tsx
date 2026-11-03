@@ -1,6 +1,6 @@
 // Вкладка «Инструменты»: найденные git, claude, codex, openspec и пути к ним.
 import type { ToolName } from '@purpleflow/core';
-import { FolderSearch, RefreshCw } from 'lucide-react';
+import { FolderSearch, RefreshCw, Wand2 } from 'lucide-react';
 import { Button, Input } from '../../components/ui';
 import { bridge } from '../../lib/api';
 import { shortPath } from '../../lib/format';
@@ -8,8 +8,9 @@ import { useStore } from '../../lib/store';
 import { toolNeeded } from '../../lib/tools';
 import { CheckButton, ChecksList, TOOL_INFO } from './parts';
 import type { SettingsDraft } from './useSettingsDraft';
+import type { ToolSetup } from './useToolSetup';
 
-export function ToolsTab({ draft }: { draft: SettingsDraft }) {
+export function ToolsTab({ draft, setup }: { draft: SettingsDraft; setup: ToolSetup }) {
   const { state, refreshTools } = useStore();
   const s = state.settings!;
   const tools = state.tools;
@@ -30,7 +31,13 @@ export function ToolsTab({ draft }: { draft: SettingsDraft }) {
           <Button tone="quiet" icon={<RefreshCw size={14} />} busy={state.toolsLoading} onClick={() => void refreshTools()}>
             Найти снова
           </Button>
-          <CheckButton draft={draft} />
+          {setup.missing.length > 0 ? (
+            <Button tone="primary" icon={<Wand2 size={15} />} busy={setup.running} onClick={() => void setup.run()}>
+              Настроить
+            </Button>
+          ) : (
+            <CheckButton draft={draft} />
+          )}
         </div>
       </header>
       {checks && <ChecksList checks={checks} />}
@@ -51,6 +58,10 @@ export function ToolsTab({ draft }: { draft: SettingsDraft }) {
                   <span className="mono" title={info.path!}>
                     {shortPath(info.path!)}
                   </span>
+                ) : setup.current === t ? (
+                  <span>Устанавливаю…</span>
+                ) : setup.errors[t] ? (
+                  <span className="tool-miss">{setup.errors[t]}</span>
                 ) : info ? (
                   <span className="tool-miss">
                     {info.error}.{needed ? '' : ' Не обязателен: ни одна роль на нём не работает.'} Установка:{' '}

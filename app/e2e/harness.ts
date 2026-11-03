@@ -21,7 +21,7 @@ export interface Sandbox {
   cleanup: () => void;
 }
 
-export function makeSandbox(o: { tmpRoot?: string; delayMs?: number } = {}): Sandbox {
+export function makeSandbox(o: { tmpRoot?: string; delayMs?: number; settings?: Record<string, unknown> } = {}): Sandbox {
   // realpath: на macOS os.tmpdir() — симлинк, а git и окно отдают уже настоящий путь.
   const root = fs.realpathSync(fs.mkdtempSync(path.join(o.tmpRoot ?? os.tmpdir(), 'pf-e2e-')));
   const profile = path.join(root, 'profile');
@@ -49,6 +49,7 @@ export function makeSandbox(o: { tmpRoot?: string; delayMs?: number } = {}): San
       authPrompted: true,
       toolPaths: { claude, openspec: path.join(ROOT, 'node_modules/.bin/openspec') },
       agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' },
+      ...o.settings,
     }),
   );
 

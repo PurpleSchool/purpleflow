@@ -1024,3 +1024,62 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ——— Окно настройки при первом запуске ——— */
+.setup {
+  width: min(600px, 100%);
+}
+.setup-rows {
+  display: flex;
+  flex-direction: column;
+}
+.setup-row {
+  display: grid;
+  grid-template-columns: 8px 110px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+  font-size: var(--fs-13);
+}
+.setup-row + .setup-row {
+  border-top: 1px solid var(--line);
+}
+.setup-led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.setup-row.is-ok .setup-led {
+  background: var(--ok);
+}
+.setup-row.is-bad .setup-led {
+  background: var(--err);
+}
+.setup-row.is-loading .setup-led {
+  animation: breathe 1s infinite;
+}
+.setup-row strong {
+  font-weight: 500;
+}
+.setup-state {
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.setup-row.is-bad .setup-state {
+  color: var(--err);
+}
+.setup-state code {
+  color: var(--text-2);
+}
+.setup-note,
+.setup-error {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+.setup-error {
+  color: var(--err);
+}

@@ -18,6 +18,7 @@ import * as pr from './services/pr.js';
 import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import * as projects from './services/projects.js';
 import { getChangeDocs, getChangedFiles, getDiff } from './services/runs.js';
+import { installTool } from './services/setup.js';
 import { answer } from './stages/plan.js';
 import { getVisualShot } from './stages/visual.js';
 import type {
@@ -31,6 +32,7 @@ import type {
   ProjectConfig,
   ProjectKnowledge,
   StorageItem,
+  ToolName,
 } from './types.js';
 
 export class Orchestrator implements CoreApi {
@@ -193,6 +195,10 @@ export class Orchestrator implements CoreApi {
 
   detectTools() {
     return detectTools(this.kernel.opts.env, this.kernel.opts.getSettings().toolPaths);
+  }
+  installTool(name: ToolName) {
+    const { env, getSettings } = this.kernel.opts;
+    return installTool(name, env, getSettings().toolPaths[name]);
   }
   testConnection() {
     return testConnection(this.kernel);
