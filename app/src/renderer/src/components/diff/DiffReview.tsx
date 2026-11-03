@@ -177,6 +177,7 @@ export function DiffReview({
     }
   };
   // V — отметить просмотренным и дальше (не в полях ввода).
+  const root = useRef<HTMLDivElement>(null);
   const toggleRef = useRef(toggleViewed);
   toggleRef.current = toggleViewed;
   useEffect(() => {
@@ -187,7 +188,8 @@ export function DiffReview({
       const el = e.target as HTMLElement;
       // Редактор диффа только для чтения — в нём V работает; в настоящих полях ввода — нет.
       if (!el.closest('.monaco-editor') && el.closest('input, textarea, [contenteditable]')) return;
-      if (!current) return;
+      // Панель со скрытым диффом остаётся смонтированной — клавиша не должна отмечать то, чего человек не видит.
+      if (!current || !root.current?.checkVisibility()) return;
       e.preventDefault();
       toggleRef.current(current);
     };
@@ -286,7 +288,7 @@ export function DiffReview({
   const pickedN = picked?.length ?? 0;
 
   return (
-    <div className="diff-wrap">
+    <div ref={root} className="diff-wrap">
       {!outerTab && (
         <div className="diff-tabs">
           <PillTabs<'code' | 'notes'>

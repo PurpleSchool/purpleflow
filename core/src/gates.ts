@@ -2,6 +2,7 @@
 // Продолжение цикла — через k.engine.drive, чтобы гейты не зависели от движка.
 import { c } from './agents/common.js';
 import type { Kernel } from './kernel.js';
+import { killGroup } from './proc.js';
 import { acceptTarget } from './route.js';
 import { stopPreview } from './services/preview.js';
 import { getChangeDocs } from './services/runs.js';
@@ -9,6 +10,20 @@ import { STAGE_TITLES, isGate } from './stage-info.js';
 import { mapFilesToPlan, summarizeChanges } from './stages/review.js';
 import { traced } from './trace.js';
 import type { Feedback, GateId, LineComment, RunFile } from './types.js';
+
+/**
+ * Решение автопилота с паузой, чтобы человек успел увидеть гейт. За паузу человек мог нажать «Стоп», принять сам или удалить прогон:
+ * автопилот решает, только если прогон всё ещё ждёт на том же гейте.
+ */
+async function autoDecide(k: Kernel, id: string, gate: GateId, failure: string, comment?: string) {
+  await new Promise((res) => setTimeout(res, 800));
+  const r = k.store.load(id);
+  if (!r || r.status !== 'waiting' || r.next !== gate) return;
+  await decide(k, id, 'approve', comment).catch((e) => {
+    const now = k.store.load(id);
+    if (now) k.warn(now, `${failure}: ${(e as Error).message}`);
+  });
+}
 
 export async function decide(
   k: Kernel,
@@ -18,10 +33,16 @@ export async function decide(
   lineComments?: LineComment[],
 ) {
   const r = k.mustLoad(id);
-  // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
-  await stopPreview(k, id);
   if (!isGate(r.next) || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт решения на гейте');
   const gate = r.next as GateId;
+  // Проверки — до любых действий: отклонённое решение не должно гасить сервер, с которым человек работает.
+  if (decision === 'fix') {
+    if (gate !== 'gate2') throw new Error('Быстрая правка — только на приёмке');
+    if (!comment?.trim() && !lineComments?.length) throw new Error('Опишите, что поправить');
+  }
+  if (decision === 'accept' && gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
+  // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
+  await stopPreview(k, id);
   r.gates.push({
     gate,
     at: new Date().toISOString(),
@@ -39,8 +60,6 @@ export async function decide(
   const human = (text: string): Feedback => ({ source: 'human', text, lineComments: lineComments?.length ? lineComments : undefined });
 
   if (decision === 'fix') {
-    if (gate !== 'gate2') throw new Error('Быстрая правка — только на приёмке');
-    if (!comment?.trim() && !lineComments?.length) throw new Error('Опишите, что поправить');
     if (gateAttempt) gateAttempt.summary = 'Быстрая правка';
     r.quickFix = true;
     r.next = 'implement';
@@ -58,7 +77,6 @@ export async function decide(
   }
 
   if (decision === 'accept') {
-    if (gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
     // Человек берёт ответственность на себя: красные проверки или замечания ревью — дальше без новых попыток.
     // Визуальная проверка ещё не было — идём в неё (скриншоты пригодятся на приёмке), иначе — сразу на приёмку.
     const toVisual = acceptTarget(r) === 'visual';
@@ -73,6 +91,9 @@ export async function decide(
   }
 
   if (decision === 'cancel') {
+    // Фоновые проверки эталона (идут, пока человек смотрит план) больше никому не нужны.
+    k.basePrep.delete(id);
+    await killGroup(id);
     if (gate === 'limit') {
       r.status = 'stopped';
       r.message = 'Остановлено после исчерпания попыток';
@@ -182,10 +203,7 @@ export async function autopilotGate(k: Kernel, run: RunFile, gate: GateId) {
       return;
     }
     k.log(run, c.violet('Автопилот: план принят без остановки.') + '\n');
-    await new Promise((r) => setTimeout(r, 800));
-    await decide(k, run.id, 'approve', 'Автопилот').catch((e) =>
-      k.warn(k.mustLoad(run.id), `Автопилот не смог принять план — примите его сами: ${(e as Error).message}`),
-    );
+    await autoDecide(k, run.id, gate, 'Автопилот не смог принять план — примите его сами', 'Автопилот');
     return;
   }
   if (gate === 'limit' && !run.autoRetried) {
@@ -193,9 +211,6 @@ export async function autopilotGate(k: Kernel, run: RunFile, gate: GateId) {
     r.autoRetried = true;
     k.save(r);
     k.log(run, c.violet('Автопилот: попытки исчерпаны — даю ещё одну сам; следующий раз решите вы.') + '\n');
-    await new Promise((res) => setTimeout(res, 800));
-    await decide(k, run.id, 'approve').catch((e) =>
-      k.warn(k.mustLoad(run.id), `Автопилот не смог дать ещё одну попытку: ${(e as Error).message}`),
-    );
+    await autoDecide(k, run.id, gate, 'Автопилот не смог дать ещё одну попытку');
   }
 }

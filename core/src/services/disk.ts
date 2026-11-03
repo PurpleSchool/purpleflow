@@ -10,6 +10,11 @@ import type { RunFile, StorageItem } from '../types.js';
 import { stopPreview } from './preview.js';
 import { runsWithFiles } from './runs.js';
 
+/** Копии известных прогонов. С резервными копиями: при битом индексе идущие прогоны иначе выглядели бы брошенными и удалялись. */
+function knownWorktrees(k: Kernel): Set<string> {
+  return new Set([...runsWithFiles(k), ...k.store.allBackups()].map((r) => path.resolve(r.worktreePath)));
+}
+
 export async function getStorage(k: Kernel): Promise<StorageItem[]> {
   const runs = runsWithFiles(k);
   const wtRoot = k.store.worktreesDir();
@@ -18,7 +23,7 @@ export async function getStorage(k: Kernel): Promise<StorageItem[]> {
   const ended = (r: RunFile) => r.status === 'finished' || r.status === 'cancelled';
   const done = runs.filter((r) => own(r) && ended(r));
   const active = runs.filter((r) => own(r) && !ended(r));
-  const known = new Set(runs.map((r) => path.resolve(r.worktreePath)));
+  const known = knownWorktrees(k);
   const orphan = subdirs(wtRoot).filter((d) => !known.has(path.resolve(d)) && !path.basename(d).startsWith('merge-'));
   const visualRoot = path.join(k.opts.dataDir, 'visual');
   const leftovers = browserLeftovers(visualRoot);
@@ -91,7 +96,7 @@ export async function cleanStorage(k: Kernel, id: StorageItem['id']): Promise<nu
       await git.removeWorktree(r.projectPath, r.worktreePath).catch(() => fs.rmSync(r.worktreePath, { recursive: true, force: true }));
     }
   } else if (id === 'worktrees-orphan') {
-    const known = new Set(runsWithFiles(k).map((r) => path.resolve(r.worktreePath)));
+    const known = knownWorktrees(k);
     for (const d of subdirs(wtRoot)) {
       if (known.has(path.resolve(d)) || path.basename(d).startsWith('merge-')) continue;
       // Worktree знает свой репозиторий по файлу .git — снимаем регистрацию там же.

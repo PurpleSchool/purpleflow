@@ -13,13 +13,14 @@ import {
   shell,
   utilityProcess,
   webContents,
+  type IpcMainInvokeEvent,
   type UtilityProcess,
 } from 'electron';
 import type { CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
-import { isLocalUrl, isSameDocument, isWebUrl } from './urls';
+import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
@@ -56,6 +57,14 @@ const GATE_WORD: Record<string, string> = {
   gate2: 'примите результат',
   limit: 'попытки исчерпаны — решите, что дальше',
 };
+
+/** Значок дока сразу после запуска: без этого прогоны, ждущие решения, не считались бы до первого события. */
+async function loadBadge() {
+  const runs = (await callHost('listRuns', []).catch(() => [])) as { id: string; title: string; status: string }[];
+  runInfo.clear();
+  for (const r of runs) runInfo.set(r.id, { title: r.title, status: r.status });
+  updateBadge();
+}
 
 function updateBadge() {
   const waiting = [...runInfo.values()].filter((r) => r.status === 'waiting').length;
@@ -112,6 +121,7 @@ function startHost(): Promise<void> {
       if (m.kind === 'ready') {
         restartDelay = 0;
         resolve();
+        void loadBadge();
       } else if (m.kind === 'event') {
         win?.webContents.send('core:event', m.event);
         attention(m.event);
@@ -242,12 +252,22 @@ function createWindow() {
   if (process.env.PURPLEFLOW_CAPTURE && !app.isPackaged) void import('./dev-capture').then((m) => m.setupCapture(win!));
 }
 
-ipcMain.handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
-ipcMain.handle('settings:get', () => publicSettings());
+/**
+ * Обработчики — только для главного кадра нашего окна: вторая линия защиты на случай, если чужой документ
+ * всё же окажется в окне (у webview нет preload, а окно никуда не уходит — см. will-navigate).
+ */
+const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: never[]) => unknown) =>
+  ipcMain.handle(channel, (e, ...args) => {
+    if (e.sender !== win?.webContents || e.senderFrame !== e.sender.mainFrame) throw new Error('Запрос не из окна приложения');
+    return fn(e, ...(args as never[]));
+  });
+
+handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
+handle('settings:get', () => publicSettings());
 ipcMain.on('app:material:get', (e) => {
   e.returnValue = material;
 });
-ipcMain.handle('settings:set', (_e, patch: SettingsPatch) => {
+handle('settings:set', (_e, patch: SettingsPatch) => {
   const s = updateSettings(patch);
   if (patch.windowGlass !== undefined && win) applyMaterial(win, materialFor(s.windowGlass));
   host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
@@ -256,31 +276,31 @@ ipcMain.handle('settings:set', (_e, patch: SettingsPatch) => {
 // Аккаунт PurpleSchool. После смены ключа прокси ядро получает новые настройки.
 const pushSettings = () => host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
-ipcMain.handle('account:login', (_e, email: unknown, password: unknown) => account.login(str(email), str(password)));
-ipcMain.handle('account:register', (_e, p: { name?: unknown; email?: unknown; password?: unknown; mailing?: unknown }) =>
+handle('account:login', (_e, email: unknown, password: unknown) => account.login(str(email), str(password)));
+handle('account:register', (_e, p: { name?: unknown; email?: unknown; password?: unknown; mailing?: unknown }) =>
   account.register({ name: str(p?.name), email: str(p?.email), password: str(p?.password), mailing: p?.mailing === true }),
 );
-ipcMain.handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
-ipcMain.handle('account:logout', () => account.logout());
-ipcMain.handle('account:profile', () => account.profile());
-ipcMain.handle('account:keys', () => account.keys());
-ipcMain.handle('account:createKey', async () => {
+handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
+handle('account:logout', () => account.logout());
+handle('account:profile', () => account.profile());
+handle('account:keys', () => account.keys());
+handle('account:createKey', async () => {
   const r = await account.createKey();
   if (r.ok) pushSettings();
   return r;
 });
-ipcMain.handle('account:useKey', async (_e, id: unknown) => {
+handle('account:useKey', async (_e, id: unknown) => {
   const r = await account.useKey(Number(id));
   if (r.ok) pushSettings();
   return r;
 });
-ipcMain.handle('account:autoKey', async () => {
+handle('account:autoKey', async () => {
   const r = await account.autoKey();
   if (r.ok && r.data === 'picked') pushSettings();
   return r;
 });
-ipcMain.handle('account:overview', () => account.overview());
-ipcMain.handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown; keyIds?: unknown }) =>
+handle('account:overview', () => account.overview());
+handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown; keyIds?: unknown }) =>
   account.usage({
     from: str(q?.from),
     to: str(q?.to),
@@ -288,15 +308,15 @@ ipcMain.handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?:
     keyIds: Array.isArray(q?.keyIds) ? q.keyIds.map(Number) : [],
   }),
 );
-ipcMain.handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
-ipcMain.handle('dialog:folder', async (_e, title?: string) => {
+handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
+handle('dialog:folder', async (_e, title?: string) => {
   const r = await dialog.showOpenDialog(win!, {
     properties: ['openDirectory'],
     title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)',
   });
   return r.canceled ? null : r.filePaths[0];
 });
-ipcMain.handle('dialog:file', async () => {
+handle('dialog:file', async () => {
   const r = await dialog.showOpenDialog(win!, { properties: ['openFile', 'showHiddenFiles'], title: 'Исполняемый файл' });
   return r.canceled ? null : r.filePaths[0];
 });
@@ -328,10 +348,16 @@ app.on('web-contents-created', (_e, contents) => {
     contents.on('will-navigate', keepLocal);
     // Редирект с локального адреса наружу will-navigate не ловит.
     contents.on('will-redirect', keepLocal);
+    // loadURL из адресной строки вкладки — ни will-navigate, ни will-redirect не срабатывают.
+    contents.on('did-start-navigation', (d) => {
+      if (!d.isMainFrame || isLocalUrl(d.url)) return;
+      contents.stop();
+      if (isWebUrl(d.url)) void shell.openExternal(d.url);
+    });
   }
 });
 
-ipcMain.handle('preview:emulate', (e, id: number, mobile: boolean) => {
+handle('preview:emulate', (e, id: number, mobile: boolean) => {
   const wc = webContents.fromId(id);
   // Только webview нашего окна.
   if (!wc || wc.getType() !== 'webview' || wc.hostWebContents !== e.sender) return;
@@ -355,8 +381,8 @@ function dirBytes(p: string): number {
     return 0;
   }
 }
-ipcMain.handle('cache:size', () => CACHE_DIRS.reduce((n, d) => n + dirBytes(path.join(app.getPath('userData'), d)), 0));
-ipcMain.handle('cache:clear', async () => {
+handle('cache:size', () => CACHE_DIRS.reduce((n, d) => n + dirBytes(path.join(app.getPath('userData'), d)), 0));
+handle('cache:clear', async () => {
   for (const s of [session.defaultSession, session.fromPartition(PREVIEW_PARTITION)]) {
     await s.clearCache();
     await s.clearCodeCaches({});
@@ -365,7 +391,7 @@ ipcMain.handle('cache:clear', async () => {
   await session.fromPartition(PREVIEW_PARTITION).clearStorageData();
 });
 
-ipcMain.handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined));
+handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined));
 
 let quitting = false;
 app.on('before-quit', (e) => {
@@ -392,7 +418,7 @@ app.on('before-quit', (e) => {
   host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
 });
 
-ipcMain.handle('notify:test', () => {
+handle('notify:test', () => {
   const s = publicSettings();
   if (s.sound) win?.webContents.send('app:chime');
   if (s.notify && Notification.isSupported())

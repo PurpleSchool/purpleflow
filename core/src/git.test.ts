@@ -220,3 +220,33 @@ test('diffText и splitDiff: кириллица и пробелы в путях,
   assert.ok((await paths(base)).includes('моя папка/файл.ts'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('stash: параллельные прогоны в двух worktree не забирают чужие записи', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-stash-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const main = path.join(dir, 'main');
+  fs.mkdirSync(main);
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: main }).toString();
+  g('init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(main, 'a.txt'), 'a\n');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
+  const git = new Git('git', process.env);
+  const copies = Array.from({ length: 4 }, (_, i) => path.join(dir, `w${i}`));
+  copies.forEach((w, i) => g('worktree', 'add', '-q', '-b', `b${i}`, w));
+
+  for (let round = 0; round < 3; round++) {
+    await Promise.all(
+      copies.map(async (w, i) => {
+        fs.writeFileSync(path.join(w, 'a.txt'), `правка ${i}\n`);
+        const sha = await git.stashExcept(w, `проба ${i}`, []);
+        assert.ok(sha);
+        assert.equal(fs.readFileSync(path.join(w, 'a.txt'), 'utf8'), 'a\n');
+        await git.restoreStash(w, sha);
+        assert.equal(fs.readFileSync(path.join(w, 'a.txt'), 'utf8'), `правка ${i}\n`);
+        await git.discardAll(w);
+      }),
+    );
+  }
+  assert.equal(g('stash', 'list').trim(), '', 'все записи убраны');
+});

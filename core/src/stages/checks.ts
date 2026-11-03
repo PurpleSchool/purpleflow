@@ -341,16 +341,19 @@ export async function settleBaseChecks(k: Kernel, run: RunFile) {
     for (const a of run.attempts)
       if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
   }
-  if (!run.prepared && run.setupCommand) {
-    const s = k.opts.getSettings();
-    k.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
-    const r = await k.shell(run, run.setupCommand, s.testTimeoutMin);
-    k.checkStop(run);
-    if (r.code !== 0)
-      throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
-    run.prepared = true;
-    k.save(run);
-  }
+  await runSetup(k, run);
+}
+
+/** Команда подготовки (установка зависимостей), если её ещё не запускали. */
+async function runSetup(k: Kernel, run: RunFile) {
+  if (run.prepared || !run.setupCommand) return;
+  k.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
+  const r = await k.shell(run, run.setupCommand, k.opts.getSettings().testTimeoutMin);
+  k.checkStop(run);
+  if (r.code !== 0)
+    throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
+  run.prepared = true;
+  k.save(run);
 }
 
 /** Большая задача: следующий этап реализации со свежим запасом попыток. false — этапов больше нет. */
@@ -561,16 +564,8 @@ export async function stageTests(k: Kernel, run: RunFile) {
 
 /** Рефакторинг начинается с зелёных проверок: иначе нечем доказать, что поведение не изменилось. */
 export async function stageBaseline(k: Kernel, run: RunFile) {
-  const s = k.opts.getSettings();
   const attempt = k.begin(run, 'baseline');
-  if (!run.prepared && run.setupCommand) {
-    k.log(run, c.sky(`$ ${run.setupCommand}`) + '\n');
-    const r = await k.shell(run, run.setupCommand, s.testTimeoutMin);
-    k.checkStop(run);
-    if (r.code !== 0)
-      throw new Error(`Команда подготовки «${run.setupCommand}» завершилась с кодом ${r.code}${r.timedOut ? ' (таймаут)' : ''}`);
-    run.prepared = true;
-  }
+  await runSetup(k, run);
   const { result } = await runChecks(k, run);
   run.repro = result;
   run.baseChecks = result.checks ?? [];

@@ -1,5 +1,5 @@
 // Стадия «Ревью»: независимый ревьюер, перепроверка блокирующих замечаний, сводка изменений и карта плана.
-import { addUsage, c, emptyUsage, type AgentResult } from '../agents/common.js';
+import { c } from '../agents/common.js';
 import { isImageFile } from '../files.js';
 import { Git } from '../git.js';
 import { formatItem, originTag } from '../items.js';
@@ -177,11 +177,11 @@ export async function reviewPass(k: Kernel, run: RunFile, quiet = false): Promis
   const stats = new Map(splitDiff(diff).map((f) => [f.path, lineStats(f.text)]));
   const base8 = run.baseCommit.slice(0, 8);
   // Небольшая часть — прямо в промпт (без лишних шагов); большая — списком файлов: ревьюер читает дифф сам.
-  const diffFor = (i: number) => {
-    const part = packed.parts[i] ?? '';
+  const diffFor = () => {
+    const part = packed.parts[0] ?? '';
     if (!part) return '(изменений кода нет)';
     if (part.length <= INLINE_DIFF) return `Дифф:\n\n\`\`\`diff\n${part}\n\`\`\``;
-    const list = packed.files[i]
+    const list = packed.files[0]
       .map((f) => {
         const st = stats.get(f);
         return `- \`${f}\`${st ? ` (+${st.add} −${st.del})` : ''}`;
@@ -191,7 +191,6 @@ export async function reviewPass(k: Kernel, run: RunFile, quiet = false): Promis
   };
   const docs = await getChangeDocs(k, run.id);
   const lastTest = run.tests[run.tests.length - 1];
-  const n = Math.max(1, packed.parts.length);
   const extraFiles = [
     packed.trimmed.length
       ? `Урезаны до начала (дочитай через \`git diff ${run.baseCommit.slice(0, 8)} -- <файл>\`, если нужно): ${packed.trimmed.map((f) => `\`${f}\``).join(', ')}.`
@@ -202,95 +201,66 @@ export async function reviewPass(k: Kernel, run: RunFile, quiet = false): Promis
   ]
     .filter(Boolean)
     .join('\n');
-  if (n > 1) out(c.dim(`Дифф большой — ревью на ${n} ревьюеров параллельно, по модулям.`) + '\n');
-
   const previous = previousReviewBlock(k, run);
-  const promptFor = (i: number) =>
-    k.prompts.render('review.md', {
-      changeId: run.changeId,
-      proposal: docs.proposal || '(нет)',
-      tasks: docs.tasks || '(нет)',
-      specs: docs.specs.map((s) => `### ${s.path}\n\n${s.content}`).join('\n\n') || '(нет)',
-      tests: quiet
-        ? 'идут параллельно с ревью и проверяются отдельно — не запускай их, не оценивай, прошли ли они, и не пиши об этом замечаний'
-        : lastTest
-          ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}`
-          : 'не запускались',
-      base: run.baseCommit.slice(0, 8),
-      diff: diffFor(i),
-      scope: [
-        n > 1
-          ? `\n## Твоя часть\n\nДифф большой, его делят ${n} ревьюера. Ты смотришь часть ${i + 1} из ${n} — файлы ниже; остальные части смотрят другие. Замечания — по своим файлам; если проблема на стыке с чужим файлом — открой его и тоже напиши. Прошлые замечания по чужим файлам пропусти.\n\n${packed.files[i].map((f) => `- \`${f}\``).join('\n')}\n`
-          : '',
-        extraFiles && (n === 1 || i === n - 1) ? `\n${extraFiles}\n` : '',
-      ].join(''),
-      previous:
-        previous ||
-        '\nНайденные блокирующие отдельно проверит второй ревьюер по коду — поэтому не отбрасывай подозрение на ошибку из сомнения: если сценарий поломки правдоподобен, ставь в `blocking` с описанием сценария.\n',
-      attachments: [
-        run.attachments?.some(isImageFile)
-          ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.'
-          : '',
-        filesBlock(k, run),
-        run.visuals?.length
-          ? 'Также прикреплены скриншоты приложения после изменений (визуальная проверка). Учитывай видимый результат.'
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    });
+  const prompt = k.prompts.render('review.md', {
+    changeId: run.changeId,
+    proposal: docs.proposal || '(нет)',
+    tasks: docs.tasks || '(нет)',
+    specs: docs.specs.map((s) => `### ${s.path}\n\n${s.content}`).join('\n\n') || '(нет)',
+    tests: quiet
+      ? 'идут параллельно с ревью и проверяются отдельно — не запускай их, не оценивай, прошли ли они, и не пиши об этом замечаний'
+      : lastTest
+        ? `\`${lastTest.command || '—'}\`: ${lastTest.passed ? 'прошли' : 'не прошли'}`
+        : 'не запускались',
+    base: run.baseCommit.slice(0, 8),
+    diff: diffFor(),
+    scope: extraFiles ? `\n${extraFiles}\n` : '',
+    previous:
+      previous ||
+      '\nНайденные блокирующие отдельно проверит второй ревьюер по коду — поэтому не отбрасывай подозрение на ошибку из сомнения: если сценарий поломки правдоподобен, ставь в `blocking` с описанием сценария.\n',
+    attachments: [
+      run.attachments?.some(isImageFile)
+        ? 'К задаче приложены изображения (макеты, скриншоты) — они прикреплены к этому сообщению. Сверь реализацию с ними.'
+        : '',
+      filesBlock(k, run),
+      run.visuals?.length
+        ? 'Также прикреплены скриншоты приложения после изменений (визуальная проверка). Учитывай видимый результат.'
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  });
 
-  const bufs = new Array<string>(n).fill('');
-  const parallel = n > 1 || quiet;
-  const results = await Promise.all(
-    Array.from({ length: n }, (_, i) =>
-      runRole(k, run, 'reviewer', {
-        prompt: promptFor(i),
-        ...(parallel
-          ? {
-              onOutput: (t: string) => {
-                bufs[i] += t;
-              },
-            }
-          : {}),
-        readOnly: true,
-        images: [...(run.attachments ?? []).filter(isImageFile), ...(run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file)],
-        outputSchema: k.prompts.json<object>('review.schema.json'),
-      }),
-    ),
-  );
-  if (parallel) {
-    const head = (i: number) =>
-      '\n' +
-      c.violet(c.bold(`━━ ${STAGE_TITLES.review} · попытка ${attempt.attempt}${n > 1 ? ` · часть ${i + 1}/${n}` : ''}`)) +
-      (quiet ? c.dim('  # шло параллельно с проверками') : '') +
-      '\n';
-    const text = bufs.map((b, i) => head(i) + b).join('');
-    if (quiet) buffered = text + buffered;
-    else k.log(run, text, false);
+  let buf = '';
+  const res = await runRole(k, run, 'reviewer', {
+    prompt,
+    // Параллельно с проверками вывод копим, чтобы не перемешать с их журналом.
+    ...(quiet
+      ? {
+          onOutput: (t: string) => {
+            buf += t;
+          },
+        }
+      : {}),
+    readOnly: true,
+    images: [...(run.attachments ?? []).filter(isImageFile), ...(run.visuals?.at(-1)?.shots ?? []).slice(0, 6).map((x) => x.file)],
+    outputSchema: k.prompts.json<object>('review.schema.json'),
+  });
+  if (quiet) {
+    const head = c.violet(c.bold(`━━ ${STAGE_TITLES.review} · попытка ${attempt.attempt}`)) + c.dim('  # шло параллельно с проверками');
+    buffered = `\n${head}\n${buf}${buffered}`;
   }
-  // Токены всех ревьюеров — в попытку; остановка или сбой любого — как у одного агента.
-  const merged: AgentResult = {
-    ok: results.every((r) => r.ok),
-    stopped: results.some((r) => r.stopped),
-    text: '',
-    usage: results.reduce((u, r) => addUsage(u, r.usage), emptyUsage()),
-    error: results.find((r) => !r.ok)?.error,
-  };
   try {
-    k.afterAgent(run, attempt, merged);
+    k.afterAgent(run, attempt, { ...res, text: '' });
   } catch (e) {
     if (quiet) k.log(run, buffered, false);
     throw e;
   }
 
-  const parsedAll = results.map((r) => parseReview(r.text));
-  const bad = parsedAll.findIndex((x) => !x);
-  if (bad >= 0) {
+  const reply = parseReview(res.text);
+  if (!reply) {
     if (quiet) k.log(run, buffered, false);
-    throw new Error(
-      `Ревьюер${n > 1 ? ` (часть ${bad + 1})` : ''} вернул ответ не в формате JSON { blocking, notes }:\n${results[bad].text.slice(0, 500)}`,
-    );
+    throw new Error(`Ревьюер вернул ответ не в формате JSON { blocking, notes }:\n${res.text.slice(0, 500)}`);
   }
   const seen = new Set<string>();
   const uniq = (items: ReviewItem[]) =>
@@ -300,7 +270,7 @@ export async function reviewPass(k: Kernel, run: RunFile, quiet = false): Promis
       seen.add(key);
       return true;
     });
-  const parsed = { blocking: uniq(parsedAll.flatMap((x) => x!.blocking)), notes: uniq(parsedAll.flatMap((x) => x!.notes)) };
+  const parsed = { blocking: uniq(reply.blocking), notes: uniq(reply.notes) };
   // Первое ревью — с проверкой найденного: второй ревьюер подтверждает каждое блокирующее по коду.
   if (!previous && parsed.blocking.length) {
     const verified = await verifyBlocking(k, run, attempt, parsed.blocking, docs.proposal, out);

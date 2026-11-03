@@ -39,7 +39,10 @@ export function AgentOutput({ runId, slice, attempt }: { runId: string; slice: L
   useEffect(() => {
     if (running || attempt.output) return;
     let alive = true;
-    void bridge.core.getLog(runId).then((full) => alive && setFromLog(finalMessage(cut(full, slice))));
+    bridge.core
+      .getLog(runId)
+      .then((full) => alive && setFromLog(finalMessage(cut(full, slice))))
+      .catch(() => {});
     return () => {
       alive = false;
     };

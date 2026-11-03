@@ -212,6 +212,7 @@ export async function updateBranch(k: Kernel, id: string) {
     k.log(r, c.dim(`ветка ${r.branch} уже содержит всё из ${base} — обновлять нечего`) + '\n');
     throw new Error(`Ветка уже содержит всё из ${base}`);
   }
+  r.diffFrom = await git.revParse(r.worktreePath, 'FETCH_HEAD');
   r.prRound = round;
   r.prRounds = [
     ...(r.prRounds ?? []),

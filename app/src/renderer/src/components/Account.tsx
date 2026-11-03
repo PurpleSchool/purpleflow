@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { CheckCircle2, KeyRound, Plus } from 'lucide-react';
 import type { AccountKey } from '../../../shared/ipc';
 import { Button, Field, Input } from './ui';
-import { useStore } from '../lib/store';
+import { useActions, useStore } from '../lib/store';
 import { bridge } from '../lib/api';
 
 export const PRIVACY_URL = 'https://purpleschool.ru/privacy-policy.pdf';
@@ -19,7 +19,7 @@ type Mode = 'login' | 'register' | 'restore';
 
 /** Вход, регистрация и восстановление пароля PurpleSchool. onDone — вошли или зарегистрировались. */
 export function AuthForms({ onDone, initial = 'login' }: { onDone: () => void | Promise<void>; initial?: Mode }) {
-  const { reloadSettings } = useStore();
+  const { reloadSettings } = useActions();
   const [mode, setMode] = useState<Mode>(initial);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

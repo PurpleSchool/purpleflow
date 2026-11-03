@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { WebviewTag } from 'electron';
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Monitor, RotateCw, Smartphone, Square, TriangleAlert } from 'lucide-react';
 import type { PreviewState } from '@purpleflow/core';
 import { Button } from './ui';
 import { onCoreEvent } from '../lib/store';
 import { bridge, cleanErr } from '../lib/api';
+import { isLocalUrl } from '../../../shared/urls';
 
 /** Состояние приложения прогона для ручной проверки (общее для вкладки и строки приёмки). */
 export function usePreview(runId: string) {
@@ -12,7 +13,10 @@ export function usePreview(runId: string) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void bridge.core.getPreview(runId).then((s) => alive && setState(s));
+    bridge.core
+      .getPreview(runId)
+      .then((s) => alive && setState(s))
+      .catch((e) => alive && setError(cleanErr(e)));
     const off = onCoreEvent((e) => {
       if (e.type === 'preview.state' && e.runId === runId) setState(e.state);
     });
@@ -33,18 +37,37 @@ export function usePreview(runId: string) {
   return { state, error, start, stop };
 }
 
-/** Живая трансляция браузера агента визуальной проверки и его последнее действие. */
+type AgentView = { frame: { data: string; url: string } | null; action: string | null };
+
+/**
+ * Живая трансляция браузера агента визуальной проверки и его последнее действие.
+ * Кадры идут часто и хранятся вне состояния: экран прогона перерисовывается, только когда трансляция началась или кончилась,
+ * а каждый кадр получает один AgentScreen. Подписка живёт на экране прогона: Chrome шлёт кадр лишь при изменении страницы,
+ * и вкладка, открытая позже, иначе ждала бы следующего.
+ */
 export function useAgentScreen(runId: string) {
-  const [frame, setFrame] = useState<{ data: string; url: string } | null>(null);
-  const [action, setAction] = useState<string | null>(null);
+  const [store] = useState(() => {
+    let view: AgentView = { frame: null, action: null };
+    const subs = new Set<() => void>();
+    return {
+      get: () => view,
+      set(patch: Partial<AgentView>) {
+        view = { ...view, ...patch };
+        subs.forEach((fn) => fn());
+      },
+      subscribe(fn: () => void) {
+        subs.add(fn);
+        return () => subs.delete(fn);
+      },
+    };
+  });
+  const [live, setLive] = useState(false);
   useEffect(() => {
-    setFrame(null);
-    setAction(null);
     let buf = '';
     return onCoreEvent((e) => {
       if (e.type === 'visual.frame' && e.runId === runId) {
-        setFrame(e.frame ? { data: e.frame.data, url: e.frame.url } : null);
-        if (!e.frame) setAction(null);
+        store.set(e.frame ? { frame: { data: e.frame.data, url: e.frame.url } } : { frame: null, action: null });
+        setLive(Boolean(e.frame));
       } else if (e.type === 'agent.output' && e.runId === runId && e.stage === 'visual') {
         // Вывод приходит кусками — склеиваем и берём последнюю завершённую строку с командой pw.
 
@@ -53,19 +76,19 @@ export function useAgentScreen(runId: string) {
         for (let i = lines.length - 1; i >= 0; i--) {
           const m = lines[i].match(/(?:^|[\s;&|(])pw\s+([a-z][a-z-]*[^;&|]*)/);
           if (m) {
-            setAction(m[1].trim().slice(0, 120));
+            store.set({ action: m[1].trim().slice(0, 120) });
             break;
           }
         }
       }
     });
-  }, [runId]);
-  return { frame, action };
+  }, [runId, store]);
+  return { store, live };
 }
 
 /** Экран браузера агента: только смотреть, управляет агент. */
 export function AgentScreen({ screen }: { screen: ReturnType<typeof useAgentScreen> }) {
-  const { frame, action } = screen;
+  const { frame, action } = useSyncExternalStore(screen.store.subscribe, screen.store.get);
   if (!frame) {
     return (
       <div className="browser-empty">
@@ -119,6 +142,8 @@ export function BrowserPane({
   const { error, start, stop: stopApp } = preview;
   const [manualUrl, setManualUrl] = useState<string | null>(null);
   const [typed, setTyped] = useState('localhost:3000');
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Свой адрес — как запущенное приложение, только останавливать нечего.
   const state: PreviewState = manualUrl ? { status: 'ready', url: manualUrl } : preview.state;
   const stop = async () => {
@@ -128,7 +153,11 @@ export function BrowserPane({
   const openManual = () => {
     const t = typed.trim();
     if (!t) return;
-    setManualUrl(/^https?:\/\//.test(t) ? t : `http://${t}`);
+    const url = /^https?:\/\//.test(t) ? t : `http://${t}`;
+    // Вкладка показывает только приложение на этой машине: главный процесс не подключит webview с чужим адресом.
+    if (!isLocalUrl(url)) return setManualError('Здесь открываются только адреса на этой машине (localhost, 127.0.0.1).');
+    setManualError(null);
+    setManualUrl(url);
   };
   const view = useRef<WebviewTag | null>(null);
   const [address, setAddress] = useState('');
@@ -147,18 +176,28 @@ export function BrowserPane({
         /* webview ещё не готов */
       }
     };
-    const loading = () => setNav((n) => ({ ...n, loading: true }));
+    const loading = () => {
+      setLoadError(null);
+      setNav((n) => ({ ...n, loading: true }));
+    };
+    const failed = (e: Electron.DidFailLoadEvent) => {
+      // -3 — навигацию отменили (новый переход или адрес ушёл в обычный браузер), это не сбой.
+      if (e.isMainFrame && e.errorCode !== -3)
+        setLoadError(`Страница не открылась: ${e.errorDescription || e.errorCode} — ${e.validatedURL}`);
+    };
     w.addEventListener('did-navigate', sync);
     w.addEventListener('did-navigate-in-page', sync);
     w.addEventListener('did-stop-loading', sync);
     w.addEventListener('did-start-loading', loading);
     w.addEventListener('dom-ready', sync);
+    w.addEventListener('did-fail-load', failed);
     return () => {
       w.removeEventListener('did-navigate', sync);
       w.removeEventListener('did-navigate-in-page', sync);
       w.removeEventListener('did-stop-loading', sync);
       w.removeEventListener('did-start-loading', loading);
       w.removeEventListener('dom-ready', sync);
+      w.removeEventListener('did-fail-load', failed);
     };
   }, [ready, state.url]);
 
@@ -223,6 +262,7 @@ export function BrowserPane({
                   .
                 </p>
               )}
+              {manualError && <p className="browser-error">{manualError}</p>}
               {manual && (
                 <form
                   className="browser-manual"
@@ -304,6 +344,7 @@ export function BrowserPane({
           onClick={() => void stop()}
         />
       </div>
+      {loadError && <p className="browser-error browser-load-error">{loadError}</p>}
       <div className={`browser-stage ${mobile ? 'is-mobile' : ''}`}>
         <webview
           ref={(el) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { useStore } from './lib/store';
+import { useActions, useStore } from './lib/store';
 import { NewTaskScreen } from './screens/NewTask';
 import { ProjectScreen } from './screens/projects/ProjectScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
@@ -41,7 +41,7 @@ export function App() {
       }
       return !c;
     });
-  const { go } = useStore();
+  const { go } = useActions();
   // Звук внимания (прогон ждёт решения, готов или упал) и переход к прогону по клику на уведомление.
   useEffect(() => {
     const offChime = bridge.onChime(chime);

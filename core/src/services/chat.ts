@@ -5,6 +5,7 @@ import path from 'node:path';
 import { emptyUsage, type AgentResult, type AgentStep } from '../agents/common.js';
 import { isImageFile } from '../files.js';
 import { Git } from '../git.js';
+import { writeFiles } from './attachments.js';
 import type { Kernel } from '../kernel.js';
 import { killGroup } from '../proc.js';
 import { writeAtomic } from '../store.js';
@@ -116,12 +117,14 @@ export async function createChat(
   return chat;
 }
 
-/** Название, агент, модель и правки. Смена агента начинает новую сессию — история уйдёт пересказом. */
+/** Название, агент, модель и правки. Смена агента или правок начинает новую сессию — история уйдёт пересказом. */
 export function updateChat(k: Kernel, id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'edits'>>): ChatFile {
   const chat = must(k, id);
   if (patch.title !== undefined) chat.title = patch.title.trim().slice(0, 120) || chat.title;
   if (patch.agent && patch.agent !== chat.agent) chat.agent = patch.agent;
   if (patch.model !== undefined) chat.model = patch.model.trim();
+  // Правила чата уходят в начале сессии: «только чтение» в ней осталось бы и после включения правок — и наоборот.
+  if (patch.edits !== undefined && patch.edits !== chat.edits) chat.session = undefined;
   if (patch.edits !== undefined) chat.edits = patch.edits;
   save(k, chat);
   return chat;
@@ -184,25 +187,9 @@ function historyBlock(messages: ChatMessage[]): string {
   return `Предыдущая переписка в этом чате:\n\n${lines.join('\n\n')}\n\n---\n\n`;
 }
 
-const saveAttachments = (k: Kernel, id: string, files: { name: string; data: Uint8Array }[]): string[] => {
-  if (!files.length) return [];
-  const dir = path.join(chatFilesDir(k, id), 'files');
-  fs.mkdirSync(dir, { recursive: true });
-  return files.map((f) => {
-    const ext = path
-      .extname(f.name)
-      .toLowerCase()
-      .replace(/[^.a-z0-9]/g, '');
-    const base =
-      path
-        .basename(f.name, path.extname(f.name))
-        .replace(/[^\p{L}\p{N}_.-]+/gu, '-')
-        .slice(0, 60) || 'file';
-    const file = path.join(dir, `${Date.now().toString(36)}-${base}${ext}`);
-    fs.writeFileSync(file, Buffer.from(f.data));
-    return file;
-  });
-};
+// Метка времени с номером: два файла с одним именем в одном сообщении не затирают друг друга.
+const saveAttachments = (k: Kernel, id: string, files: { name: string; data: Uint8Array }[]): string[] =>
+  writeFiles(path.join(chatFilesDir(k, id), 'files'), files, (i) => `${Date.now().toString(36)}-${i}`);
 
 /**
  * Сообщение человека. Если агент свободен — сразу ход; если отвечает — сообщение встаёт в очередь
@@ -356,6 +343,8 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<vo
       // Сессия сохраняется, только если claude успел её начать.
       if (res.ok || parts.length) chat.session = { agent, id: sessionId };
     }
+    // Продолжение упало сразу: сессия могла истечь. Следующее сообщение начнёт новую, история уйдёт пересказом — иначе чат не оживёт.
+    if (session && !res.ok && !res.stopped && !parts.length) chat.session = undefined;
     if (git && repo && before) {
       const after = await snapshot(git, repo);
       changed = [...after].filter(([f, t]) => before.get(f) !== t).map(([f]) => f);

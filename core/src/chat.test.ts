@@ -232,3 +232,62 @@ test('чат: сообщение во время ответа встаёт в о
   assert.equal(c.busy, false);
   assert.equal(c.chat.messages.at(-1)!.text, 'ответ 2');
 });
+
+test('чат: смена правок и упавшее продолжение начинают новую сессию', async () => {
+  const calls: AgentRunOptions[] = [];
+  let fail = false;
+  const claude = async (o: AgentRunOptions) => {
+    calls.push(o);
+    return fail
+      ? { ok: false, text: '', error: 'No conversation found', usage: emptyUsage() }
+      : { ok: true, text: 'Да', usage: emptyUsage() };
+  };
+  const core = makeCore({ claude });
+  const chat = await core.createChat({ agent: 'claude' });
+  await core.sendChat(chat.id, 'Первое');
+  await untilIdle(core, chat.id);
+
+  // В только чтение: правила и инструменты другие, продолжать старую сессию нельзя.
+  await core.updateChat(chat.id, { edits: false });
+  await core.sendChat(chat.id, 'Второе');
+  await untilIdle(core, chat.id);
+  assert.equal(calls[1].resume, undefined);
+  assert.match(calls[1].systemPrompt ?? '', /чате PurpleFlow/);
+  assert.match(calls[1].prompt, /Предыдущая переписка/);
+
+  // То же значение — сессия живёт дальше.
+  await core.updateChat(chat.id, { edits: false });
+  await core.sendChat(chat.id, 'Третье');
+  await untilIdle(core, chat.id);
+  assert.ok(calls[2].resume);
+
+  // Сессия истекла: один отказ, дальше чат оживает с пересказом истории.
+  fail = true;
+  await core.sendChat(chat.id, 'Четвёртое');
+  const failed = await untilIdle(core, chat.id);
+  assert.equal(failed.messages.at(-1)!.error, 'No conversation found');
+  fail = false;
+  await core.sendChat(chat.id, 'Пятое');
+  await untilIdle(core, chat.id);
+  assert.equal(calls[4].resume, undefined);
+  assert.match(calls[4].prompt, /Предыдущая переписка/);
+});
+
+test('чат: два вложения с одним именем не затирают друг друга', async () => {
+  const seen: AgentRunOptions[] = [];
+  const core = makeCore({
+    claude: async (o: AgentRunOptions) => {
+      seen.push(o);
+      return { ok: true, text: 'Да', usage: emptyUsage() };
+    },
+  });
+  const chat = await core.createChat({ agent: 'claude' });
+  const data = new Uint8Array([1]);
+  await core.sendChat(chat.id, 'Смотри', [
+    { name: 'a.png', data },
+    { name: 'a.png', data },
+  ]);
+  const after = await untilIdle(core, chat.id);
+  const files = after.messages.find((m) => m.role === 'user')!.attachments ?? [];
+  assert.equal(new Set(files).size, 2);
+});

@@ -62,16 +62,19 @@ export function LiveLog({ runId, slice }: { runId: string; slice?: LogSlice }) {
       else queue.push(e.text);
     });
 
-    void bridge.core.getLog(runId).then((full) => {
-      if (!alive) return;
-      const text = slice ? cut(full, slice) : full;
-      term.write(text);
-      // События, пришедшие во время загрузки, уже есть в файле лога, кроме самых свежих — дописываем хвост без повторов.
-      const tail = queue.join('');
-      if (tail && !text.endsWith(tail)) term.write(tail);
-      loaded = true;
-      requestAnimationFrame(() => fit.fit());
-    });
+    bridge.core
+      .getLog(runId)
+      .catch(() => '')
+      .then((full) => {
+        if (!alive) return;
+        const text = slice ? cut(full, slice) : full;
+        term.write(text);
+        // События, пришедшие во время загрузки, уже есть в файле лога, кроме самых свежих — дописываем хвост без повторов.
+        const tail = queue.join('');
+        if (tail && !text.endsWith(tail)) term.write(tail);
+        loaded = true;
+        requestAnimationFrame(() => fit.fit());
+      });
 
     const ro = new ResizeObserver(() => {
       try {

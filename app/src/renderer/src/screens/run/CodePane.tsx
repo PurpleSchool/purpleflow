@@ -13,15 +13,11 @@ const NO_COMMENTS: LineComment[] = [];
 /** Изменённые файлы прогона для счётчика на вкладке: пока прогон идёт — раз в несколько секунд, иначе на смене стадии. */
 export function useChangedFiles(run: RunFile | undefined): string[] | null {
   const [files, setFiles] = useState<string[] | null>(null);
-  /** Для какого прогона счётчик: при переходе на другой прогон старое число не показываем. */
-  const loadedFor = useRef<string | undefined>(undefined);
   const id = run?.id;
   const live = run?.status === 'running';
   useEffect(() => {
     if (!id) return;
     let alive = true;
-    setFiles((f) => (f && id !== loadedFor.current ? null : f));
-    loadedFor.current = id;
     const load = () =>
       bridge.core
         .getChangedFiles(id)

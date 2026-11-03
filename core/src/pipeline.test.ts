@@ -542,7 +542,8 @@ test(
     await untilGate(core, runId, 'gate2');
     await core.dispatch({ type: 'gate.approve', runId });
     let r = (await core.getRun(runId))!;
-    for (let i = 0; i < 300 && r.status !== 'finished'; i++) {
+    // finished пишется до коммита (чтобы попасть в run.json ветки), поэтому ждём и sha.
+    for (let i = 0; i < 300 && !r.commit; i++) {
       assert.notEqual(r.status, 'stopped', r.message);
       await new Promise((res) => setTimeout(res, 100));
       r = (await core.getRun(runId))!;
@@ -570,6 +571,30 @@ test(
     assert.match(g('show', 'main:src/math.js'), /mul/);
   },
 );
+
+test('автопилот: «Стоп» в паузе перед решением — план никто не принимает', { skip: !hasOpenspec, timeout: 60_000 }, async () => {
+  const repo = makeRepo();
+  const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
+  const core = makeCore(fake);
+  const { runId } = await core.dispatch({
+    type: 'run.start',
+    input: {
+      projectPath: repo,
+      task: 'Добавь mul',
+      testCommand: 'node --test',
+      mode: 'task',
+      workspace: 'worktree',
+      autopilot: true,
+    } as never,
+  });
+  await untilGate(core, runId, 'gate1');
+  await core.dispatch({ type: 'run.stop', runId });
+  await new Promise((res) => setTimeout(res, 1100));
+  const r = (await core.getRun(runId))!;
+  assert.equal(r.status, 'stopped');
+  assert.equal(r.next, 'gate1');
+  assert.equal(fake.prompts().length, 0, 'исполнитель не запускался');
+});
 
 test('менеджер: разбор ответа модели — JSON с действием, JSON в блоке кода, просто текст', () => {
   assert.deepEqual(parseReply('{"reply": "Верну к плану.", "action": {"kind": "replan", "text": "без mul"}}'), {

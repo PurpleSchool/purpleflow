@@ -92,9 +92,6 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
 
   useEffect(() => {
     let alive = true;
-    setMessages([]);
-    setThinking(false);
-    setError(null);
     void bridge.core
       .getManagerChat(runId)
       .then((c) => {

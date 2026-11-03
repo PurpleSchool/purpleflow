@@ -29,7 +29,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const run = state.details[runId];
   const [view, setView] = useState<View>('timeline');
   const d = useStageDrawer(run, () => setView('code'));
-  const { comment, setComment, lineComments, setLineComments, picked, setPicked, accTab, setAccTab } = useRunGate(runId);
+  const { comment, setComment, lineComments, setLineComments, picked, setPicked, accTab, setAccTab } = useRunGate();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const gateKey = useRef('');
@@ -116,7 +116,7 @@ export function RunScreen({ runId }: { runId: string }) {
     }
   };
   const dispatch = bridge.core.dispatch;
-  const agentLive = Boolean(agentScreen.frame) || (run.status === 'running' && run.next === 'visual');
+  const agentLive = agentScreen.live || (run.status === 'running' && run.next === 'visual');
   const canRunApp = projectRun || Boolean(run.runCommand && run.appUrl) || preview.state.status !== 'idle';
   const openApp = () => {
     setView('browser');
@@ -198,7 +198,7 @@ export function RunScreen({ runId }: { runId: string }) {
                 {
                   id: 'browser',
                   label: 'Браузер',
-                  extra: agentScreen.frame ? (
+                  extra: agentScreen.live ? (
                     <span className="tab-dot is-live" title="Агент работает в браузере" />
                   ) : preview.state.status === 'ready' ? (
                     <span className="tab-dot is-ok" />

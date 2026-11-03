@@ -9,10 +9,9 @@ export function attachmentsDir(k: Kernel, id: string): string {
   return path.join(k.opts.dataDir, 'attachments', id);
 }
 
-/** Файлы задачи (изображения, документы, логи) — в каталог данных приложения, чтобы не попасть в коммит репозитория. */
-export function saveAttachments(k: Kernel, id: string, files: { name: string; data: Uint8Array }[]): string[] {
+/** Файлы в каталог с безопасными именами. prefix(i) различает файлы, у которых после очистки совпали имена. */
+export function writeFiles(dir: string, files: { name: string; data: Uint8Array }[], prefix: (i: number) => string): string[] {
   if (!files.length) return [];
-  const dir = attachmentsDir(k, id);
   fs.mkdirSync(dir, { recursive: true });
   return files.map((f, i) => {
     const ext = path
@@ -24,10 +23,15 @@ export function saveAttachments(k: Kernel, id: string, files: { name: string; da
         .basename(f.name, path.extname(f.name))
         .replace(/[^\p{L}\p{N}_.-]+/gu, '-')
         .slice(0, 60) || 'file';
-    const file = path.join(dir, `${String(i + 1).padStart(2, '0')}-${base}${ext}`);
+    const file = path.join(dir, `${prefix(i)}-${base}${ext}`);
     fs.writeFileSync(file, Buffer.from(f.data));
     return file;
   });
+}
+
+/** Файлы задачи (изображения, документы, логи) — в каталог данных приложения, чтобы не попасть в коммит репозитория. */
+export function saveAttachments(k: Kernel, id: string, files: { name: string; data: Uint8Array }[]): string[] {
+  return writeFiles(attachmentsDir(k, id), files, (i) => String(i + 1).padStart(2, '0'));
 }
 
 export function attachmentsBlock(k: Kernel, run: RunFile): string {

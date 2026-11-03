@@ -20,10 +20,12 @@ export function VisualView({ run, runId, idx, attempt }: { run: RunFile; runId: 
   useEffect(() => {
     let alive = true;
     if (!v) return;
-    void Promise.all(v.shots.map(async (s) => [s.file, await bridge.core.getVisualShot(runId, s.file)] as const)).then((pairs) => {
-      // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
-      if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
-    });
+    void Promise.all(v.shots.map(async (s) => [s.file, await bridge.core.getVisualShot(runId, s.file).catch(() => null)] as const)).then(
+      (pairs) => {
+        // Удалённый очисткой хранилища скриншот — пустая строка: показываем заглушку, а не вечный спиннер.
+        if (alive) setUrls(Object.fromEntries(pairs.map(([f, u]) => [f, u ?? ''])));
+      },
+    );
     return () => {
       alive = false;
     };

@@ -1,10 +1,10 @@
 // Страница проекта с вкладками «Обзор», «Команды и окружение», «Знания о проекте».
 import { Plus, TriangleAlert } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { PillTabs } from '../../components/PillTabs';
 import { Button, Topbar } from '../../components/ui';
 import { shortPath } from '../../lib/format';
-import { useStore, type ProjectTab } from '../../lib/store';
+import { useActions, type ProjectTab } from '../../lib/store';
 import { CommandsPanel } from './Commands';
 import { KnowledgeView } from './Knowledge';
 import { Overview } from './Overview';
@@ -13,7 +13,7 @@ import { cleanErr } from '../../lib/api';
 
 // ——— Страница проекта ———
 export function ProjectScreen({ path, initialTab }: { path: string; initialTab?: ProjectTab }) {
-  const { go } = useStore();
+  const { go } = useActions();
   const [tab, setTab] = useState<ProjectTab>(initialTab ?? 'overview');
   const [p, setP] = useState<LoadedProject | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +33,8 @@ export function ProjectScreen({ path, initialTab }: { path: string; initialTab?:
   }, [path]);
 
   const repo = p?.info.isRepo;
+  const commandsOpened = useRef(false);
+  if (tab === 'commands') commandsOpened.current = true;
   return (
     <div className="screen">
       <Topbar
@@ -65,7 +67,7 @@ export function ProjectScreen({ path, initialTab }: { path: string; initialTab?:
         />
       </div>
       <div className="scroll">
-        <div className="project-page step-enter" key={tab}>
+        <div className="project-page">
           {error && (
             <p className="inline-error">
               <TriangleAlert size={14} /> {error}
@@ -77,12 +79,25 @@ export function ProjectScreen({ path, initialTab }: { path: string; initialTab?:
                 <span className="spinner big" />
               </div>
             )
-          ) : tab === 'overview' || !repo ? (
-            <Overview p={p} onTab={setTab} />
-          ) : tab === 'commands' ? (
-            <CommandsPanel p={p} onSaved={() => void reload()} onDirty={setDirty} />
           ) : (
-            <KnowledgeView repo={p.info.path} name={p.info.name} />
+            <>
+              {(tab === 'overview' || !repo) && (
+                <div className="project-tab step-enter">
+                  <Overview p={p} onTab={setTab} />
+                </div>
+              )}
+              {/* Команды живут и на других вкладках: иначе несохранённые правки терялись бы при переключении. */}
+              {repo && (tab === 'commands' || commandsOpened.current) && (
+                <div className={`project-tab ${tab === 'commands' ? 'step-enter' : ''}`} hidden={tab !== 'commands'}>
+                  <CommandsPanel p={p} onSaved={() => void reload()} onDirty={setDirty} />
+                </div>
+              )}
+              {repo && tab === 'knowledge' && (
+                <div className="project-tab step-enter">
+                  <KnowledgeView repo={p.info.path} name={p.info.name} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

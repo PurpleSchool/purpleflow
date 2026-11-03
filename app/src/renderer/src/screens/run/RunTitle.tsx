@@ -7,7 +7,7 @@ import { Button, StatusPill } from '../../components/ui';
 import { bridge } from '../../lib/api';
 import { shortPath } from '../../lib/format';
 import { MODES } from '../../lib/stages';
-import { useStore } from '../../lib/store';
+import { useActions } from '../../lib/store';
 import { Attachments, DeleteRun, MergeControl, MetricsInline } from './RunHeader';
 
 export function RunTitle({
@@ -24,7 +24,7 @@ export function RunTitle({
   /** Действие с индикатором на кнопке name и ошибкой внизу экрана. */
   act: (name: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
-  const { go } = useStore();
+  const { go } = useActions();
   const [descOpen, setDescOpen] = useState(false);
   const dispatch = bridge.core.dispatch;
   const live = run.status === 'running' || run.status === 'waiting';

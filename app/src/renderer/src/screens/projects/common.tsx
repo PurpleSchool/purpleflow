@@ -3,7 +3,7 @@ import type { ProjectCommands, ProjectConfig, ProjectListItem, RelatedRepo, Work
 import { Check, ChevronDown, FolderGit2, FolderOpen, Minus, Plus, Settings2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { shortPath } from '../../lib/format';
-import { useStore } from '../../lib/store';
+import { useActions } from '../../lib/store';
 import { bridge } from '../../lib/api';
 
 export type ProjectInfo = ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; path: string };
@@ -120,7 +120,7 @@ export const WORKSPACES: { id: Workspace; title: string; hint: ReactNode }[] = [
 ];
 /** Выбор проекта в шапке: недавние проекты и «Новый проект» (выбор папки), рядом — переход в настройки проекта. */
 export function ProjectPicker({ project, draft, onPick }: { project: ProjectInfo | null; draft: boolean; onPick: (dir: string) => void }) {
-  const { go } = useStore();
+  const { go } = useActions();
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<ProjectListItem[]>([]);
   useEffect(() => {

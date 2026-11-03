@@ -1,7 +1,6 @@
 // Статистика проекта по его прогонам: сколько принято с первого раза, где возвраты, сколько времени уходит.
+import { isGate } from './stage-info.js';
 import type { ProjectStats, RunFile, RunMode, StageId } from './types.js';
-
-const GATES = new Set<StageId>(['gate0', 'gate1', 'gate2', 'limit']);
 
 const dayKey = (t: number) => {
   const d = new Date(t);
@@ -29,7 +28,7 @@ export function projectStats(runs: RunFile[], now = Date.now(), days = 28): Proj
         (a.endedAt ? Date.parse(a.endedAt) : r.status === 'running' || r.status === 'waiting' ? now : Date.parse(r.updatedAt)) -
           Date.parse(a.startedAt),
       );
-      if (GATES.has(a.stage)) waitMs += ms;
+      if (isGate(a.stage)) waitMs += ms;
       else agentMs += ms;
     }
   }

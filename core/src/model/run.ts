@@ -274,6 +274,8 @@ export interface RunFile {
   /** Доработка по замечаниям PR: номер текущего круга (первый — исходная реализация) и коммит, от которого считается дифф круга. */
   prRound?: number;
   roundBase?: string;
+  /** База после «Обновить ветку»: влитое из базовой ветки в дифф прогона не входит. */
+  diffFrom?: string;
   prRounds?: {
     round: number;
     at: string;

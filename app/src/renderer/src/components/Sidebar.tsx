@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { ChevronDown, FolderGit2, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, Workflow } from 'lucide-react';
 import type { ChatSummary, RunSummary, ToolName } from '@purpleflow/core';
-import { useStore } from '../lib/store';
+import { useActions, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { MODES } from '../lib/stages';
 import { toolNeeded } from '../lib/tools';
@@ -190,8 +190,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 }
 
 /** Прогон задачи: иконка flow, цвет — статус. */
-function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
-  const { go } = useStore();
+const RunRow = memo(function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
+  const { go } = useActions();
   return (
     <button
       className={`side-run st-${r.status} ${on ? 'is-on' : ''}`}
@@ -214,10 +214,10 @@ function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
       </span>
     </button>
   );
-}
+});
 
-function ChatRow({ c, on }: { c: ChatSummary; on: boolean }) {
-  const { go } = useStore();
+const ChatRow = memo(function ChatRow({ c, on }: { c: ChatSummary; on: boolean }) {
+  const { go } = useActions();
   return (
     <button
       className={`side-run side-chat-row ${c.busy ? 'st-running' : c.last === 'error' ? 'st-stopped' : c.last === 'ok' ? 'st-finished' : 'st-new'} ${on ? 'is-on' : ''}`}
@@ -240,7 +240,7 @@ function ChatRow({ c, on }: { c: ChatSummary; on: boolean }) {
       </span>
     </button>
   );
-}
+});
 
 /** Знак PurpleSchool (purpleschool.ru): две встречные скобки. */
 export function Mark({ size = 30 }: { size?: number }) {

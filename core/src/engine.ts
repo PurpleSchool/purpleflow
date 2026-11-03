@@ -34,12 +34,12 @@ import { DEFAULT_AGENTS } from './types.js';
 export async function recover(k: Kernel): Promise<void> {
   for (const s of k.store.list()) {
     // Агенты и тесты, пережившие аварийный выход приложения, не должны писать в worktree параллельно с повтором стадии.
-    const orphans = [...k.store.readPids(s.id), ...k.store.readPids(`${s.id}:server`), ...k.store.readPids(`${s.id}:preview`)];
-    if (orphans.length) {
-      await Promise.all(orphans.map(killPid));
-      k.store.writePids(s.id, []);
-      k.store.writePids(`${s.id}:server`, []);
-      k.store.writePids(`${s.id}:preview`, []);
+    for (const group of [s.id, `${s.id}:server`, `${s.id}:preview`]) {
+      const pids = k.store.readPids(group);
+      if (!pids.length) continue;
+      const recordedAt = k.store.pidsTime(group);
+      await Promise.all(pids.map((pid) => killPid(pid, recordedAt)));
+      k.store.writePids(group, []);
     }
     if (s.status !== 'running' || s.missing) continue;
     const r = k.store.load(s.id);
@@ -182,12 +182,23 @@ export async function start(k: Kernel, input: StartRunInput): Promise<string> {
     );
     return run.id;
   }
+  // Сразу на диск: лимит одновременных прогонов и занятость проекта считаются по списку, а подготовка идёт долго.
+  k.save(run);
+  k.preparing.add(run.id);
   try {
     await prepareWorkspace(k, run);
+    if (k.stopping.delete(run.id)) {
+      k.markStopped(run, 'Остановлено пользователем');
+      return run.id;
+    }
   } catch (e) {
+    k.stopping.delete(run.id);
     // Рабочую копию создать не удалось (грязная копия, ветка уже есть…) — прогона нет, ошибка уходит в окно.
     k.store.forget(run.id);
+    k.emit({ type: 'run.deleted', runId: run.id });
     throw e;
+  } finally {
+    k.preparing.delete(run.id);
   }
   void drive(k, run);
   return run.id;

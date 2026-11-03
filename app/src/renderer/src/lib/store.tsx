@@ -6,8 +6,8 @@ import { chatSummary, reducer, type State, type View } from './reducer';
 
 export type { ProjectTab, State, View } from './reducer';
 
-interface Ctx {
-  state: State;
+/** Действия стабильны: кому нужны только они, тот не перерисовывается при каждом событии прогона. */
+interface Actions {
   go(view: View): void;
   refreshTools(): Promise<void>;
   refreshRuns(): Promise<void>;
@@ -17,7 +17,12 @@ interface Ctx {
   reloadSettings(): Promise<PublicSettings>;
 }
 
+interface Ctx extends Actions {
+  state: State;
+}
+
 const StoreCtx = createContext<Ctx | null>(null);
+const ActionsCtx = createContext<Actions | null>(null);
 
 /** Подписчики на сырые события (лог агента идёт мимо React-состояния, прямо в xterm). */
 const listeners = new Set<(e: CoreEvent) => void>();
@@ -107,11 +112,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // go стабилен: подписчики на него (уведомления, клавиши) не переподписываются на каждое обновление состояния.
   const go = useCallback((view: View) => dispatch({ t: 'view', view }), []);
-  const value = useMemo<Ctx>(
-    () => ({ state, go, refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings }),
-    [state, go, refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings],
+  const actions = useMemo<Actions>(
+    () => ({ go, refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings }),
+    [go, refreshTools, refreshRuns, loadRun, saveSettings, reloadSettings],
   );
-  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
+  const value = useMemo<Ctx>(() => ({ state, ...actions }), [state, actions]);
+  return (
+    <ActionsCtx.Provider value={actions}>
+      <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
+    </ActionsCtx.Provider>
+  );
+}
+
+export function useActions(): Actions {
+  const a = useContext(ActionsCtx);
+  if (!a) throw new Error('StoreProvider отсутствует');
+  return a;
 }
 
 export function useStore(): Ctx {

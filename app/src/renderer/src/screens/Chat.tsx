@@ -43,6 +43,8 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const [text, setText] = useState('');
   const [files, setFiles] = useState<Picked[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** Что человек набирает в заголовке: события ответа агента приходят постоянно и иначе затирали бы ввод. */
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [toTask, setToTask] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const list = useRef<HTMLDivElement>(null);
@@ -207,7 +209,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const remove = async () => {
     if (!chat) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    await bridge.core.deleteChat(chat.id);
+    await bridge.core.deleteChat(chat.id).catch((e) => setError(cleanErr(e)));
     go({ name: 'chat' });
   };
 
@@ -241,10 +243,16 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
           {chat ? (
             <input
               className="chat-title"
-              value={chat.title}
+              value={titleDraft ?? chat.title}
               aria-label="Название чата"
-              onChange={(e) => setChat({ ...chat, title: e.target.value })}
-              onBlur={(e) => void bridge.core.updateChat(chat.id, { title: e.target.value }).catch(() => {})}
+              onFocus={() => setTitleDraft(chat.title)}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={(e) => {
+                const title = e.target.value;
+                setTitleDraft(null);
+                setChat({ ...chat, title });
+                bridge.core.updateChat(chat.id, { title }).catch((err) => setError(cleanErr(err)));
+              }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             />
           ) : (
@@ -434,7 +442,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                     type="button"
                     className="chat-send is-stop"
                     title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'}
-                    onClick={() => chat && void bridge.core.stopChat(chat.id)}
+                    onClick={() => chat && bridge.core.stopChat(chat.id).catch((e) => setError(cleanErr(e)))}
                   >
                     <Square size={13} />
                   </button>

@@ -136,6 +136,11 @@
 .browser-error {
   color: var(--err) !important;
 }
+.browser-load-error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+}
 .browser-output {
   width: 100%;
   max-height: 220px;

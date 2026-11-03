@@ -49,16 +49,33 @@ export function setPidTracker(t: PidTracker | null) {
   tracker = t;
 }
 
-/** Убить дерево по PID из прошлого запуска приложения (если процесс ещё жив). */
-export function killPid(pid: number): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return resolve();
-    }
-    treeKill(pid, 'SIGKILL', () => resolve());
-  });
+/** Вывод ps -o etime= ([[дд-]чч:]мм:сс) в секунды; null — не разобрали. */
+export function parseEtime(s: string): number | null {
+  const m = s.trim().match(/^(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)$/);
+  return m ? Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3]) * 60 + Number(m[4]) : null;
+}
+
+/** Процесс начался уже после того, как PID был записан: номер достался кому-то другому. */
+async function startedAfter(pid: number, recordedAt: number): Promise<boolean> {
+  if (process.platform === 'win32') return false;
+  const r = await run('ps', ['-o', 'etime=', '-p', String(pid)], { cwd: process.cwd(), env: process.env, timeoutMs: 5000 });
+  const age = parseEtime(r.stdout);
+  // Запас в пару секунд: и секунды ps, и время файла округлены.
+  return age != null && Date.now() - age * 1000 > recordedAt + 2000;
+}
+
+/**
+ * Убить дерево по PID из прошлого запуска приложения (если процесс ещё жив).
+ * recordedAt — когда PID записан: за время простоя и после перезагрузки номер мог перейти к чужому процессу.
+ */
+export async function killPid(pid: number, recordedAt?: number): Promise<void> {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return;
+  }
+  if (recordedAt != null && (await startedAfter(pid, recordedAt))) return;
+  await new Promise<void>((resolve) => treeKill(pid, 'SIGKILL', () => resolve()));
 }
 
 /** Все живые дочерние процессы по группам — чтобы «Стоп» убивал деревья целиком. */

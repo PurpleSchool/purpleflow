@@ -102,8 +102,7 @@ export class Git {
   /** Влить ref в текущую ветку. Конфликты не отменяются — слияние остаётся незавершённым, файлы с маркерами. */
   async mergeRef(dir: string, ref: string, message: string): Promise<{ conflicts: string[]; changed: boolean }> {
     const before = await this.head(dir);
-    const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir, env: this.env })).stdout.trim();
-    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
+    const identity = await this.identity(dir);
     const r = await run(this.bin, [...identity, 'merge', '--no-ff', '--no-edit', '-m', message, ref], {
       cwd: dir,
       env: this.env,
@@ -146,28 +145,47 @@ export class Git {
     await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message], 60_000);
   }
 
+  /** Автор коммита, если в репозитории он не настроен: коммит важнее красивой подписи. */
+  private async identity(dir: string): Promise<string[]> {
+    const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir, env: this.env })).stdout.trim();
+    return hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
+  }
+
+  /**
+   * refs/stash один на все worktree репозитория: параллельные прогоны иначе брали бы чужую запись —
+   * «верхняя после push» и номер stash@{n} верны, только пока никто другой не пишет.
+   */
+  private async stashLock(dir: string): Promise<string> {
+    const common = (await this.git(dir, ['rev-parse', '--git-common-dir'])).trim();
+    return `${path.resolve(dir, common)}#stash`;
+  }
+
   /**
    * Спрятать изменения рабочей копии, кроме перечисленных путей (файлы прогона, .env), и вернуть ссылку на stash.
    * null — прятать нечего.
    */
   async stashExcept(dir: string, message: string, keep: string[]): Promise<string | null> {
     if (!(await this.dirtyFiles(dir)).length) return null;
-    const before = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
-    await this.git(
-      dir,
-      ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)],
-      60_000,
-    );
-    const top = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
-    return top && top !== before ? top : null;
+    return serialized(await this.stashLock(dir), async () => {
+      const before = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
+      await this.git(
+        dir,
+        ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)],
+        60_000,
+      );
+      const top = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
+      return top && top !== before ? top : null;
+    });
   }
 
   /** Вернуть изменения из stash по ссылке и убрать его из списка. */
   async restoreStash(dir: string, sha: string): Promise<void> {
-    await this.git(dir, ['stash', 'apply', sha], 60_000);
-    const list = (await this.git(dir, ['stash', 'list', '--format=%gd %H'])).trim().split('\n');
-    const ref = list.find((l) => l.endsWith(` ${sha}`))?.split(' ')[0];
-    if (ref) await this.git(dir, ['stash', 'drop', ref]);
+    return serialized(await this.stashLock(dir), async () => {
+      await this.git(dir, ['stash', 'apply', sha], 60_000);
+      const list = (await this.git(dir, ['stash', 'list', '--format=%gd %H'])).trim().split('\n');
+      const ref = list.find((l) => l.endsWith(` ${sha}`))?.split(' ')[0];
+      if (ref) await this.git(dir, ['stash', 'drop', ref]);
+    });
   }
 
   /** Отменить все незакоммиченные изменения: правки отслеживаемых файлов и новые файлы. Игнорируемые (.env, node_modules) не трогаем. */
@@ -318,8 +336,7 @@ export class Git {
         await exec(this.bin, ['read-tree', 'HEAD'], worktree, env);
         await exec(this.bin, ['add', '-A'], worktree, env, 60_000);
         const tree = (await exec(this.bin, ['write-tree'], worktree, env)).trim();
-        const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
-        const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
+        const identity = await this.identity(worktree);
         const commit = (await exec(this.bin, [...identity, 'commit-tree', tree, '-p', 'HEAD', '-m', message], worktree, env)).trim();
         await this.git(worktree, ['update-ref', ref, commit]);
         return commit;
@@ -368,8 +385,7 @@ export class Git {
     const staged = await this.git(worktree, ['diff', '--cached', '--name-only']);
     if (!staged.trim()) return this.head(worktree);
     // Своё имя автора только если в репозитории не настроено — глобальный конфиг не трогаем.
-    const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: worktree, env: this.env })).stdout.trim();
-    const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
+    const identity = await this.identity(worktree);
     await this.git(worktree, [...identity, 'commit', '-m', message, '--no-verify']);
     return this.head(worktree);
   }
@@ -462,8 +478,7 @@ export class Git {
       temp = true;
     }
     try {
-      const hasUser = (await run(this.bin, ['config', 'user.email'], { cwd: dir!, env: this.env })).stdout.trim();
-      const identity = hasUser ? [] : ['-c', 'user.name=PurpleFlow', '-c', 'user.email=purpleflow@localhost'];
+      const identity = await this.identity(dir!);
       const r = await run(this.bin, [...identity, 'merge', '--no-ff', '-m', message, source], {
         cwd: dir!,
         env: this.env,

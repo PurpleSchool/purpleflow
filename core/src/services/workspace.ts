@@ -7,6 +7,7 @@ import type { Kernel } from '../kernel.js';
 
 import { OpenSpec } from '../openspec.js';
 import { run as runProc } from '../proc.js';
+import { traced } from '../trace.js';
 import type { RunFile } from '../types.js';
 import { getProjectConfig } from './projects.js';
 /** От какого коммита считать дифф: в круге доработки по PR — только правки этого круга. */
@@ -31,7 +32,12 @@ export async function prepareWorkspace(k: Kernel, run: RunFile) {
   } else {
     await git.addWorktree(run.projectPath, run.worktreePath, run.branch, run.baseCommit);
   }
-  if (run.mode !== 'quick') await new OpenSpec(tools.openspec, k.opts.env).ensureInit(run.worktreePath, 'init');
+  if (run.mode !== 'quick') {
+    await new OpenSpec(tools.openspec, k.opts.env).ensureInit(run.worktreePath, 'init').catch(async (e) => {
+      await undoWorkspace(git, run).catch(traced('prepareWorkspace: откат'));
+      throw e;
+    });
+  }
   run.workspacePending = undefined;
   k.save(run);
   copyEnvFiles(k, run);
@@ -45,6 +51,20 @@ export async function prepareWorkspace(k: Kernel, run: RunFile) {
       `PurpleFlow · ${run.changeId}\nветка ${run.branch} от ${run.baseBranch ? `${run.baseBranch} (${run.baseCommit.slice(0, 8)})` : run.baseCommit.slice(0, 8)}\n${run.workspace === 'branch' ? `рабочая копия проекта ${run.projectPath} (была ветка ${run.originalBranch ?? 'detached HEAD'})` : `worktree ${run.worktreePath}`}\n`,
     ),
   );
+}
+
+/**
+ * Откат созданной рабочей копии: иначе проект остался бы на чужой ветке,
+ * а следующая попытка упёрлась бы в «ветка уже есть». Копия была чистой — выбрасывать в ней нечего, кроме следов init.
+ */
+async function undoWorkspace(git: Git, run: RunFile) {
+  if (run.workspace === 'branch') {
+    await git.discardAll(run.projectPath);
+    await git.checkout(run.projectPath, run.originalBranch ?? run.baseCommit);
+  } else {
+    await git.removeWorktree(run.projectPath, run.worktreePath);
+  }
+  await git.deleteBranch(run.projectPath, run.branch);
 }
 
 /** Файлы окружения прогона: явный список или найденные в проекте (у прогонов без списка — из команд проекта). */

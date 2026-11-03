@@ -20,7 +20,7 @@ export async function getDiff(k: Kernel, id: string): Promise<DiffFile[]> {
   const skip = diffSkip(k, r);
   if (r.worktreeRemoved && r.status !== 'finished') return [];
   // Завершённый прогон — дифф ветки прогона: рабочая копия могла уйти на другую ветку.
-  if (r.status === 'finished') return git.diffCommits(r.projectPath, r.baseCommit, r.branch, skip);
+  if (r.status === 'finished') return git.diffCommits(r.projectPath, r.diffFrom ?? r.baseCommit, r.branch, skip);
   return git.diff(r.worktreePath, diffBase(k, r), skip);
 }
 
@@ -39,7 +39,7 @@ export async function getChangedFiles(k: Kernel, id: string): Promise<string[]> 
   const skip = diffSkip(k, r);
   const files =
     r.status === 'finished'
-      ? await git.namesBetween(r.projectPath, r.baseCommit, r.branch)
+      ? await git.namesBetween(r.projectPath, r.diffFrom ?? r.baseCommit, r.branch)
       : await git.changedFiles(r.worktreePath, diffBase(k, r));
   return files.filter((f) => !skip(f));
 }

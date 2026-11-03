@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { claudeArgs, claudeEnv, runClaude } from './agents/claude.js';
+import { claudeArgs, claudeEnv, claudeInput, runClaude } from './agents/claude.js';
 import { codexArgs, codexProxyBase, runCodex, type CodexOptions } from './agents/codex.js';
 import { addUsage, clip, emptyUsage, explainError, type AgentRunOptions, type AgentStep } from './agents/common.js';
 import { killGroup } from './proc.js';
@@ -286,4 +286,13 @@ test('runCodex: без прокси сбой авторизации не сва�
   assert.match(own.error ?? '', /не авторизован/);
   const proxied = await runCodex(codexOpts(cli.bin, cli.dir, { proxy: PROXY }).opts);
   assert.match(proxied.error ?? '', /отклонил ключ/);
+});
+
+test('claudeInput: на Windows системный промпт — в stdin, в cmd.exe аргумент с переводом строки оборвал бы команду', () => {
+  const o = { prompt: 'задача', systemPrompt: 'строка 1\nстрока 2' };
+  assert.deepEqual(claudeInput(o, 'darwin'), o);
+  const win = claudeInput(o, 'win32');
+  assert.equal(win.systemPrompt, undefined);
+  assert.match(win.prompt, /^строка 1\nстрока 2[\s\S]*задача$/);
+  assert.deepEqual(claudeInput({ prompt: 'задача' }, 'win32'), { prompt: 'задача', systemPrompt: undefined });
 });

@@ -29,6 +29,15 @@ export function claudeArgs(
   return args;
 }
 
+/**
+ * Промпт и системный промпт запуска. На Windows claude.cmd идёт через cmd.exe: перевод строки в аргументе обрывает команду,
+ * а длина ограничена 8 КБ, — поэтому системный промпт там уходит в stdin, как у codex.
+ */
+export function claudeInput(o: Pick<AgentRunOptions, 'prompt' | 'systemPrompt'>, platform: NodeJS.Platform = process.platform) {
+  if (platform !== 'win32' || !o.systemPrompt) return { prompt: o.prompt, systemPrompt: o.systemPrompt };
+  return { prompt: `${o.systemPrompt}\n\n---\n\n${o.prompt}`, systemPrompt: undefined };
+}
+
 export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth'>): NodeJS.ProcessEnv {
   const env = cleanEnv(o.env);
   if (o.proxy?.baseUrl) {
@@ -98,10 +107,11 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   let gotResult = false;
   const out = (s: string) => o.onOutput(crlf(s));
 
-  const r = await run(o.bin, claudeArgs(o), {
+  const input = claudeInput(o);
+  const r = await run(o.bin, claudeArgs({ ...o, systemPrompt: input.systemPrompt }), {
     cwd: o.cwd,
     env: claudeEnv(o),
-    input: o.prompt,
+    input: input.prompt,
     timeoutMs: o.timeoutMs,
     idleTimeoutMs: o.idleTimeoutMs,
     group: o.group,

@@ -331,7 +331,9 @@ export function Attachments({ runId, files }: { runId: string; files: string[] }
   const [big, setBig] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    void Promise.all(files.map((_, i) => bridge.core.getAttachment(runId, i))).then((u) => alive && setUrls(u));
+    Promise.all(files.map((_, i) => bridge.core.getAttachment(runId, i)))
+      .then((u) => alive && setUrls(u))
+      .catch(() => {});
     return () => {
       alive = false;
     };

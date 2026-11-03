@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { killGroup, liveCount, run, setPidTracker } from './proc.js';
+import { killGroup, killPid, liveCount, parseEtime, run, setPidTracker } from './proc.js';
 
 test('killGroup убивает всё дерево процессов', { skip: process.platform === 'win32' }, async () => {
   // Шелл с вложенным долгоживущим процессом.
@@ -62,4 +62,30 @@ test('сбой учёта PID не оставляет процесс без пр
   });
   const r = await run('sh', ['-c', 'exit 0'], { cwd: process.cwd(), env: process.env });
   assert.equal(r.code, 0);
+});
+
+test('parseEtime: все формы вывода ps', () => {
+  assert.equal(parseEtime(' 00:05\n'), 5);
+  assert.equal(parseEtime('02:03'), 123);
+  assert.equal(parseEtime('01:00:01'), 3601);
+  assert.equal(parseEtime('2-00:00:10'), 172810);
+  assert.equal(parseEtime(''), null);
+  assert.equal(parseEtime('ELAPSED'), null);
+});
+
+test('killPid: процесс, начавшийся после записи PID, чужой — его не трогаем', { skip: process.platform === 'win32' }, async () => {
+  const p = run('sleep', ['30'], { cwd: process.cwd(), env: process.env, group: 'g-pid' });
+  await new Promise((r) => setTimeout(r, 200));
+  const out = await run('pgrep', ['-n', '-f', '^sleep 30$'], { cwd: process.cwd(), env: process.env });
+  const pid = Number(out.stdout.trim());
+  assert.ok(pid > 0);
+  try {
+    await killPid(pid, Date.now() - 3_600_000);
+    assert.doesNotThrow(() => process.kill(pid, 0), 'PID записан час назад, процесс моложе — номер достался другому');
+    await killPid(pid, Date.now());
+    assert.equal((await p).code === 0, false, 'запись свежая — это наш процесс');
+    await killPid(999_999);
+  } finally {
+    await killGroup('g-pid');
+  }
 });

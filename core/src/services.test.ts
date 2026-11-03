@@ -5,12 +5,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { emptyUsage } from './agents/common.js';
 import { checkCommand, detectProjectCommands } from './detect.js';
+import { decide } from './gates.js';
 import { makeTitle } from './ids.js';
 import { Kernel } from './kernel.js';
 import { applyPending } from './services/control.js';
 import { cleanStorage, getStorage } from './services/disk.js';
 import { attachmentsBlock, saveAttachments } from './services/attachments.js';
+import { testConnection } from './services/connection.js';
+import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import { RunStore } from './store.js';
 import type { CoreSettings, RunFile } from './types.js';
 
@@ -202,3 +206,136 @@ test('checkCommand: нет скрипта — подсказка; флаг и wo
   for (const cmd of ['pnpm --filter web dev', 'pnpm -r test', 'npm run -w web build', 'yarn workspace web build'])
     assert.deepEqual(checkCommand(dir, cmd), [], cmd);
 });
+
+test('битый runs.json: копии прогонов из резервных файлов не считаются брошенными', async (t) => {
+  const k = kernel(t);
+  const wt = path.join(k.store.worktreesDir(), 'live');
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(wt, 'f'), Buffer.alloc(4096));
+  k.store.save({
+    id: 'r',
+    changeId: 'c',
+    createdAt: '2026-01-01',
+    status: 'running',
+    worktreeRemoved: true,
+    worktreePath: wt,
+    attempts: [],
+  } as unknown as RunFile);
+  fs.writeFileSync(path.join(k.opts.dataDir, 'runs.json'), '{ битый');
+  assert.equal((await getStorage(k)).find((i) => i.id === 'worktrees-orphan')?.bytes ?? 0, 0);
+  await cleanStorage(k, 'worktrees-orphan');
+  assert.ok(fs.existsSync(wt), 'идущий прогон не лишился копии');
+});
+
+test('testConnection: отвечают найденные агенты, у каждого своя модель; никого нет — понятная ошибка', async (t) => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-conn-'));
+  t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
+  for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
+  const settings = {
+    toolPaths: { claude: path.join(bin, 'claude'), codex: path.join(bin, 'codex') },
+    proxy: { baseUrl: '', apiKey: '' },
+    models: { planner: 'opus', executor: '', reviewer: 'gpt' },
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
+  } as unknown as CoreSettings;
+  const k = new Kernel({
+    dataDir: bin,
+    promptsDir: bin,
+    env: process.env,
+    getSettings: () => settings,
+    runners: {
+      claude: (async () => ({ ok: true, text: 'готово\n', usage: emptyUsage() })) as never,
+      codex: (async () => ({ ok: false, text: '', error: 'нет ключа', usage: emptyUsage() })) as never,
+    },
+  });
+  const checks = await testConnection(k);
+  const of = (a: string) => checks.find((c) => c.agent === a)!;
+  assert.deepEqual([of('claude').ok, of('claude').model, of('claude').reply], [true, 'opus', 'готово']);
+  assert.deepEqual([of('codex').ok, of('codex').model, of('codex').error], [false, 'gpt', 'нет ключа']);
+
+  const none = new Kernel({
+    dataDir: bin,
+    promptsDir: bin,
+    env: { PATH: '/нет' },
+    getSettings: () => ({ ...settings, toolPaths: {} }),
+  });
+  await assert.rejects(testConnection(none), /Не найдены/);
+});
+
+test('решение, которое отклонено, не гасит сервер ручной проверки', async (t) => {
+  const k = kernel(t);
+  const r = {
+    id: 'r',
+    changeId: 'c',
+    createdAt: '2026-01-01',
+    status: 'waiting',
+    next: 'gate2',
+    worktreeRemoved: true,
+    attempts: [],
+  } as unknown as RunFile;
+  k.store.save(r);
+  const state = { status: 'ready', url: 'http://x', command: 'x' } as const;
+  k.previews.set('r', state);
+  await assert.rejects(decide(k, 'r', 'fix'), /Опишите/);
+  await assert.rejects(decide(k, 'r', 'accept'), /только после исчерпания/);
+  assert.equal(getPreview(k, 'r'), state);
+  k.store.save({ ...r, next: 'gate1' });
+  await assert.rejects(decide(k, 'r', 'fix', 'поправь'), /на приёмке/);
+  assert.equal(getPreview(k, 'r'), state);
+});
+
+const previewRun = (t: { after: (fn: () => void) => void }, runCommand: string) => {
+  const k = kernel(t);
+  const wt = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pf-prev-')));
+  t.after(() => fs.rmSync(wt, { recursive: true, force: true }));
+  const r = {
+    id: 'r',
+    changeId: 'c',
+    createdAt: '2026-01-01',
+    status: 'waiting',
+    next: 'gate2',
+    workspace: 'worktree',
+    projectPath: wt,
+    worktreePath: wt,
+    runCommand,
+    appUrl: 'http://127.0.0.1:{port}/',
+    attempts: [],
+  } as unknown as RunFile;
+  k.store.save(r);
+  return k;
+};
+
+test(
+  'ручная проверка: сервер на свободном порту, повторный запуск — тот же, «Остановить» его гасит',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const k = previewRun(t, `node -e "require('http').createServer((q,s)=>s.end('ok')).listen(process.env.PORT,'127.0.0.1')"`);
+    const events: string[] = [];
+    k.on((e) => {
+      if (e.type === 'preview.state') events.push(e.state.status);
+    });
+    t.after(() => stopPreview(k, 'r'));
+    const state = await startPreview(k, 'r');
+    assert.equal(state.status, 'ready');
+    assert.equal(await (await fetch(state.url!)).text(), 'ok');
+    assert.equal(await startPreview(k, 'r'), state);
+    await stopPreview(k, 'r');
+    assert.deepEqual(events, ['starting', 'ready', 'idle']);
+    assert.equal(getPreview(k, 'r').status, 'idle');
+    await assert.rejects(fetch(state.url!));
+  },
+);
+
+test(
+  'ручная проверка: приложение упало — причина и вывод видны; нет команд — ошибка',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const k = previewRun(t, 'echo сломалось; exit 3');
+    const state = await startPreview(k, 'r');
+    assert.equal(state.status, 'failed');
+    assert.match(state.error ?? '', /кодом 3/);
+    assert.match(state.output ?? '', /сломалось/);
+    k.store.save({ ...k.mustLoad('r'), runCommand: undefined });
+    k.previews.clear();
+    await assert.rejects(startPreview(k, 'r'), /Запуск приложения/);
+  },
+);

@@ -91,7 +91,22 @@ export class RunStore {
   load(id: string): RunFile | null {
     const entry = this.readIndex().find((e) => e.id === id);
     if (!entry) return null;
-    return this.readFile(entry.runJsonPath) ?? this.readFile(this.backupPath(id));
+    return this.readOf(entry);
+  }
+
+  /**
+   * Сперва копия в данных приложения: save пишет её всегда, а файл в рабочей копии может править агент,
+   * и из него нельзя брать команды и пути. Он — для старых прогонов, у которых копии ещё нет.
+   */
+  private readOf(e: { id: string; runJsonPath: string }): RunFile | null {
+    return this.readFile(this.backupPath(e.id)) ?? this.readFile(e.runJsonPath);
+  }
+
+  /** Все сохранённые прогоны, даже если индекс битый или потерян. */
+  allBackups(): RunFile[] {
+    const dir = path.join(this.dataDir, 'runs');
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')) : [];
+    return files.map((f) => this.readFile(path.join(dir, f))).filter((r): r is RunFile => Boolean(r));
   }
 
   private readFile(file: string): RunFile | null {
@@ -106,7 +121,7 @@ export class RunStore {
 
   list(): RunSummary[] {
     return this.readIndex().map((e) => {
-      const r = this.readFile(e.runJsonPath) ?? this.readFile(this.backupPath(e.id));
+      const r = this.readOf(e);
       if (!r) {
         return {
           id: e.id,
@@ -171,6 +186,11 @@ export class RunStore {
     } catch {
       return [];
     }
+  }
+
+  /** Когда файл PID записан в последний раз (мс); undefined — файла нет. */
+  pidsTime(group: string): number | undefined {
+    return fs.statSync(this.pidFile(group), { throwIfNoEntry: false })?.mtimeMs;
   }
 
   writePids(group: string, pids: number[]): void {

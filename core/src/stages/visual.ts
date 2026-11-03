@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { c, crlf } from '../agents/common.js';
 import { prependPath } from '../env.js';
+import { isInside } from '../files.js';
 import { Git } from '../git.js';
 import { formatItem } from '../items.js';
 import type { Kernel } from '../kernel.js';
@@ -147,7 +148,7 @@ export async function stageVisual(k: Kernel, run: RunFile) {
     const shotsRaw = parseShots(res.text);
     const shots = shotsRaw
       .map((x) => ({ file: path.isAbsolute(x.file) ? x.file : path.join(dir, x.file), caption: x.caption }))
-      .filter((x) => x.file.startsWith(dir) && fs.existsSync(x.file));
+      .filter((x) => isInside(dir, x.file) && fs.existsSync(x.file));
     // Скриншоты, которые агент снял, но не перечислил, тоже показываем.
     for (const f of fs
       .readdirSync(dir)
