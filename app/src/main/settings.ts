@@ -28,6 +28,8 @@ interface StoredSettings {
   account: { tokenEnc: string; email: string; name: string; photo: string };
   /** Экран входа при первом запуске уже показан: вошли или нажали «Пропустить». */
   authPrompted: boolean;
+  /** Отправлять разработчикам очищенные отчёты об ошибках. */
+  errorReports: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -46,6 +48,7 @@ const DEFAULTS: StoredSettings = {
   userConfig: true,
   account: { tokenEnc: '', email: '', name: '', photo: '' },
   authPrompted: false,
+  errorReports: true,
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
@@ -64,6 +67,8 @@ function load(): StoredSettings {
       models: { ...DEFAULTS.models, ...raw.models },
       agents: { ...DEFAULTS.agents, ...raw.agents },
       toolPaths: { ...raw.toolPaths },
+      // Кто настроил приложение до появления отчётов, предупреждения не видел: для них они выключены, пока не включат сами.
+      errorReports: raw.errorReports ?? !raw.onboarded,
     };
   } catch (e) {
     // Нет файла — первый запуск. Битый файл откладываем: следующая запись иначе сотрёт токен и ключи насовсем.
@@ -137,6 +142,12 @@ export function setProxyKey(key: string) {
   persist(s);
 }
 
+/** До конца первой настройки пользователь ещё не видел предупреждения — ничего не отправляем. */
+export function errorReportsAllowed(): boolean {
+  const s = load();
+  return s.onboarded && s.errorReports;
+}
+
 export function publicSettings(): PublicSettings {
   const s = load();
   return {
@@ -156,6 +167,7 @@ export function publicSettings(): PublicSettings {
     accountEnabled: ACCOUNT_ENABLED,
     account: ACCOUNT_ENABLED && s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
+    errorReports: s.errorReports,
   };
 }
 
@@ -201,6 +213,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
   if (patch.userConfig !== undefined) s.userConfig = patch.userConfig;
   if (patch.authPrompted !== undefined) s.authPrompted = patch.authPrompted;
+  if (patch.errorReports !== undefined) s.errorReports = patch.errorReports;
   persist(s);
   return publicSettings();
 }

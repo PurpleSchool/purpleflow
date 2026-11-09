@@ -1,3 +1,4 @@
+import '@sentry/electron/preload';
 import { contextBridge, ipcRenderer } from 'electron';
 import { coreMethodNames, type CoreApi, type CoreMethod, type PurpleFlowBridge } from '../shared/ipc';
 import type { CoreEvent } from '@purpleflow/core';
@@ -9,6 +10,7 @@ const call =
     ipcRenderer.invoke('core:call', method, args);
 
 const bridge: PurpleFlowBridge = {
+  reportsErrors: ipcRenderer.sendSync('app:error-reports:get') === true,
   core: Object.fromEntries(coreMethodNames.map((m) => [m, call(m)])) as unknown as CoreApi,
   onEvent(fn) {
     const h = (_: unknown, e: CoreEvent) => fn(e);

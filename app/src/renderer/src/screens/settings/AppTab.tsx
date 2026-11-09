@@ -74,6 +74,26 @@ export function AppTab() {
           </Button>
         </header>
       </section>
+      <section className="panel">
+        <header className="panel-head">
+          <div>
+            <h2>Отчёты об ошибках</h2>
+            <p>
+              Когда приложение падает, разработчики получают тип ошибки, стек, версии приложения и системы. Код, задачи, пути и ключи не
+              отправляются.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.errorReports}
+            className={`switch ${s.errorReports ? 'is-on' : ''}`}
+            onClick={() => void saveSettings({ errorReports: !s.errorReports })}
+          >
+            <i />
+            <span>{s.errorReports ? 'Отправлять' : 'Не отправлять'}</span>
+          </button>
+        </header>
+      </section>
       <StoragePanel />
     </>
   );

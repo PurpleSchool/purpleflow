@@ -24,6 +24,7 @@ import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
 import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
+import { errorReportingActive, initErrorReporting } from './error-reporting';
 import { checkForUpdatesNow, downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
 
 // Отдельный профиль для тестов и разработки.
@@ -33,6 +34,9 @@ else {
   const legacy = path.join(app.getPath('appData'), 'PS Flow');
   if (fs.existsSync(legacy)) app.setPath('userData', legacy);
 }
+
+// После выбора профиля: настройка отчётов лежит в нём.
+initErrorReporting();
 
 // Один экземпляр на профиль: второй при старте принял бы живые процессы прогонов первого за брошенные и убил их.
 const primary = app.requestSingleInstanceLock();
@@ -116,7 +120,10 @@ let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
 function startHost(): Promise<void> {
   const startedAt = Date.now();
-  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), [], { serviceName: 'PurpleFlow Core', stdio: 'inherit' });
+  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), errorReportingActive() ? ['--report-errors'] : [], {
+    serviceName: 'PurpleFlow Core',
+    stdio: 'inherit',
+  });
   let failStart: (e: Error) => void = () => {};
   ready = new Promise((resolve, reject) => {
     failStart = reject;
@@ -304,6 +311,9 @@ const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: never[]) =
 
 handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
 handle('settings:get', () => publicSettings());
+ipcMain.on('app:error-reports:get', (e) => {
+  e.returnValue = errorReportingActive();
+});
 ipcMain.on('app:material:get', (e) => {
   e.returnValue = material;
 });

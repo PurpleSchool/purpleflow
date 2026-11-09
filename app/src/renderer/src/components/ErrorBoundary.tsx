@@ -1,3 +1,4 @@
+import { captureException } from '@sentry/electron/renderer';
 import { Component, type ReactNode } from 'react';
 
 /** Ошибка при отрисовке не должна оставлять пустое окно: показываем причину и кнопку перезагрузки. */
@@ -6,6 +7,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  // Пойманная здесь ошибка до глобального обработчика не дойдёт. Без инициализации вызов ничего не делает.
+  componentDidCatch(error: Error) {
+    captureException(error);
   }
 
   render() {

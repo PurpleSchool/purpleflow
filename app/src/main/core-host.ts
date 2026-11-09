@@ -1,6 +1,9 @@
 // Ядро оркестратора в отдельном utilityProcess: окно не подвисает ни от агентов, ни от git.
+import { init as initErrorReporting } from '@sentry/electron/utility';
 import { Orchestrator, killAll, loadLoginShellEnv, type CoreSettings } from '@purpleflow/core';
 import { coreMethodNames, type CoreApi, type HostMessage, type HostRequest } from '../shared/ipc';
+
+if (process.argv.includes('--report-errors')) initErrorReporting();
 
 const port = process.parentPort;
 let settings: CoreSettings;

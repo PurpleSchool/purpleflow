@@ -1,3 +1,4 @@
+import { init as initErrorReporting } from '@sentry/electron/renderer';
 import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
@@ -8,6 +9,8 @@ import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StoreProvider } from './lib/store';
 import { bridge } from './lib/api';
+
+if (bridge.reportsErrors) initErrorReporting({});
 
 // До переименования ключи окна в localStorage начинались с psflow. — переносим один раз.
 try {

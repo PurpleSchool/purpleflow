@@ -25,6 +25,7 @@ export interface PublicSettings {
   /** Вход в PurpleSchool: null — не вошли. Токен в окно не передаётся. */
   account: { email: string; name: string; /** Аватар data URL; пусто — фото в профиле нет. */ photo: string } | null;
   authPrompted: boolean;
+  errorReports: boolean;
 }
 
 export interface SettingsPatch {
@@ -42,6 +43,7 @@ export interface SettingsPatch {
   claudeAuth?: 'login' | 'env';
   userConfig?: boolean;
   authPrompted?: boolean;
+  errorReports?: boolean;
 }
 
 /** Ответ запросов к PurpleSchool: ошибки — понятным текстом, а не исключением IPC. */
@@ -178,6 +180,8 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
 export const coreMethodNames = Object.keys(CORE_METHODS) as CoreMethod[];
 
 export interface PurpleFlowBridge {
+  /** В этой сборке окно подключает отчёты об ошибках; отправку всё равно решает main. */
+  reportsErrors: boolean;
   core: CoreApi;
   onEvent(fn: (e: CoreEvent) => void): () => void;
   account: AccountApi;
