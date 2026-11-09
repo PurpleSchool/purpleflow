@@ -16,6 +16,9 @@ export const ACCOUNT_ENABLED = !/^(off|0|false|no)$/i.test(flag);
 export const ERROR_REPORTS_DSN = 'https://4a6c8ccfd9bc4128ba19f6f5fa1966c5@errors.purplecode.ru/5';
 export const ERROR_REPORTS_FLAG = process.env.PURPLEFLOW_ERROR_REPORTS || process.env.PURPLEFLOW_ERROR_REPORTS_BUILD || '';
 
+/** Анонимная статистика использования: PURPLEFLOW_USAGE_EVENTS=off отключает, =on включает вне собранного приложения. */
+export const USAGE_EVENTS_FLAG = process.env.PURPLEFLOW_USAGE_EVENTS || process.env.PURPLEFLOW_USAGE_EVENTS_BUILD || '';
+
 /** API аккаунта: вход, ключи, расход. */
 export const ACCOUNT_API = (process.env.PURPLEFLOW_API_URL || 'https://app.purpleschool.ru/api-v2').replace(/\/+$/, '');
 

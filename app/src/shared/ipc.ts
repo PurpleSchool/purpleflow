@@ -26,6 +26,7 @@ export interface PublicSettings {
   account: { email: string; name: string; /** Аватар data URL; пусто — фото в профиле нет. */ photo: string } | null;
   authPrompted: boolean;
   errorReports: boolean;
+  usageEvents: boolean;
 }
 
 export interface SettingsPatch {
@@ -44,6 +45,7 @@ export interface SettingsPatch {
   userConfig?: boolean;
   authPrompted?: boolean;
   errorReports?: boolean;
+  usageEvents?: boolean;
 }
 
 /** Ответ запросов к PurpleSchool: ошибки — понятным текстом, а не исключением IPC. */

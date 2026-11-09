@@ -94,6 +94,26 @@ export function AppTab() {
           </button>
         </header>
       </section>
+      <section className="panel">
+        <header className="panel-head">
+          <div>
+            <h2>Статистика использования</h2>
+            <p>
+              Анонимно: какие шаги проходят задачи, результаты проверок, версии приложения и системы. Код, задачи, пути и аккаунт не
+              отправляются.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={s.usageEvents}
+            className={`switch ${s.usageEvents ? 'is-on' : ''}`}
+            onClick={() => void saveSettings({ usageEvents: !s.usageEvents })}
+          >
+            <i />
+            <span>{s.usageEvents ? 'Отправлять' : 'Не отправлять'}</span>
+          </button>
+        </header>
+      </section>
       <StoragePanel />
     </>
   );

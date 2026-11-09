@@ -18,13 +18,14 @@ import {
   type MenuItemConstructorOptions,
   type UtilityProcess,
 } from 'electron';
-import type { CoreEvent } from '@purpleflow/core';
+import type { CoreCommand, CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
 import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
 import { errorReportingActive, initErrorReporting } from './error-reporting';
+import { flushUsageEvents, recordUsage, recordUsageCommand, recordUsageEvent, startUsageEvents, syncUsageEvents } from './usage-events';
 import { checkForUpdatesNow, downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
 
 // Отдельный профиль для тестов и разработки.
@@ -135,6 +136,7 @@ function startHost(): Promise<void> {
       } else if (m.kind === 'event') {
         win?.webContents.send('core:event', m.event);
         attention(m.event);
+        recordUsageEvent(m.event);
       } else if (m.kind === 'reply') {
         const p = pending.get(m.id);
         if (!p) return;
@@ -309,7 +311,12 @@ const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: never[]) =
     return fn(e, ...(args as never[]));
   });
 
-handle('core:call', (_e, method: CoreMethod, args: unknown[]) => callHost(method, args));
+handle('core:call', async (_e, method: CoreMethod, args: unknown[]) => {
+  const result = await callHost(method, args);
+  // После успеха: отклонённая команда в статистику не попадает.
+  if (method === 'dispatch') recordUsageCommand(args[0] as CoreCommand);
+  return result;
+});
 handle('settings:get', () => publicSettings());
 ipcMain.on('app:error-reports:get', (e) => {
   e.returnValue = errorReportingActive();
@@ -318,7 +325,10 @@ ipcMain.on('app:material:get', (e) => {
   e.returnValue = material;
 });
 handle('settings:set', (_e, patch: SettingsPatch) => {
+  const firstSetup = patch.onboarded === true && !publicSettings().onboarded;
   const s = updateSettings(patch);
+  syncUsageEvents();
+  if (firstSetup) recordUsage('setup_completed');
   if (patch.windowGlass !== undefined && win) applyMaterial(win, materialFor(s.windowGlass));
   host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
   return s;
@@ -472,7 +482,7 @@ app.on('before-quit', (e) => {
   if (quitting || !host) return;
   e.preventDefault();
   quitting = true;
-  void stopHost().then(() => app.quit());
+  void Promise.all([stopHost(), flushUsageEvents()]).then(() => app.quit());
 });
 
 // Установка началась: ядро уже остановлено. Если установщик откажет, приложение остаётся открытым, и ядро нужно вернуть.
@@ -520,6 +530,7 @@ app.whenReady().then(() => {
   setupMenu();
   createWindow();
   startUpdater(onUpdateState);
+  startUsageEvents();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

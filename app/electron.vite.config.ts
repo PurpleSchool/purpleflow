@@ -14,6 +14,7 @@ export default defineConfig({
     define: {
       'process.env.PURPLEFLOW_ACCOUNT_BUILD': JSON.stringify(process.env.PURPLEFLOW_ACCOUNT ?? ''),
       'process.env.PURPLEFLOW_ERROR_REPORTS_BUILD': JSON.stringify(process.env.PURPLEFLOW_ERROR_REPORTS ?? ''),
+      'process.env.PURPLEFLOW_USAGE_EVENTS_BUILD': JSON.stringify(process.env.PURPLEFLOW_USAGE_EVENTS ?? ''),
     },
     build: {
       rollupOptions: {

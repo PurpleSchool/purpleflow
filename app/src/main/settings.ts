@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app, safeStorage } from 'electron';
@@ -30,6 +31,10 @@ interface StoredSettings {
   authPrompted: boolean;
   /** Отправлять разработчикам очищенные отчёты об ошибках. */
   errorReports: boolean;
+  /** Отправлять анонимную статистику использования. */
+  usageEvents: boolean;
+  /** Случайный идентификатор установки для статистики, с аккаунтом не связан. */
+  usageInstallId: string;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -49,6 +54,8 @@ const DEFAULTS: StoredSettings = {
   account: { tokenEnc: '', email: '', name: '', photo: '' },
   authPrompted: false,
   errorReports: true,
+  usageEvents: true,
+  usageInstallId: '',
 };
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
@@ -69,6 +76,7 @@ function load(): StoredSettings {
       toolPaths: { ...raw.toolPaths },
       // Кто настроил приложение до появления отчётов, предупреждения не видел: для них они выключены, пока не включат сами.
       errorReports: raw.errorReports ?? !raw.onboarded,
+      usageEvents: raw.usageEvents ?? !raw.onboarded,
     };
   } catch (e) {
     // Нет файла — первый запуск. Битый файл откладываем: следующая запись иначе сотрёт токен и ключи насовсем.
@@ -148,6 +156,19 @@ export function errorReportsAllowed(): boolean {
   return s.onboarded && s.errorReports;
 }
 
+export function usageEventsAllowed(): boolean {
+  const s = load();
+  return s.onboarded && s.usageEvents;
+}
+
+export function usageInstallId(): string {
+  const s = load();
+  if (s.usageInstallId) return s.usageInstallId;
+  const next = { ...s, usageInstallId: randomUUID() };
+  persist(next);
+  return next.usageInstallId;
+}
+
 export function publicSettings(): PublicSettings {
   const s = load();
   return {
@@ -168,6 +189,7 @@ export function publicSettings(): PublicSettings {
     account: ACCOUNT_ENABLED && s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
     errorReports: s.errorReports,
+    usageEvents: s.usageEvents,
   };
 }
 
@@ -214,6 +236,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.userConfig !== undefined) s.userConfig = patch.userConfig;
   if (patch.authPrompted !== undefined) s.authPrompted = patch.authPrompted;
   if (patch.errorReports !== undefined) s.errorReports = patch.errorReports;
+  if (patch.usageEvents !== undefined) s.usageEvents = patch.usageEvents;
   persist(s);
   return publicSettings();
 }
