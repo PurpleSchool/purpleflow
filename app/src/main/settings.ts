@@ -4,6 +4,7 @@ import path from 'node:path';
 import { app, safeStorage } from 'electron';
 import type { AgentKind, CoreSettings, Role } from '@purpleflow/core';
 import type { PublicSettings, SettingsPatch } from '../shared/ipc';
+import { diagnosticsFrom } from './diagnostics';
 import { ACCOUNT_ENABLED, DEFAULT_PROXY } from './provider';
 
 interface StoredSettings {
@@ -29,10 +30,11 @@ interface StoredSettings {
   account: { tokenEnc: string; email: string; name: string; photo: string };
   /** Экран входа при первом запуске уже показан: вошли или нажали «Пропустить». */
   authPrompted: boolean;
-  /** Отправлять разработчикам очищенные отчёты об ошибках. */
-  errorReports: boolean;
-  /** Отправлять анонимную статистику использования. */
-  usageEvents: boolean;
+  /**
+   * Отправлять разработчикам очищенные отчёты об ошибках и анонимную статистику использования.
+   * Один выключатель: без статистики не понять, на каком шаге и как часто случается ошибка.
+   */
+  diagnostics: boolean;
   /** Случайный идентификатор установки для статистики, с аккаунтом не связан. */
   usageInstallId: string;
 }
@@ -53,8 +55,7 @@ const DEFAULTS: StoredSettings = {
   userConfig: true,
   account: { tokenEnc: '', email: '', name: '', photo: '' },
   authPrompted: false,
-  errorReports: true,
-  usageEvents: true,
+  diagnostics: true,
   usageInstallId: '',
 };
 
@@ -65,18 +66,21 @@ let cache: StoredSettings | null = null;
 function load(): StoredSettings {
   if (cache) return cache;
   try {
-    const raw = JSON.parse(fs.readFileSync(file(), 'utf8')) as Partial<StoredSettings>;
+    const raw = JSON.parse(fs.readFileSync(file(), 'utf8')) as Partial<StoredSettings> & {
+      /** Раньше — два выключателя; выключенный любой из них выключает общий. */
+      errorReports?: boolean;
+      usageEvents?: boolean;
+    };
+    const { errorReports, usageEvents, ...rest } = raw;
     cache = {
       ...DEFAULTS,
-      ...raw,
+      ...rest,
       proxy: { ...DEFAULTS.proxy, ...raw.proxy },
       account: { ...DEFAULTS.account, ...raw.account },
       models: { ...DEFAULTS.models, ...raw.models },
       agents: { ...DEFAULTS.agents, ...raw.agents },
       toolPaths: { ...raw.toolPaths },
-      // Кто настроил приложение до появления отчётов, предупреждения не видел: для них они выключены, пока не включат сами.
-      errorReports: raw.errorReports ?? !raw.onboarded,
-      usageEvents: raw.usageEvents ?? !raw.onboarded,
+      diagnostics: diagnosticsFrom({ ...raw, errorReports, usageEvents }),
     };
   } catch (e) {
     // Нет файла — первый запуск. Битый файл откладываем: следующая запись иначе сотрёт токен и ключи насовсем.
@@ -153,12 +157,12 @@ export function setProxyKey(key: string) {
 /** До конца первой настройки пользователь ещё не видел предупреждения — ничего не отправляем. */
 export function errorReportsAllowed(): boolean {
   const s = load();
-  return s.onboarded && s.errorReports;
+  return s.onboarded && s.diagnostics;
 }
 
 export function usageEventsAllowed(): boolean {
   const s = load();
-  return s.onboarded && s.usageEvents;
+  return s.onboarded && s.diagnostics;
 }
 
 export function usageInstallId(): string {
@@ -188,8 +192,7 @@ export function publicSettings(): PublicSettings {
     accountEnabled: ACCOUNT_ENABLED,
     account: ACCOUNT_ENABLED && s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
-    errorReports: s.errorReports,
-    usageEvents: s.usageEvents,
+    diagnostics: s.diagnostics,
   };
 }
 
@@ -235,8 +238,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
   if (patch.claudeAuth !== undefined) s.claudeAuth = patch.claudeAuth;
   if (patch.userConfig !== undefined) s.userConfig = patch.userConfig;
   if (patch.authPrompted !== undefined) s.authPrompted = patch.authPrompted;
-  if (patch.errorReports !== undefined) s.errorReports = patch.errorReports;
-  if (patch.usageEvents !== undefined) s.usageEvents = patch.usageEvents;
+  if (patch.diagnostics !== undefined) s.diagnostics = patch.diagnostics;
   persist(s);
   return publicSettings();
 }

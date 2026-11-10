@@ -77,40 +77,21 @@ export function AppTab() {
       <section className="panel">
         <header className="panel-head">
           <div>
-            <h2>Отчёты об ошибках</h2>
+            <h2>Отчёты об ошибках и статистика</h2>
             <p>
-              Когда приложение падает, разработчики получают тип ошибки, стек, версии приложения и системы. Код, задачи, пути и ключи не
-              отправляются.
+              Когда приложение падает, разработчики получают тип ошибки, стек, версии приложения и системы. Вместе с этим — анонимная
+              статистика: какие шаги проходят задачи и чем заканчиваются проверки, чтобы понять, где и как часто случаются ошибки. Код,
+              задачи, пути, ключи и аккаунт не отправляются.
             </p>
           </div>
           <button
             role="switch"
-            aria-checked={s.errorReports}
-            className={`switch ${s.errorReports ? 'is-on' : ''}`}
-            onClick={() => void saveSettings({ errorReports: !s.errorReports })}
+            aria-checked={s.diagnostics}
+            className={`switch ${s.diagnostics ? 'is-on' : ''}`}
+            onClick={() => void saveSettings({ diagnostics: !s.diagnostics })}
           >
             <i />
-            <span>{s.errorReports ? 'Отправлять' : 'Не отправлять'}</span>
-          </button>
-        </header>
-      </section>
-      <section className="panel">
-        <header className="panel-head">
-          <div>
-            <h2>Статистика использования</h2>
-            <p>
-              Анонимно: какие шаги проходят задачи, результаты проверок, версии приложения и системы. Код, задачи, пути и аккаунт не
-              отправляются.
-            </p>
-          </div>
-          <button
-            role="switch"
-            aria-checked={s.usageEvents}
-            className={`switch ${s.usageEvents ? 'is-on' : ''}`}
-            onClick={() => void saveSettings({ usageEvents: !s.usageEvents })}
-          >
-            <i />
-            <span>{s.usageEvents ? 'Отправлять' : 'Не отправлять'}</span>
+            <span>{s.diagnostics ? 'Отправлять' : 'Не отправлять'}</span>
           </button>
         </header>
       </section>
