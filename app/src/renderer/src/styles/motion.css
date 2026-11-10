@@ -202,6 +202,8 @@ html[data-material='acrylic'] .app {
 }
 html[data-material='vibrancy'],
 html[data-material='acrylic'] {
+  /* --bg-3 здесь полупрозрачный, а размытие над прокручиваемой лентой Chromium не применяет: текст под списком просвечивал бы. */
+  --pop-bg: #1b1b1d;
   --bg-0: rgba(0, 0, 0, 0.38);
   --bg-1: rgba(0, 0, 0, 0.26);
   --bg-2: rgba(0, 0, 0, 0.2);

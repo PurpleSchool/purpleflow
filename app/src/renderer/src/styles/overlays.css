@@ -171,7 +171,7 @@
 }
 /* Всплывающие окна непрозрачны и в режиме «прозрачное окно»: текст под ними не должен просвечивать */
 .pop {
-  background: #1d1e22;
+  background: var(--pop-bg);
   backdrop-filter: blur(24px) saturate(1.2);
 }
 .pop .check {
@@ -341,7 +341,7 @@
   margin-inline: auto;
   padding: 14px 16px;
   border-radius: 14px;
-  background: #1d1e22;
+  background: var(--pop-bg);
   box-shadow: var(--shadow-pop);
   animation: ddIn 0.18s var(--ease) both;
   -webkit-app-region: no-drag;

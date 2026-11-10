@@ -99,7 +99,8 @@ test('плашка наверху и непрозрачная, даже в ре�
   const box = await offer().boundingBox();
   expect(box!.y).toBeLessThan(40);
   const bg = await offer().evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(bg).toBe('rgb(29, 30, 34)');
+  // Непрозрачный фон всплывающих окон (--pop-bg): rgb без альфы, а не полупрозрачный rgba.
+  expect(bg).toMatch(/^rgb\(\d+, \d+, \d+\)$/);
 });
 
 test('готовое обновление предлагает перезапуск, сбой — ручную загрузку', async () => {
