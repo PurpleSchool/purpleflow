@@ -393,6 +393,162 @@
   padding: 0;
   color: var(--text-2);
 }
+
+/* Блок кода: подпись языка, «Копировать», подсветка */
+.md .md-code {
+  margin: 0.8em 0;
+  border-radius: var(--r-m);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+.md .md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 0 14px;
+  color: var(--text-4);
+  font: 450 11.5px/1.5 var(--font-code);
+}
+.md .md-copy {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-3);
+  opacity: 0;
+  transition:
+    opacity 0.2s var(--ease),
+    color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.md .md-code:hover .md-copy,
+.md .md-copy:focus-visible,
+.md .md-copy.is-done {
+  opacity: 1;
+}
+.md .md-copy:hover {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+.md .md-copy.is-done {
+  color: var(--ok);
+}
+.md .md-copy .md-copy-done,
+.md .md-copy.is-done .md-copy-icon {
+  display: none;
+}
+.md .md-copy.is-done .md-copy-done {
+  display: block;
+}
+.md .md-code pre {
+  margin: 0;
+  padding: 6px var(--s-4) var(--s-4);
+  border-radius: 0;
+  background: none;
+}
+.md .md-code code {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.md .hljs-comment,
+.md .hljs-quote {
+  color: var(--text-4);
+  font-style: italic;
+}
+.md .hljs-keyword,
+.md .hljs-selector-tag,
+.md .hljs-meta .hljs-keyword,
+.md .hljs-doctag,
+.md .hljs-section {
+  color: var(--accent-hi);
+}
+.md .hljs-string,
+.md .hljs-regexp,
+.md .hljs-addition,
+.md .hljs-template-tag,
+.md .hljs-meta .hljs-string {
+  color: var(--ok);
+}
+.md .hljs-number,
+.md .hljs-literal,
+.md .hljs-symbol,
+.md .hljs-bullet,
+.md .hljs-variable.constant_ {
+  color: var(--wait);
+}
+.md .hljs-title,
+.md .hljs-title.function_,
+.md .hljs-name,
+.md .hljs-selector-id,
+.md .hljs-selector-class {
+  color: var(--run);
+}
+.md .hljs-type,
+.md .hljs-built_in,
+.md .hljs-title.class_,
+.md .hljs-attr,
+.md .hljs-attribute,
+.md .hljs-property {
+  color: #d9a0c4;
+}
+.md .hljs-meta,
+.md .hljs-tag,
+.md .hljs-punctuation {
+  color: var(--text-3);
+}
+.md .hljs-deletion {
+  color: var(--err);
+}
+.md .hljs-emphasis {
+  font-style: italic;
+}
+.md .hljs-strong {
+  font-weight: 600;
+}
+
+/* Таблицы: широкая прокручивается внутри своей обёртки */
+.md .md-table {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.md th,
+.md td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-2);
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.md tr:last-child td {
+  border-bottom: none;
+}
+.md td + td,
+.md th + th {
+  border-left: 1px solid var(--line-2);
+}
+.md th[align='center'],
+.md td[align='center'] {
+  text-align: center;
+}
+.md th[align='right'],
+.md td[align='right'] {
+  text-align: right;
+}
 .md.tasks ul {
   list-style: none;
   padding-left: 0;
@@ -1014,4 +1170,12 @@ body.is-col-resizing .monaco-editor {
 .code-at {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.tab > svg {
+  flex: none;
+  margin-left: -2px;
+  opacity: 0.85;
+}
+.tab.is-on > svg {
+  opacity: 1;
 }

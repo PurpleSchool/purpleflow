@@ -40,6 +40,7 @@
     "electron-builder": "^26.15.3",
     "electron-updater": "^6.8.11",
     "electron-vite": "^5.0.0",
+    "highlight.js": "^11.11.1",
     "lucide-react": "^1.52.0",
     "marked": "^18.1.0",
     "monaco-editor": "^0.57.0",
