@@ -325,6 +325,20 @@ test(
   },
 );
 
+test('ручная проверка: вывод работающего сервера виден и обновляется', { skip: process.platform === 'win32' }, async (t) => {
+  const k = previewRun(
+    t,
+    `node -e "console.log('слушаю');require('http').createServer((q,s)=>{console.log('запрос '+q.url);s.end('ok')}).listen(process.env.PORT,'127.0.0.1')"`,
+  );
+  t.after(() => stopPreview(k, 'r'));
+  const state = await startPreview(k, 'r');
+  assert.equal(state.status, 'ready');
+  await fetch(new URL('/hello', state.url!));
+  for (let i = 0; i < 40 && !/запрос \/hello/.test(getPreview(k, 'r').output ?? ''); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.match(getPreview(k, 'r').output ?? '', /слушаю[\s\S]*запрос \/hello/);
+  assert.equal(getPreview(k, 'r').status, 'ready');
+});
+
 test(
   'ручная проверка: приложение упало — причина и вывод видны; нет команд — ошибка',
   { skip: process.platform === 'win32' },

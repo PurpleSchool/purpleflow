@@ -9,8 +9,10 @@ import { writeFiles } from './attachments.js';
 import type { Kernel } from '../kernel.js';
 import { killGroup } from '../proc.js';
 import { writeAtomic } from '../store.js';
-import type { AgentKind, ChatFile, ChatMessage, ChatPart, ChatSummary, DiffFile, NextPartDraft, PreviewState } from '../types.js';
+import { applyStep, partsText, settleParts, type ChatAnswer } from '../chatparts.js';
+import type { AgentKind, ChatFile, ChatMessage, ChatSkill, ChatSummary, DiffFile, NextPartDraft, PreviewState } from '../types.js';
 import { agentModel, service, serviceAgent } from './agents.js';
+import { findMentions, listSkills, mentionsBlock, walkFiles } from './mentions.js';
 import { getPreview, launchPreview, stopPreview } from './preview.js';
 import { getProjectConfig, knowledgeOf } from './projects.js';
 
@@ -210,9 +212,28 @@ export async function sendChat(k: Kernel, id: string, text: string, files: { nam
   if (chat.title === 'Новый чат' && text.trim()) chat.title = text.trim().replace(/\s+/g, ' ').slice(0, 60);
   save(k, chat);
   if (k.chatBusy.has(id)) return;
+  await drive(k, chat);
+}
+
+/**
+ * Сжать контекст сессии claude (/compact): переписка остаётся, агент помнит её в пересказе, окно освобождается.
+ * Ответом — уведомление о сжатии; сообщения, присланные во время сжатия, уходят следующим ходом.
+ */
+export async function compactChat(k: Kernel, id: string): Promise<void> {
+  const chat = must(k, id);
+  if (chat.agent !== 'claude' || chat.session?.agent !== 'claude')
+    throw new Error(chat.agent === 'claude' ? 'Сжимать пока нечего — сессия начнётся с первым сообщением' : 'codex сжимает контекст сам');
+  if (k.chatBusy.has(id)) throw new Error('Агент отвечает — сожмите контекст после ответа');
+  await drive(k, chat, true);
+}
+
+/** Ходы чата, пока есть очередь; compact — сначала сжать контекст. */
+async function drive(k: Kernel, chat: ChatFile, compact = false): Promise<void> {
+  const id = chat.id;
   k.chatBusy.add(id);
   liveOf(k).set(id, chat);
   try {
+    if (compact) await turn(k, chat, [], true);
     // Пока есть очередь — ход за ходом: сообщения, присланные во время ответа, уходят следующим ходом.
     for (;;) {
       const batch = chat.messages.filter((m) => m.queued);
@@ -238,10 +259,13 @@ export function unqueueChat(k: Kernel, id: string, messageId: string): ChatFile 
   return chat;
 }
 
-/** Один ход: сообщения человека из очереди и ответ агента. Ответ приходит событиями chat.updated по мере генерации. */
-async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<void> {
+/**
+ * Один ход: сообщения человека из очереди и ответ агента. Ответ приходит событиями chat.updated по мере генерации.
+ * compact — служебный ход без сообщений человека: /compact в текущей сессии claude.
+ */
+async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = false): Promise<void> {
   const id = chat.id;
-  const first = chat.messages.indexOf(batch[0]);
+  const first = compact ? chat.messages.length : chat.messages.indexOf(batch[0]);
   const prevMessages = chat.messages.slice(0, first).filter((m) => !m.queued);
   for (const m of batch) m.queued = undefined;
   // Сообщения из очереди встают перед ответом, даже если пришли, пока писался прошлый.
@@ -259,21 +283,24 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<vo
   save(k, chat);
 
   // Шаги ответа копятся здесь и уходят в окно не чаще FLUSH_MS.
-  const parts: ChatPart[] = [];
+  const acc: ChatAnswer = { parts: [] };
+  const parts = acc.parts;
   let timer: NodeJS.Timeout | null = null;
+  const sync = () => {
+    answer.parts = structuredClone(parts);
+    answer.text = partsText(parts);
+    if (acc.model) answer.model = acc.model;
+    if (acc.turns != null) answer.turns = acc.turns;
+    if (acc.durationMs != null) answer.durationMs = acc.durationMs;
+    if (acc.info) answer.info = structuredClone(acc.info);
+  };
   const flush = () => {
     timer = null;
-    answer.parts = parts.map((p) => ({ ...p }));
-    answer.text = parts
-      .filter((p) => p.kind === 'text')
-      .map((p) => p.text)
-      .join('\n\n');
+    sync();
     save(k, chat);
   };
   const onStep = (st: AgentStep) => {
-    const last = parts[parts.length - 1];
-    if (st.kind === 'text' && st.delta && last?.kind === 'text') last.text += st.text;
-    else parts.push({ kind: st.kind, text: st.text });
+    applyStep(acc, st);
     if (!timer) timer = setTimeout(flush, FLUSH_MS);
   };
 
@@ -286,7 +313,8 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<vo
     const cwd = chat.projectPath ?? path.join(chatFilesDir(k, id), 'work');
     fs.mkdirSync(cwd, { recursive: true });
     // Что изменилось за ход — только для чата с правками в git-репозитории.
-    const git = chat.projectPath && chat.edits && (await k.hasTool('git')) ? new Git((await k.tools(['git'])).git, k.opts.env) : null;
+    const git =
+      !compact && chat.projectPath && chat.edits && (await k.hasTool('git')) ? new Git((await k.tools(['git'])).git, k.opts.env) : null;
     const repo = git && chat.projectPath && (await git.isRepo(chat.projectPath)) ? chat.projectPath : null;
     const before = git && repo ? await snapshot(git, repo) : null;
 
@@ -296,7 +324,11 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<vo
     const others = attachments.filter((f) => !isImageFile(f));
     let prompt = (session ? '' : historyBlock(prevMessages)) + (text.trim() || 'Посмотри вложения.');
     if (others.length) prompt += `\n\nПрикреплённые файлы (открой и прочитай):\n${others.map((f) => `- ${f}`).join('\n')}`;
-    const model = chat.model || agentModel(k, agent, s.agents, s.models) || undefined;
+    // @файлы и /скиллы из сообщения — отдельным блоком: CLI в неинтерактивном режиме их сами не разворачивают.
+    prompt += mentionsBlock(findMentions(said, cwd, listSkills({ projectPath: chat.projectPath, userConfig: Boolean(s.userConfig) })));
+    // Сжатие — встроенная команда CLI: только она, без истории и вложений.
+    if (compact) prompt = '/compact';
+    const model = chat.model || chatDefaultModel(k, agent) || undefined;
     const common = {
       bin: tools[agent],
       cwd,
@@ -356,13 +388,18 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[]): Promise<vo
     if (timer) clearTimeout(timer);
   }
 
-  // Финальный ответ: если шагов не было (ошибка до старта или codex без событий), берём итоговый текст.
+  // Сжатие прошло, но CLI не сообщил о нём (старая версия) — всё равно говорим, что сделано.
+  if (compact && res.ok && !parts.some((p) => p.kind === 'notice' && p.key === 'compact'))
+    parts.push({
+      kind: 'notice',
+      level: 'info',
+      key: 'compact',
+      text: 'Контекст переписки сжат: ранние сообщения агент помнит в пересказе',
+    });
+  // Финальный ответ: если текста не было (ошибка до старта или codex без событий), берём итоговый текст.
   if (!parts.some((p) => p.kind === 'text') && res.text.trim()) parts.push({ kind: 'text', text: res.text.trim() });
-  answer.parts = parts;
-  answer.text = parts
-    .filter((p) => p.kind === 'text')
-    .map((p) => p.text)
-    .join('\n\n');
+  settleParts(parts);
+  sync();
   answer.pending = false;
   answer.usage = res.usage;
   if (changed?.length) answer.changedFiles = [...new Set(changed)];
@@ -416,4 +453,28 @@ export async function startChatPreview(k: Kernel, id: string): Promise<PreviewSt
   if (!cfg?.runCommand || !cfg.appUrl)
     throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
   return launchPreview(k, id, { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl });
+}
+
+/** Файлы проекта для «@»: из git (без игнорируемых), без git — обходом папки. */
+export async function listChatFiles(k: Kernel, projectPath: string): Promise<string[]> {
+  if (!projectPath || !fs.existsSync(projectPath)) return [];
+  if (await k.hasTool('git')) {
+    const git = new Git((await k.tools(['git'])).git, k.opts.env);
+    if (await git.isRepo(projectPath)) {
+      const files = await git.listFiles(projectPath).catch(() => null);
+      // Удалённые, но ещё не закоммиченные файлы git всё ещё перечисляет.
+      if (files) return files.filter((f) => fs.existsSync(path.join(projectPath, f))).slice(0, 20_000);
+    }
+  }
+  return walkFiles(projectPath);
+}
+
+/** Модель чата по умолчанию для агента: та, что в настройках у роли конвейера с этим агентом. Пусто — решает сам CLI. */
+export function chatDefaultModel(k: Kernel, agent: AgentKind): string {
+  const s = k.opts.getSettings();
+  return agentModel(k, agent, s.agents, s.models);
+}
+
+export function listChatSkills(k: Kernel, projectPath?: string): ChatSkill[] {
+  return listSkills({ projectPath, userConfig: Boolean(k.opts.getSettings().userConfig) });
 }

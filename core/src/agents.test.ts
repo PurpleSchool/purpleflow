@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { claudeArgs, claudeEnv, claudeInput, runClaude } from './agents/claude.js';
-import { codexArgs, codexProxyBase, runCodex, type CodexOptions } from './agents/codex.js';
+import { claudeArgs, claudeEnv, claudeInput, claudeNotice, runClaude } from './agents/claude.js';
+import { codexArgs, codexItemSteps, codexProxyBase, runCodex, type CodexOptions } from './agents/codex.js';
+import { questionsOf, todosOf, toolName, toolView } from './agents/tools.js';
 import { addUsage, clip, emptyUsage, explainError, type AgentRunOptions, type AgentStep } from './agents/common.js';
 import { killGroup } from './proc.js';
 
@@ -171,6 +172,7 @@ test('runClaude: события потока — итог, токены, шаг�
   assert.equal(r.text, 'готово');
   assert.deepEqual(r.usage, { input: 5, output: 7, cacheRead: 1, cacheWrite: 2, costUsd: 0.25 });
   assert.deepEqual(steps, [
+    { kind: 'meta', model: 'opus', cwd: '/w' },
     { kind: 'text', text: 'план' },
     { kind: 'tool', text: 'Read /a.ts' },
   ]);
@@ -189,6 +191,319 @@ test('runClaude: с partial текст приходит кусками и не �
   assert.deepEqual(steps, [
     { kind: 'text', text: 'пл', delta: true },
     { kind: 'text', text: 'ан', delta: true },
+  ]);
+});
+
+test('runClaude: субагент, итоги вызовов, размышления, план, вопрос, служебные события', unix, async (t) => {
+  // Форма событий — как у claude 2.1.x с --include-partial-messages.
+  const se = (event: unknown, parent: string | null = null) => ({ type: 'stream_event', event, parent_tool_use_id: parent });
+  const cli = fakeCli(t, [
+    {
+      type: 'system',
+      subtype: 'init',
+      model: 'claude-x',
+      mcp_servers: [
+        { name: 'ok', status: 'connected' },
+        { name: 'db', status: 'failed' },
+        { name: 'drive', status: 'needs-auth' },
+      ],
+    },
+    { type: 'system', subtype: 'api_retry', attempt: 2, max_retries: 10, error_status: 529 },
+    se({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+    se({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'думаю' } }),
+    se({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+    se({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Начну.' } }),
+    se({ type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'agent1', name: 'Agent', input: {} } }),
+    {
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        content: [
+          { type: 'thinking', thinking: 'думаю' },
+          { type: 'text', text: 'Начну.' },
+          { type: 'tool_use', id: 'agent1', name: 'Agent', input: { description: 'Найти тесты', subagent_type: 'Explore', prompt: 'ищи' } },
+        ],
+      },
+    },
+    // Субагент: его текст и вызовы — с parent_tool_use_id.
+    { type: 'user', parent_tool_use_id: 'agent1', message: { content: [{ type: 'text', text: 'ищи' }] } },
+    {
+      type: 'assistant',
+      parent_tool_use_id: 'agent1',
+      message: {
+        content: [
+          { type: 'text', text: 'отчёт субагента' },
+          { type: 'tool_use', id: 'sub1', name: 'Bash', input: { command: 'ls' } },
+        ],
+      },
+    },
+    { type: 'user', parent_tool_use_id: 'agent1', message: { content: [{ type: 'tool_result', tool_use_id: 'sub1', content: 'a.ts' }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'agent1', content: [{ type: 'text', text: 'Нашёл' }] }] } },
+    { type: 'system', subtype: 'status', status: 'compacting' },
+    { type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto' } },
+    {
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'cat /nope' } },
+          { type: 'tool_use', id: 'td', name: 'TodoWrite', input: { todos: [{ content: 'Шаг', status: 'in_progress' }] } },
+          {
+            type: 'tool_use',
+            id: 'q1',
+            name: 'AskUserQuestion',
+            input: { questions: [{ question: 'Какой вариант?', options: [{ label: 'A' }, { label: 'B', description: 'второй' }] }] },
+          },
+        ],
+      },
+    },
+    {
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 'b1', is_error: true, content: 'Exit code 1\n\u001b[31mнет файла\u001b[0m' }],
+      },
+    },
+    { type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning', utilization: 0.85, rateLimitType: 'seven_day' } },
+    se({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+    se({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Готово' } }),
+    {
+      type: 'result',
+      subtype: 'success',
+      result: 'Готово',
+      num_turns: 3,
+      duration_ms: 1200,
+      permission_denials: [{ tool_name: 'Bash', tool_use_id: 'x', tool_input: { command: 'rm -rf /' } }],
+      usage: {},
+    },
+  ]);
+  const { opts, steps } = options(cli.bin, cli.dir, { partial: true });
+  const r = await runClaude(opts);
+  assert.equal(r.ok, true);
+  assert.deepEqual(steps, [
+    {
+      kind: 'meta',
+      model: 'claude-x',
+      mcp: [
+        { name: 'ok', status: 'connected' },
+        { name: 'db', status: 'failed' },
+        { name: 'drive', status: 'needs-auth' },
+      ],
+    },
+    { kind: 'notice', level: 'warn', key: 'mcp:db', text: 'MCP-сервер db не подключился — его инструменты агенту недоступны' },
+    { kind: 'notice', level: 'warn', key: 'mcp:drive', text: 'MCP-сервер drive требует входа — его инструменты агенту недоступны' },
+    { kind: 'notice', level: 'warn', key: 'retry', text: 'Повтор запроса к модели: попытка 2 из 10, ответ 529' },
+    { kind: 'thinking', text: '' },
+    { kind: 'thinking', text: 'думаю', delta: true },
+    { kind: 'text', text: 'Начну.', delta: true, fresh: true },
+    { kind: 'tool', id: 'agent1', text: 'Agent' },
+    { kind: 'tool', id: 'agent1', text: 'Субагент Explore: Найти тесты', detail: 'ищи' },
+    { kind: 'tool', id: 'sub1', parent: 'agent1', text: 'Bash ls' },
+    { kind: 'tool_result', id: 'sub1', parent: 'agent1', ok: true, output: 'a.ts' },
+    { kind: 'tool_result', id: 'agent1', ok: true, output: 'Нашёл' },
+    { kind: 'notice', level: 'info', key: 'compact', text: 'Сжимаю контекст переписки…' },
+    { kind: 'notice', level: 'info', key: 'compact', text: 'Контекст переписки сжат: ранние сообщения агент помнит в пересказе' },
+    { kind: 'tool', id: 'b1', text: 'Bash cat /nope' },
+    { kind: 'todos', items: [{ text: 'Шаг', status: 'in_progress' }] },
+    {
+      kind: 'question',
+      id: 'q1',
+      questions: [{ question: 'Какой вариант?', options: [{ label: 'A' }, { label: 'B', description: 'второй' }] }],
+    },
+    { kind: 'tool_result', id: 'b1', ok: false, output: 'Exit code 1\nнет файла' },
+    { kind: 'notice', level: 'warn', key: 'rate', text: 'Израсходовано 85% недельного лимита' },
+    { kind: 'text', text: 'Готово', delta: true, fresh: true },
+    { kind: 'meta', turns: 3, durationMs: 1200 },
+    { kind: 'notice', level: 'warn', key: 'denied', text: 'Агенту не дали выполнить: Bash rm -rf /' },
+  ]);
+  // Текст субагента — отчёт основному агенту, в ответ человеку он не попадает.
+  assert.ok(!steps.some((s) => s.kind === 'text' && s.text.includes('субагента')));
+});
+
+test('runClaude: без partial текст и размышления приходят целиком; предел ходов — понятная ошибка', unix, async (t) => {
+  const cli = fakeCli(t, [
+    {
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'thinking', thinking: ' мысль ' },
+          { type: 'text', text: 'ответ' },
+        ],
+      },
+    },
+    { type: 'assistant', parent_tool_use_id: 'p', message: { content: [{ type: 'text', text: 'чужой' }] } },
+    { type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } },
+    { type: 'result', subtype: 'error_max_turns', is_error: true, usage: {} },
+  ]);
+  const { opts, steps } = options(cli.bin, cli.dir);
+  const r = await runClaude(opts);
+  assert.deepEqual(steps, [
+    { kind: 'thinking', text: 'мысль' },
+    { kind: 'text', text: 'ответ' },
+    { kind: 'notice', level: 'error', key: 'rate', text: 'Лимит пятичасового использования исчерпан' },
+  ]);
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? '', /предел ходов/);
+});
+
+test('claudeNotice: окружение сессии, заполнение контекста и окно модели', () => {
+  assert.deepEqual(
+    claudeNotice({
+      type: 'system',
+      subtype: 'init',
+      model: 'claude-x',
+      cwd: '/w',
+      claude_code_version: '2.1.0',
+      mcp_servers: [{ name: 'gh', status: 'connected' }],
+    }),
+    [{ kind: 'meta', model: 'claude-x', cwd: '/w', version: '2.1.0', mcp: [{ name: 'gh', status: 'connected' }] }],
+  );
+  const usage = { input_tokens: 10, cache_read_input_tokens: 30_000, cache_creation_input_tokens: 2000, output_tokens: 500 };
+  assert.deepEqual(claudeNotice({ type: 'assistant', message: { usage } }), [{ kind: 'meta', context: 32_510 }]);
+  // Обращения субагента к модели заполняют его собственный контекст, а не основной.
+  assert.deepEqual(claudeNotice({ type: 'assistant', parent_tool_use_id: 't1', message: { usage } }), []);
+  assert.deepEqual(claudeNotice({ type: 'assistant', message: {} }), []);
+  assert.deepEqual(
+    claudeNotice({ type: 'result', modelUsage: { 'claude-haiku': { contextWindow: 200_000 }, 'claude-x': { contextWindow: 1_000_000 } } }),
+    [{ kind: 'meta', contextWindow: 1_000_000 }],
+  );
+  assert.deepEqual(claudeNotice({ type: 'result' }), []);
+  // Ручное сжатие сообщает размер до и после: после — новое заполнение контекста.
+  assert.deepEqual(
+    claudeNotice({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { trigger: 'manual', pre_tokens: 40_702, post_tokens: 8869 },
+    }),
+    [
+      {
+        kind: 'notice',
+        level: 'info',
+        key: 'compact',
+        text: 'Контекст переписки сжат (41 тыс. → 9 тыс. токенов): ранние сообщения агент помнит в пересказе',
+      },
+      { kind: 'meta', context: 8869 },
+    ],
+  );
+});
+
+test('toolView: строки вызовов, подробности, план и вопросы', () => {
+  assert.equal(toolName('mcp__github__create_issue'), 'github · create_issue');
+  assert.deepEqual(toolView('mcp__github__create_issue', { title: 'x' }), { text: 'github · create_issue', detail: undefined });
+  assert.equal(toolView('WebSearch', { query: 'node 22' }).text, 'WebSearch node 22');
+  assert.equal(toolView('Skill', { skill: 'pdf' }).text, 'Skill pdf');
+  assert.equal(toolView('NotebookEdit', { notebook_path: '/n.ipynb', new_source: 'x=1' }).detail, 'x=1');
+  assert.deepEqual(toolView('Task', { description: 'Обзор', prompt: 'сделай' }), { text: 'Субагент: Обзор', detail: 'сделай' });
+  assert.equal(toolView('Edit', { file_path: '/a.ts', old_string: 'a\nb', new_string: 'c' }).detail, '- a\n- b\n+ c');
+  assert.equal(toolView('MultiEdit', { file_path: '/a.ts', edits: [{ old_string: 'a', new_string: 'b' }] }).detail, '- a\n+ b');
+  const big = Array.from({ length: 50 }, (_, i) => `строка ${i}`).join('\n');
+  assert.match(toolView('Write', { file_path: '/a.ts', content: big }).detail ?? '', /строка 39\n… \(ещё 10 строк\)$/);
+  assert.equal(toolView('Bash', { command: 'ls' }).detail, undefined, 'короткая команда видна в строке');
+  assert.equal(toolView('Bash', { command: 'a &&\nb' }).detail, 'a &&\nb');
+
+  assert.deepEqual(
+    todosOf('TodoWrite', {
+      todos: [
+        { content: 'a', status: 'completed' },
+        { content: ' ', status: 'pending' },
+        { content: 'b', status: '??' },
+      ],
+    }),
+    [
+      { text: 'a', status: 'completed' },
+      { text: 'b', status: 'pending' },
+    ],
+  );
+  assert.equal(todosOf('Read', {}), null);
+  assert.deepEqual(
+    questionsOf('AskUserQuestion', {
+      questions: [{ question: 'Q', header: 'H', multiSelect: true, options: [{ label: 'x' }, { label: '' }] }],
+    }),
+    [{ question: 'Q', header: 'H', multiSelect: true, options: [{ label: 'x' }] }],
+  );
+  assert.equal(questionsOf('AskUserQuestion', { questions: [{ question: '' }] }), null);
+});
+
+test('codexItemSteps: команды с итогом, MCP, поиск, план, размышления, ошибки', () => {
+  assert.deepEqual(codexItemSteps({ id: 'c1', type: 'command_execution', command: 'npm test' }, false), [
+    { kind: 'tool', id: 'c1', text: 'shell npm test' },
+  ]);
+  assert.deepEqual(
+    codexItemSteps({ id: 'c1', type: 'command_execution', command: 'npm test', aggregated_output: 'FAIL', exit_code: 1 }, true),
+    [
+      { kind: 'tool', id: 'c1', text: 'shell npm test' },
+      { kind: 'tool_result', id: 'c1', ok: false, output: 'FAIL' },
+    ],
+  );
+  assert.deepEqual(codexItemSteps({ type: 'command_execution', command: 'ls', exit_code: 0 }, true), [], 'без id итог не к чему привязать');
+  assert.deepEqual(codexItemSteps({ id: 'f', type: 'file_change', changes: [{ path: 'a.ts' }], status: 'failed' }, true), [
+    { kind: 'tool', id: 'f', text: 'правка a.ts' },
+    { kind: 'tool_result', id: 'f', ok: false },
+  ]);
+  assert.deepEqual(
+    codexItemSteps(
+      { id: 'm', type: 'mcp_tool_call', server: 'gh', tool: 'search', arguments: { q: 'bug' }, error: { message: 'нет доступа' } },
+      true,
+    ),
+    [
+      { kind: 'tool', id: 'm', text: 'gh · search bug', detail: '{\n  "q": "bug"\n}' },
+      { kind: 'tool_result', id: 'm', ok: false, output: 'нет доступа' },
+    ],
+  );
+  assert.deepEqual(
+    codexItemSteps(
+      { id: 'm2', type: 'mcp_tool_call', server: 'gh', tool: 'me', result: { content: [{ type: 'text', text: 'ok' }] } },
+      true,
+    ),
+    [
+      { kind: 'tool', id: 'm2', text: 'gh · me' },
+      { kind: 'tool_result', id: 'm2', ok: true, output: 'ok' },
+    ],
+  );
+  assert.deepEqual(codexItemSteps({ id: 'w', type: 'web_search', query: 'codex json' }, false), [
+    { kind: 'tool', id: 'w', text: 'Поиск в сети codex json' },
+  ]);
+  const todo = {
+    id: 't',
+    type: 'todo_list',
+    items: [
+      { text: 'a', completed: true },
+      { text: 'b', completed: false },
+      { text: 'c', completed: false },
+    ],
+  };
+  assert.deepEqual(codexItemSteps(todo, false), [
+    {
+      kind: 'todos',
+      items: [
+        { text: 'a', status: 'completed' },
+        { text: 'b', status: 'in_progress' },
+        { text: 'c', status: 'pending' },
+      ],
+    },
+  ]);
+  assert.deepEqual(codexItemSteps({ type: 'reasoning', text: ' план ' }, true), [{ kind: 'thinking', text: 'план' }]);
+  assert.deepEqual(codexItemSteps({ type: 'error', message: 'устарел флаг' }, true), [
+    { kind: 'notice', level: 'warn', text: 'codex: устарел флаг' },
+  ]);
+});
+
+test('runCodex: переподключение — уведомление, вызов и итог по id', unix, async (t) => {
+  const cli = fakeCli(t, [
+    { type: 'error', message: 'Reconnecting... 1/5' },
+    { type: 'item.started', item: { id: 'c', type: 'command_execution', command: 'ls' } },
+    { type: 'item.completed', item: { id: 'c', type: 'command_execution', command: 'ls', aggregated_output: 'a', exit_code: 0 } },
+    { type: 'item.updated', item: { id: 't', type: 'todo_list', items: [{ text: 'x', completed: false }] } },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'ок' } },
+  ]);
+  const { opts, steps } = codexOpts(cli.bin, cli.dir);
+  const r = await runCodex(opts);
+  assert.equal(r.ok, true);
+  assert.deepEqual(steps, [
+    { kind: 'notice', level: 'warn', key: 'retry', text: 'codex: Reconnecting... 1/5' },
+    { kind: 'tool', id: 'c', text: 'shell ls' },
+    { kind: 'tool', id: 'c', text: 'shell ls' },
+    { kind: 'tool_result', id: 'c', ok: true, output: 'a' },
+    { kind: 'todos', items: [{ text: 'x', status: 'in_progress' }] },
+    { kind: 'text', text: 'ок' },
   ]);
 });
 
@@ -252,7 +567,7 @@ test('runCodex: события потока — ответ, токены, шаг
   assert.deepEqual(r.usage, { input: 3, output: 5, cacheRead: 2, cacheWrite: 0, costUsd: undefined });
   assert.equal(session, 'th1');
   assert.deepEqual(steps, [
-    { kind: 'tool', text: 'shell ls' },
+    { kind: 'tool', text: 'shell ls', detail: 'ls\nlong' },
     { kind: 'tool', text: 'правка a.ts' },
     { kind: 'text', text: 'готово' },
   ]);

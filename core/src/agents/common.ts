@@ -1,4 +1,4 @@
-import type { TokenUsage } from '../types.js';
+import type { ChatMcpServer, ChatQuestion, ChatTodo, TokenUsage } from '../types.js';
 
 export interface AgentRunOptions {
   bin: string;
@@ -34,8 +34,33 @@ export interface AgentRunOptions {
   onSession?: (id: string) => void;
 }
 
-/** Шаг ответа агента: delta — кусок текста, который дописывается к предыдущему. */
-export type AgentStep = { kind: 'text'; text: string; delta?: boolean } | { kind: 'tool'; text: string };
+/**
+ * Шаг ответа агента для чата.
+ * text/thinking: delta — кусок, который дописывается к предыдущему; fresh — начало нового блока.
+ * tool: повтор с тем же id обновляет вызов (сначала имя, потом аргументы); parent — вызов субагента внутри Task/Agent.
+ * tool_result: итог вызова по id. notice: key — следующее уведомление с тем же ключом заменяет предыдущее.
+ */
+export type AgentStep =
+  | { kind: 'text'; text: string; delta?: boolean; fresh?: boolean }
+  | { kind: 'thinking'; text: string; delta?: boolean }
+  | { kind: 'tool'; text: string; id?: string; parent?: string; detail?: string }
+  | { kind: 'tool_result'; id: string; ok: boolean; output?: string; parent?: string }
+  | { kind: 'todos'; items: ChatTodo[] }
+  | { kind: 'question'; id?: string; questions: ChatQuestion[] }
+  | { kind: 'notice'; level: 'info' | 'warn' | 'error'; text: string; key?: string }
+  | {
+      kind: 'meta';
+      model?: string;
+      turns?: number;
+      durationMs?: number;
+      /** Сколько токенов контекста занято после последнего обращения к модели. */
+      context?: number;
+      /** Размер окна контекста модели. */
+      contextWindow?: number;
+      cwd?: string;
+      version?: string;
+      mcp?: ChatMcpServer[];
+    };
 
 export interface AgentResult {
   ok: boolean;
@@ -119,4 +144,23 @@ export function explainError(agent: string, raw: string, auth: 'proxy' | 'login'
     .join(' ')
     .slice(0, 400);
   return `${agent}: ${line || 'завершился с ошибкой без сообщения'}`;
+}
+
+/** Без ANSI-последовательностей — вывод инструментов для чата. */
+export const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
+
+/** Вывод инструмента для чата: без ANSI и base64, не длиннее max. */
+export function plainOutput(s: string, max = 2000): string {
+  const t = stripAnsi(s)
+    .split('\n')
+    .filter((l) => !/^[A-Za-z0-9+/=]{200,}$/.test(l.trim()))
+    .join('\n')
+    .trim();
+  return t.length > max ? `${t.slice(0, max)}\n… (+${t.length - max})` : t;
+}
+
+/** Шаг без пустых полей: в файле чата и в сравнениях не остаётся undefined. */
+export function defined<T extends object>(o: T): T {
+  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k];
+  return o;
 }

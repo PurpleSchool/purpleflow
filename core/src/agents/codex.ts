@@ -2,7 +2,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run } from '../proc.js';
-import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type AgentResult, type AgentRunOptions } from './common.js';
+import {
+  addUsage,
+  c,
+  cleanEnv,
+  clip,
+  crlf,
+  defined,
+  emptyUsage,
+  explainError,
+  plainOutput,
+  type AgentResult,
+  type AgentRunOptions,
+  type AgentStep,
+} from './common.js';
+import { toolName } from './tools.js';
+import type { ChatTodo } from '../types.js';
 
 export interface CodexOptions extends AgentRunOptions {
   /** danger-full-access — визуальной проверке: браузер, кэш npm и скриншоты вне рабочей копии. */
@@ -66,6 +81,76 @@ export function codexArgs(
   return args;
 }
 
+const firstLine = (v: unknown, max = 160) =>
+  String(v ?? '')
+    .trim()
+    .split('\n')[0]
+    .slice(0, max);
+
+/** Текст результата MCP-вызова codex: content — блоки, как в MCP. */
+function mcpResultText(r: unknown): string {
+  const content = (r as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) return '';
+  return content.map((b) => (b && typeof b === 'object' && 'text' in b ? String((b as { text: unknown }).text) : '')).join('\n');
+}
+
+/**
+ * Шаги чата по элементу codex exec --json. Вызов приходит в started и ещё раз в completed —
+ * чат обновляет его по id, итог (tool_result) — только в completed.
+ */
+export function codexItemSteps(item: Record<string, unknown>, done: boolean): AgentStep[] {
+  const id = typeof item.id === 'string' ? item.id : undefined;
+  const failed = item.status === 'failed' || item.status === 'declined';
+  const result = (ok: boolean, output?: string): AgentStep[] =>
+    done && id ? [defined({ kind: 'tool_result', id, ok, output: output ? plainOutput(output) || undefined : undefined })] : [];
+  switch (item.type) {
+    case 'agent_message':
+      return done && String(item.text ?? '').trim() ? [{ kind: 'text', text: String(item.text).trim() }] : [];
+    case 'reasoning':
+      return done && String(item.text ?? '').trim() ? [{ kind: 'thinking', text: String(item.text).trim() }] : [];
+    case 'command_execution': {
+      const cmd = String(item.command ?? '').trim();
+      // Без id итог не к чему привязать, а сам вызов уже пришёл в started.
+      if (done && !id) return [];
+      const tool = defined({
+        kind: 'tool' as const,
+        id,
+        text: `shell ${firstLine(cmd)}`,
+        detail: cmd.includes('\n') || cmd.length > 160 ? cmd : undefined,
+      });
+      const code = typeof item.exit_code === 'number' ? item.exit_code : 0;
+      return [tool, ...result(code === 0 && !failed, String(item.aggregated_output ?? ''))];
+    }
+    case 'file_change': {
+      if (!done) return [];
+      const ch = (item.changes as { path: string }[] | undefined) ?? [];
+      return [defined({ kind: 'tool', id, text: `правка ${ch.map((x) => x.path).join(', ')}` }), ...result(!failed)];
+    }
+    case 'mcp_tool_call': {
+      const args = (item.arguments ?? {}) as Record<string, unknown>;
+      const main = Object.values(args).find((v) => typeof v === 'string' && v.trim());
+      const text = `${toolName(`mcp__${String(item.server ?? '?')}__${String(item.tool ?? '?')}`)}${main ? ` ${firstLine(main)}` : ''}`;
+      const detail = Object.keys(args).length ? JSON.stringify(args, null, 2).slice(0, 3000) : undefined;
+      const err = (item.error as { message?: string } | null | undefined)?.message;
+      return [defined({ kind: 'tool', id, text, detail }), ...result(!err && !failed, err ?? mcpResultText(item.result))];
+    }
+    case 'web_search':
+      return [defined({ kind: 'tool', id, text: `Поиск в сети ${firstLine(item.query)}`.trim() }), ...result(!failed)];
+    case 'todo_list': {
+      const items: ChatTodo[] = ((item.items as { text?: string; completed?: boolean }[] | undefined) ?? [])
+        .filter((t) => t.text?.trim())
+        .map((t) => ({ text: String(t.text).trim(), status: t.completed ? 'completed' : 'pending' }));
+      // Первый незакрытый пункт — тот, над которым агент работает сейчас.
+      const cur = items.find((t) => t.status === 'pending');
+      if (cur && !done) cur.status = 'in_progress';
+      return items.length ? [{ kind: 'todos', items }] : [];
+    }
+    case 'error':
+      return done && item.message ? [{ kind: 'notice', level: 'warn', text: `codex: ${String(item.message)}` }] : [];
+  }
+  return [];
+}
+
 export async function runCodex(o: CodexOptions): Promise<AgentResult> {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-codex-'));
   const lastFile = path.join(tmp, 'last.txt');
@@ -105,35 +190,33 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
           if (typeof ev.thread_id === 'string') o.onSession?.(ev.thread_id);
           break;
         case 'item.started':
-          if (item?.type === 'command_execution') {
-            out(c.violet('▸ ') + `shell ${c.dim(String(item.command ?? '').slice(0, 200))}` + '\n');
-            o.onStep?.({
-              kind: 'tool',
-              text: `shell ${String(item.command ?? '')
-                .split('\n')[0]
-                .slice(0, 160)}`,
-            });
-          }
-          break;
-        case 'item.completed':
+        case 'item.updated':
+        case 'item.completed': {
           if (!item) break;
-          if (item.type === 'agent_message') {
-            lastMessage = String(item.text ?? '');
-            out(lastMessage.trim() + '\n');
-            if (lastMessage.trim()) o.onStep?.({ kind: 'text', text: lastMessage.trim() });
-          } else if (item.type === 'reasoning' && item.text) {
-            out(c.dim(clip(String(item.text), 500)) + '\n');
-          } else if (item.type === 'command_execution') {
-            const o2 = String(item.aggregated_output ?? '');
-            if (o2.trim()) out(((item.exit_code ?? 0) === 0 ? c.dim : c.coral)(clip(o2, 400)) + '\n');
-          } else if (item.type === 'file_change') {
-            const ch = (item.changes as { path: string; kind: string }[] | undefined) ?? [];
-            out(c.violet('▸ ') + `правка ${c.dim(ch.map((x) => x.path).join(', '))}` + '\n');
-            o.onStep?.({ kind: 'tool', text: `правка ${ch.map((x) => x.path).join(', ')}` });
-          } else if (item.type === 'error') {
-            errors.push(String(item.message ?? ''));
+          const done = ev.type === 'item.completed';
+          if (ev.type === 'item.started' && item.type === 'command_execution')
+            out(c.violet('▸ ') + `shell ${c.dim(String(item.command ?? '').slice(0, 200))}` + '\n');
+          if (done) {
+            if (item.type === 'agent_message') {
+              lastMessage = String(item.text ?? '');
+              out(lastMessage.trim() + '\n');
+            } else if (item.type === 'reasoning' && item.text) {
+              out(c.dim(clip(String(item.text), 500)) + '\n');
+            } else if (item.type === 'command_execution') {
+              const o2 = String(item.aggregated_output ?? '');
+              if (o2.trim()) out(((item.exit_code ?? 0) === 0 ? c.dim : c.coral)(clip(o2, 400)) + '\n');
+            } else if (item.type === 'file_change') {
+              const ch = (item.changes as { path: string }[] | undefined) ?? [];
+              out(c.violet('▸ ') + `правка ${c.dim(ch.map((x) => x.path).join(', '))}` + '\n');
+            } else if (item.type === 'mcp_tool_call') {
+              out(c.violet('▸ ') + `${String(item.server ?? '')} · ${String(item.tool ?? '')}` + '\n');
+            } else if (item.type === 'error') {
+              errors.push(String(item.message ?? ''));
+            }
           }
+          for (const st of codexItemSteps(item, done)) o.onStep?.(st);
           break;
+        }
         case 'turn.completed': {
           const u = (ev.usage ?? {}) as Record<string, number>;
           usage = addUsage(usage, {
@@ -150,6 +233,8 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
         case 'error':
           errors.push(String(ev.message ?? 'ошибка'));
           out(c.coral(String(ev.message ?? '')) + '\n');
+          // Чаще всего это переподключение к модели — ход ещё может закончиться ответом.
+          if (ev.message) o.onStep?.({ kind: 'notice', level: 'warn', key: 'retry', text: `codex: ${String(ev.message)}` });
           break;
       }
     },

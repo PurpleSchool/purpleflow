@@ -136,6 +136,12 @@ export class Git {
   }
 
   /** Незакоммиченные изменения рабочей копии, включая неотслеживаемые файлы. */
+  /** Файлы рабочей копии: отслеживаемые и новые, без игнорируемых. */
+  async listFiles(dir: string): Promise<string[]> {
+    const out = await this.git(dir, ['--no-optional-locks', 'ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+    return [...new Set(out.split('\0').filter(Boolean))];
+  }
+
   async dirtyFiles(dir: string): Promise<string[]> {
     return parseStatusZ(await this.git(dir, ['status', '--porcelain', '-z', '--untracked-files=all']));
   }

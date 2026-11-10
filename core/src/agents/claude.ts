@@ -1,5 +1,19 @@
 import { run } from '../proc.js';
-import { addUsage, c, cleanEnv, clip, crlf, emptyUsage, explainError, type AgentResult, type AgentRunOptions } from './common.js';
+import {
+  addUsage,
+  c,
+  cleanEnv,
+  clip,
+  crlf,
+  defined,
+  emptyUsage,
+  explainError,
+  plainOutput,
+  type AgentResult,
+  type AgentRunOptions,
+  type AgentStep,
+} from './common.js';
+import { questionsOf, todosOf, toolName, toolView } from './tools.js';
 
 /**
  * claude -p (stdin) --output-format stream-json --verbose.
@@ -58,21 +72,136 @@ export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth
 interface ContentBlock {
   type: string;
   text?: string;
+  thinking?: string;
+  id?: string;
   name?: string;
   input?: Record<string, unknown>;
   content?: unknown;
   is_error?: boolean;
+  tool_use_id?: string;
 }
 
+/** Строка инструмента для живого лога: главный аргумент приглушён. */
 function describeTool(name: string, input: Record<string, unknown> = {}): string {
-  const v = input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.description ?? input.url;
-  return v ? `${name} ${c.dim(String(v).split('\n')[0].slice(0, 160))}` : name;
+  const { text } = toolView(name, input);
+  const head = toolName(name);
+  return text.startsWith(head + ' ') ? `${head} ${c.dim(text.slice(head.length + 1))}` : text;
 }
 
-/** То же описание инструмента, но без ANSI — для чата. */
-function plainTool(name: string, input: Record<string, unknown> = {}): string {
-  const v = input.command ?? input.file_path ?? input.path ?? input.pattern ?? input.description ?? input.url;
-  return v ? `${name} ${String(v).split('\n')[0].slice(0, 160)}` : name;
+/** Итоги result без текста ответа — понятной фразой. */
+const RESULT_ERRORS: Record<string, string> = {
+  error_max_turns: 'достигнут предел ходов агента, ответ не закончен',
+  error_max_budget_usd: 'исчерпан бюджет на запуск',
+  error_during_execution: 'сбой во время работы агента',
+};
+
+/** Инструменты, у которых в чате своя часть вместо строки вызова. */
+const OWN_PARTS = new Set(['TodoWrite', 'AskUserQuestion']);
+
+const LIMIT_NAMES: Record<string, string> = { five_hour: 'пятичасового', seven_day: 'недельного' };
+
+function resetsAt(sec: unknown): string {
+  if (typeof sec !== 'number') return '';
+  const d = new Date(sec * 1000);
+  return ` до ${d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** Служебные события claude, которые человек должен видеть в чате: повторы запросов, сжатие контекста, MCP, лимиты. */
+export function claudeNotice(ev: Record<string, unknown>): AgentStep[] {
+  // Заполнение контекста — по обращению основного агента к модели: всё, что ушло на вход, плюс ответ.
+  if (ev.type === 'assistant' && !ev.parent_tool_use_id) {
+    const u = (ev.message as { usage?: Record<string, unknown> } | undefined)?.usage;
+    const n = (k: string) => (typeof u?.[k] === 'number' ? (u[k] as number) : 0);
+    const used = n('input_tokens') + n('cache_read_input_tokens') + n('cache_creation_input_tokens') + n('output_tokens');
+    return used > 0 ? [{ kind: 'meta', context: used }] : [];
+  }
+  if (ev.type === 'result') {
+    // Окно контекста — у модели с самым большим окном (основная; служебные вроде haiku — меньше).
+    const windows = Object.values((ev.modelUsage ?? {}) as Record<string, { contextWindow?: unknown }>)
+      .map((m) => m?.contextWindow)
+      .filter((w): w is number => typeof w === 'number' && w > 0);
+    return windows.length ? [{ kind: 'meta', contextWindow: Math.max(...windows) }] : [];
+  }
+  if (ev.type === 'rate_limit_event') {
+    const info = (ev.rate_limit_info ?? {}) as Record<string, unknown>;
+    const kind = LIMIT_NAMES[String(info.rateLimitType)] ?? '';
+    if (info.status === 'rejected')
+      return [
+        {
+          kind: 'notice',
+          level: 'error',
+          key: 'rate',
+          text: `Лимит ${kind ? kind + ' ' : ''}использования исчерпан${resetsAt(info.resetsAt)}`,
+        },
+      ];
+    if (info.status === 'allowed_warning' && typeof info.utilization === 'number')
+      return [
+        {
+          kind: 'notice',
+          level: 'warn',
+          key: 'rate',
+          text: `Израсходовано ${Math.round(info.utilization * 100)}% ${kind ? kind + ' ' : ''}лимита${resetsAt(info.resetsAt).replace(' до', ', сброс')}`,
+        },
+      ];
+    return [];
+  }
+  if (ev.type !== 'system') return [];
+  switch (ev.subtype) {
+    case 'init': {
+      const out: AgentStep[] = [];
+      const servers = ((ev.mcp_servers as { name?: string; status?: string }[] | undefined) ?? []).filter((m) => m?.name);
+      out.push(
+        defined({
+          kind: 'meta' as const,
+          model: typeof ev.model === 'string' && ev.model ? ev.model : undefined,
+          cwd: typeof ev.cwd === 'string' && ev.cwd ? ev.cwd : undefined,
+          version: typeof ev.claude_code_version === 'string' ? ev.claude_code_version : undefined,
+          mcp: servers.length ? servers.map((m) => ({ name: String(m.name), status: String(m.status ?? '') })) : undefined,
+        }),
+      );
+      for (const m of servers) {
+        if (m.status === 'failed')
+          out.push({
+            kind: 'notice',
+            level: 'warn',
+            key: `mcp:${m.name}`,
+            text: `MCP-сервер ${m.name} не подключился — его инструменты агенту недоступны`,
+          });
+        else if (m.status === 'needs-auth')
+          out.push({
+            kind: 'notice',
+            level: 'warn',
+            key: `mcp:${m.name}`,
+            text: `MCP-сервер ${m.name} требует входа — его инструменты агенту недоступны`,
+          });
+      }
+      return out;
+    }
+    case 'api_retry': {
+      const n = typeof ev.attempt === 'number' ? ` ${ev.attempt}${typeof ev.max_retries === 'number' ? ` из ${ev.max_retries}` : ''}` : '';
+      const why = ev.error_status ? `, ответ ${String(ev.error_status)}` : typeof ev.error === 'string' ? `, ${ev.error}` : '';
+      return [{ kind: 'notice', level: 'warn', key: 'retry', text: `Повтор запроса к модели: попытка${n}${why}` }];
+    }
+    case 'status':
+      return ev.status === 'compacting' ? [{ kind: 'notice', level: 'info', key: 'compact', text: 'Сжимаю контекст переписки…' }] : [];
+    case 'compact_boundary': {
+      const m = (ev.compact_metadata ?? {}) as { pre_tokens?: unknown; post_tokens?: unknown };
+      const pre = typeof m.pre_tokens === 'number' ? m.pre_tokens : undefined;
+      const post = typeof m.post_tokens === 'number' ? m.post_tokens : undefined;
+      const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)} тыс.` : String(n));
+      return [
+        {
+          kind: 'notice',
+          level: 'info',
+          key: 'compact',
+          text: `Контекст переписки сжат${pre != null && post != null ? ` (${k(pre)} → ${k(post)} токенов)` : ''}: ранние сообщения агент помнит в пересказе`,
+        },
+        // После сжатия контекст — пересказ: столько и занято.
+        ...(post != null ? [{ kind: 'meta' as const, context: post }] : []),
+      ];
+    }
+  }
+  return [];
 }
 
 function toolResultText(content: unknown): string {
@@ -105,7 +234,10 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
   let finalText = '';
   let resultError: string | undefined;
   let gotResult = false;
+  /** Следующий кусок текста начинает новый текстовый блок. */
+  let freshText = false;
   const out = (s: string) => o.onOutput(crlf(s));
+  const step = (st: AgentStep) => o.onStep?.(st);
 
   const input = claudeInput(o);
   const r = await run(o.bin, claudeArgs({ ...o, systemPrompt: input.systemPrompt }), {
@@ -123,22 +255,52 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
         out(c.dim(line) + '\n');
         return;
       }
+      for (const st of claudeNotice(ev)) step(st);
+      // Шаги субагента (Task/Agent) приходят с parent_tool_use_id: в чате они живут внутри его вызова.
+      const parent = typeof ev.parent_tool_use_id === 'string' ? ev.parent_tool_use_id : undefined;
       if (ev.type === 'system' && ev.subtype === 'init') {
         out(c.dim(`● claude · ${String(ev.model ?? o.model ?? '')} · ${String(ev.cwd ?? '')}`) + '\n');
+      } else if (ev.type === 'system' && ev.subtype === 'api_retry') {
+        out(c.amber(`повтор запроса: попытка ${String(ev.attempt ?? '?')}`) + '\n');
       } else if (ev.type === 'stream_event') {
-        const se = ev.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
-        if (se?.type === 'content_block_delta' && se.delta?.type === 'text_delta' && se.delta.text)
-          o.onStep?.({ kind: 'text', text: se.delta.text, delta: true });
+        if (parent) return;
+        const se = ev.event as
+          | {
+              type?: string;
+              content_block?: ContentBlock;
+              delta?: { type?: string; text?: string; thinking?: string };
+            }
+          | undefined;
+        if (se?.type === 'content_block_start') {
+          const b = se.content_block;
+          if (b?.type === 'text') freshText = true;
+          else if (b?.type === 'thinking') step({ kind: 'thinking', text: b.thinking ?? '' });
+          // Вызов виден сразу, пока модель ещё пишет аргументы (большой Write иначе выглядит зависанием).
+          else if (b?.type === 'tool_use' && b.id && b.name && !OWN_PARTS.has(b.name))
+            step({ kind: 'tool', id: b.id, text: toolName(b.name) });
+        } else if (se?.type === 'content_block_delta' && se.delta?.type === 'text_delta' && se.delta.text) {
+          step(defined({ kind: 'text', text: se.delta.text, delta: true, fresh: freshText || undefined }));
+          freshText = false;
+        } else if (se?.type === 'content_block_delta' && se.delta?.type === 'thinking_delta' && se.delta.thinking) {
+          step({ kind: 'thinking', text: se.delta.thinking, delta: true });
+        }
       } else if (ev.type === 'assistant') {
         const msg = ev.message as { content?: ContentBlock[] };
         for (const b of msg?.content ?? []) {
           if (b.type === 'text' && b.text?.trim()) {
-            out(b.text.trim() + '\n');
-            // С частичными сообщениями текст уже пришёл кусками.
-            if (!o.partial) o.onStep?.({ kind: 'text', text: b.text.trim() });
+            out((parent ? c.dim('  ') : '') + b.text.trim() + '\n');
+            // С частичными сообщениями текст уже пришёл кусками; текст субагента — его отчёт основному агенту, не человеку.
+            if (!o.partial && !parent) step({ kind: 'text', text: b.text.trim() });
+          } else if (b.type === 'thinking' && b.thinking?.trim()) {
+            if (!o.partial && !parent) step({ kind: 'thinking', text: b.thinking.trim() });
           } else if (b.type === 'tool_use') {
-            out(c.violet('▸ ') + describeTool(b.name ?? 'tool', b.input) + '\n');
-            o.onStep?.({ kind: 'tool', text: plainTool(b.name ?? 'tool', b.input) });
+            const name = b.name ?? 'tool';
+            out((parent ? c.dim('  ') : '') + c.violet('▸ ') + describeTool(name, b.input) + '\n');
+            const todos = parent ? null : todosOf(name, b.input);
+            const questions = parent ? null : questionsOf(name, b.input);
+            if (todos) step({ kind: 'todos', items: todos });
+            else if (questions) step(defined({ kind: 'question', id: b.id, questions }));
+            else step(defined({ kind: 'tool', id: b.id, parent, ...toolView(name, b.input) }));
           }
         }
       } else if (ev.type === 'user') {
@@ -147,6 +309,8 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
           if (b.type === 'tool_result') {
             const t = toolResultText(b.content);
             if (t.trim()) out((b.is_error ? c.coral : c.dim)(clip(t, 400)) + '\n');
+            if (b.tool_use_id)
+              step(defined({ kind: 'tool_result', id: b.tool_use_id, ok: !b.is_error, output: plainOutput(t) || undefined, parent }));
           }
         }
       } else if (ev.type === 'result') {
@@ -160,8 +324,30 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
           costUsd: typeof ev.total_cost_usd === 'number' ? ev.total_cost_usd : undefined,
         });
         finalText = typeof ev.result === 'string' ? ev.result : finalText;
+        if (typeof ev.num_turns === 'number' || typeof ev.duration_ms === 'number')
+          step(
+            defined({
+              kind: 'meta',
+              turns: typeof ev.num_turns === 'number' ? ev.num_turns : undefined,
+              durationMs: typeof ev.duration_ms === 'number' ? ev.duration_ms : undefined,
+            }),
+          );
+        const denied = (Array.isArray(ev.permission_denials) ? ev.permission_denials : []) as {
+          tool_name?: string;
+          tool_input?: Record<string, unknown>;
+        }[];
+        if (denied.length)
+          step({
+            kind: 'notice',
+            level: 'warn',
+            key: 'denied',
+            text: `Агенту не дали выполнить: ${denied.map((d) => toolView(d.tool_name ?? 'tool', d.tool_input).text).join('; ')}`,
+          });
         if (ev.is_error || (typeof ev.subtype === 'string' && ev.subtype !== 'success')) {
-          resultError = String(ev.result ?? ev.subtype ?? 'ошибка');
+          const sub = String(ev.subtype ?? '');
+          resultError = String(
+            (typeof ev.result === 'string' && ev.result.trim() ? ev.result : undefined) ?? RESULT_ERRORS[sub] ?? (sub || 'ошибка'),
+          );
         }
       }
     },

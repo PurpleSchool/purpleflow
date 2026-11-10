@@ -1,6 +1,6 @@
 // API ядра, доступное окну: каждый метод выполняется в utilityProcess и вызывается через IPC.
 // Orchestrator реализует этот интерфейс; список методов для моста — CORE_METHODS в app/src/shared/ipc.ts.
-import type { ChatFile, ChatSummary } from './chat.js';
+import type { ChatFile, ChatSkill, ChatSummary } from './chat.js';
 import type { PrDetails, PrStatus } from './pr.js';
 import type {
   AiCommands,
@@ -98,5 +98,13 @@ export interface CoreApi {
   chatToTask(id: string): Promise<NextPartDraft>;
   /** Незакоммиченные изменения проекта чата относительно HEAD. */
   getChatDiff(id: string): Promise<DiffFile[]>;
+  /** Файлы проекта для «@» в поле ввода чата (пути от корня проекта). */
+  listChatFiles(projectPath: string): Promise<string[]>;
+  /** Скиллы и команды для «/»: из проекта и, если агенты видят настройки пользователя, из ~/.claude и ~/.codex. */
+  listChatSkills(projectPath?: string): Promise<ChatSkill[]>;
+  /** Сжать контекст сессии claude в чате (/compact); идёт в фоне, как ход. */
+  compactChat(id: string): Promise<void>;
+  /** Модель чата по умолчанию для агента (из настроек ролей); пусто — модель выбирает CLI. */
+  chatDefaultModel(agent: AgentKind): Promise<string>;
   getChatChangedFiles(id: string): Promise<string[]>;
 }

@@ -55,9 +55,15 @@ test('чат на claude: ответ кусками, шаги инструмен
     o.onStep?.({ kind: 'text', text: 'вет', delta: true });
     o.onStep?.({ kind: 'tool', text: 'Read src/a.ts' });
     o.onStep?.({ kind: 'text', text: 'Готово', delta: true });
+    o.onStep?.({ kind: 'meta', model: 'claude-sonnet', cwd: '/w', mcp: [{ name: 'gh', status: 'connected' }] });
+    o.onStep?.({ kind: 'meta', context: 42_000 });
+    o.onStep?.({ kind: 'meta', contextWindow: 200_000 });
     return { ok: true, text: 'Готово', usage: emptyUsage() };
   };
   const core = makeCore({ claude });
+  // Модель по умолчанию — как у первой роли этого агента; у codex в настройках пусто — решает CLI.
+  assert.equal(await core.chatDefaultModel('claude'), 'sonnet');
+  assert.equal(await core.chatDefaultModel('codex'), '');
   const events: CoreEvent[] = [];
   core.on((e) => events.push(e));
 
@@ -75,6 +81,8 @@ test('чат на claude: ответ кусками, шаги инструмен
     { kind: 'text', text: 'Готово' },
   ]);
   assert.equal(answer.text, 'Привет\n\nГотово');
+  assert.equal(answer.model, 'claude-sonnet');
+  assert.deepEqual(answer.info, { cwd: '/w', mcp: [{ name: 'gh', status: 'connected' }], context: 42_000, contextWindow: 200_000 });
   assert.ok(events.some((e) => e.type === 'chat.updated'));
   // Первый ход — новая сессия с системным промптом, модель — как у первой роли claude.
   assert.ok(calls[0].sessionId && !calls[0].resume);
@@ -290,4 +298,125 @@ test('чат: два вложения с одним именем не затир
   const after = await untilIdle(core, chat.id);
   const files = after.messages.find((m) => m.role === 'user')!.attachments ?? [];
   assert.equal(new Set(files).size, 2);
+});
+
+test('чат: субагент, итоги вызовов, план, уведомления и итоги хода сохраняются в ответе; прерванный вызов не висит', async () => {
+  let stop = false;
+  const claude = async (o: AgentRunOptions) => {
+    o.onStep?.({ kind: 'meta', model: 'claude-x' });
+    o.onStep?.({ kind: 'notice', level: 'warn', key: 'retry', text: 'Повтор 1' });
+    o.onStep?.({ kind: 'notice', level: 'warn', key: 'retry', text: 'Повтор 2' });
+    o.onStep?.({ kind: 'tool', id: 'ag', text: 'Субагент: поиск' });
+    o.onStep?.({ kind: 'tool', id: 's1', parent: 'ag', text: 'Grep foo' });
+    o.onStep?.({ kind: 'tool_result', id: 's1', parent: 'ag', ok: true });
+    o.onStep?.({ kind: 'tool_result', id: 'ag', ok: true, output: 'нашёл' });
+    o.onStep?.({ kind: 'todos', items: [{ text: 'Поправить', status: 'in_progress' }] });
+    o.onStep?.({ kind: 'tool', id: 'b', text: 'Bash npm test' });
+    if (stop) return { ok: false, stopped: true, text: '', usage: emptyUsage() };
+    o.onStep?.({ kind: 'tool_result', id: 'b', ok: false, output: 'FAIL' });
+    o.onStep?.({ kind: 'text', text: 'Тест падает', delta: true, fresh: true });
+    o.onStep?.({ kind: 'meta', turns: 4, durationMs: 3000 });
+    return { ok: true, text: 'Тест падает', usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, costUsd: 0.01 } };
+  };
+  const core = makeCore({ claude });
+  const chat = await core.createChat({ agent: 'claude' });
+  await core.sendChat(chat.id, 'Почему падает тест?');
+  const answer = (await untilIdle(core, chat.id)).messages.at(-1)!;
+  assert.deepEqual(answer.parts, [
+    { kind: 'notice', level: 'warn', key: 'retry', text: 'Повтор 2' },
+    { kind: 'tool', id: 'ag', text: 'Субагент: поиск', status: 'ok', output: 'нашёл', sub: [{ id: 's1', text: 'Grep foo', status: 'ok' }] },
+    { kind: 'todos', items: [{ text: 'Поправить', status: 'in_progress' }] },
+    { kind: 'tool', id: 'b', text: 'Bash npm test', status: 'error', output: 'FAIL' },
+    { kind: 'text', text: 'Тест падает' },
+  ]);
+  assert.equal(answer.text, 'Тест падает');
+  assert.equal(answer.model, 'claude-x');
+  assert.equal(answer.turns, 4);
+  assert.equal(answer.durationMs, 3000);
+  assert.equal(answer.usage?.costUsd, 0.01);
+
+  stop = true;
+  await core.sendChat(chat.id, 'Ещё раз');
+  const stopped = (await untilIdle(core, chat.id)).messages.at(-1)!;
+  assert.equal(stopped.stopped, true);
+  const bash = stopped.parts?.find((p) => p.kind === 'tool' && p.id === 'b');
+  assert.deepEqual(bash, { kind: 'tool', id: 'b', text: 'Bash npm test' }, 'без итога вызов не остаётся «выполняется»');
+});
+
+test('чат: @файл и /скилл уходят агенту блоком промпта; список файлов и скиллов проекта', async () => {
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-chat-mention-')));
+  const git = (...a: string[]) => execFileSync('git', a, { cwd: repo, stdio: 'ignore' });
+  git('init', '-q');
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'a\n');
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'secret.txt\n');
+  fs.writeFileSync(path.join(repo, 'secret.txt'), 'x\n');
+  fs.mkdirSync(path.join(repo, '.claude', 'skills', 'review'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.claude', 'skills', 'review', 'SKILL.md'), '---\ndescription: Ревью\n---\n');
+  git('add', 'src/a.ts');
+  const calls: AgentRunOptions[] = [];
+  const claude = async (o: AgentRunOptions) => {
+    calls.push(o);
+    return { ok: true, text: 'ок', usage: emptyUsage() };
+  };
+  const core = makeCore({ claude });
+  assert.deepEqual((await core.listChatFiles(repo)).sort(), ['.claude/skills/review/SKILL.md', '.gitignore', 'src/a.ts']);
+  assert.deepEqual(
+    (await core.listChatSkills(repo)).map((s) => s.name),
+    ['review'],
+  );
+  const chat = await core.createChat({ agent: 'claude', projectPath: repo });
+  await core.sendChat(chat.id, '/review посмотри @src/a.ts');
+  await untilIdle(core, chat.id);
+  assert.match(calls[0].prompt, /^\/review посмотри @src\/a\.ts/);
+  assert.ok(calls[0].prompt.includes(`- ${path.join(repo, 'src', 'a.ts')}`));
+  assert.ok(calls[0].prompt.includes(`- /review: ${path.join(repo, '.claude', 'skills', 'review', 'SKILL.md')}`));
+});
+
+test('чат: «Сжать контекст» — /compact в той же сессии claude, ответом уведомление, очередь уходит после', async () => {
+  const calls: AgentRunOptions[] = [];
+  let release: () => void = () => {};
+  const claude = async (o: AgentRunOptions) => {
+    calls.push(o);
+    if (o.prompt === '/compact') {
+      await new Promise<void>((r) => (release = r));
+      o.onStep?.({ kind: 'notice', level: 'info', key: 'compact', text: 'Сжимаю контекст переписки…' });
+      o.onStep?.({ kind: 'notice', level: 'info', key: 'compact', text: 'Контекст переписки сжат: 41 тыс. → 9 тыс. токенов' });
+      o.onStep?.({ kind: 'meta', context: 8869 });
+      return { ok: true, text: '', usage: emptyUsage() };
+    }
+    o.onStep?.({ kind: 'text', text: 'ок', delta: true });
+    return { ok: true, text: 'ок', usage: emptyUsage() };
+  };
+  const core = makeCore({ claude });
+  const chat = await core.createChat({ agent: 'claude' });
+  // До первого сообщения сжимать нечего.
+  await assert.rejects(core.compactChat(chat.id), /сессия начнётся/);
+  await core.sendChat(chat.id, 'Привет');
+  await untilIdle(core, chat.id);
+
+  await core.compactChat(chat.id);
+  assert.equal((await core.getChat(chat.id))!.busy, true);
+  await assert.rejects(core.compactChat(chat.id), /Агент отвечает/);
+  // Сообщение во время сжатия ждёт в очереди.
+  await core.sendChat(chat.id, 'Дальше');
+  release();
+  const after = await untilIdle(core, chat.id);
+
+  assert.equal(calls[1].prompt, '/compact');
+  assert.equal(calls[1].resume, calls[0].sessionId, 'сжимается та же сессия');
+  assert.equal(calls[1].systemPrompt, undefined);
+  assert.equal(calls[2].prompt, 'Дальше');
+  assert.equal(calls[2].resume, calls[0].sessionId);
+  const roles = after.messages.map((m) => `${m.role}:${m.text}`);
+  assert.deepEqual(roles, ['user:Привет', 'assistant:ок', 'assistant:', 'user:Дальше', 'assistant:ок']);
+  const compacted = after.messages[2];
+  assert.deepEqual(compacted.parts, [
+    { kind: 'notice', level: 'info', key: 'compact', text: 'Контекст переписки сжат: 41 тыс. → 9 тыс. токенов' },
+  ]);
+  assert.equal(compacted.info?.context, 8869);
+
+  // codex сжимает сам.
+  await core.updateChat(chat.id, { agent: 'codex' });
+  await assert.rejects(core.compactChat(chat.id), /codex сжимает/);
 });

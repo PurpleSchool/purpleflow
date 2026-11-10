@@ -35,6 +35,10 @@ export async function startPreview(k: Kernel, id: string): Promise<PreviewState>
   return launchPreview(k, id, { repo: r.projectPath, cwd: r.worktreePath, runCommand, appUrl });
 }
 
+/** Сколько вывода сервера держим и как часто отправляем его в окно. */
+const OUTPUT_MAX = 20_000;
+const OUTPUT_MS = 400;
+
 /** Запуск приложения для ручной проверки: подготовка, сервер на свободном порту, ожидание адреса. */
 export async function launchPreview(
   k: Kernel,
@@ -46,8 +50,17 @@ export async function launchPreview(
   const group = `${id}:preview`;
   let output = '';
   let exited: number | null | undefined;
+  // Вывод сервера виден, пока он поднимается и работает: в окно — не чаще OUTPUT_MS, чтобы не забить события.
+  let pending: NodeJS.Timeout | null = null;
+  const publish = () => {
+    pending = null;
+    const now = k.previews.get(id);
+    if (now && now.url === url && (now.status === 'starting' || now.status === 'ready') && now.output !== output)
+      setPreview(k, id, { ...now, output });
+  };
   const tail = (t: string) => {
-    output = (output + t).slice(-4000);
+    output = (output + t).slice(-OUTPUT_MAX);
+    pending ??= setTimeout(publish, OUTPUT_MS);
   };
   setPreview(k, id, { status: 'starting', url, command });
   try {
@@ -94,7 +107,7 @@ export async function launchPreview(
     setPreview(k, id, state);
     return state;
   }
-  const state: PreviewState = { status: 'ready', url, command };
+  const state: PreviewState = { status: 'ready', url, command, ...(output && { output }) };
   setPreview(k, id, state);
   return state;
 }

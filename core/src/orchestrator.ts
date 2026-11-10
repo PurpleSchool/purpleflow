@@ -23,6 +23,7 @@ import { installTool } from './services/setup.js';
 import { answer } from './stages/plan.js';
 import { getVisualShot } from './stages/visual.js';
 import type {
+  AgentKind,
   ChangeDocs,
   ChatFile,
   CommandIssue,
@@ -290,6 +291,22 @@ export class Orchestrator implements CoreApi {
   }
   deleteChat(id: string) {
     return chat.deleteChat(this.kernel, id);
+  }
+  listChatFiles(projectPath: string) {
+    return chat.listChatFiles(this.kernel, projectPath);
+  }
+  /** Сжатие идёт в фоне, как ход: результат приходит событиями chat.updated. */
+  async compactChat(id: string): Promise<void> {
+    const run = chat.compactChat(this.kernel, id);
+    // Отказ (не claude, агент занят) — сразу вызывающему; дальше всё в сообщении ответа.
+    await Promise.race([run, new Promise((r) => setTimeout(r, 50))]);
+    run.catch(() => {});
+  }
+  async chatDefaultModel(agent: AgentKind) {
+    return chat.chatDefaultModel(this.kernel, agent);
+  }
+  async listChatSkills(projectPath?: string) {
+    return chat.listChatSkills(this.kernel, projectPath);
   }
   /** Ход идёт в фоне: ответ приходит событиями chat.updated. */
   async sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void> {
