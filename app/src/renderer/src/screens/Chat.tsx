@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, Clock, FilePen, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, Wrench, X } from 'lucide-react';
-import type { AgentKind, ChatFile, ChatMessage, ChatPart, ProjectListItem } from '@purpleflow/core';
-import { Markdown } from '../components/Markdown';
+import { ArrowUp, Clock, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, X } from 'lucide-react';
+import type { AgentKind, ChatFile, ChatMessage, ProjectListItem } from '@purpleflow/core';
+import { AssistantMessage } from './ChatAnswer';
+import { useMentions } from './ChatMentions';
 import { Button } from '../components/ui';
 import { ComboInput, Select } from '../components/Dropdown';
 import { MODEL_OPTIONS } from '../lib/models';
 import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
+import { formatPick, insertPick, type PickedElement } from '../lib/pickElement';
 import { ChatSide, ChatSideRail, useChatChanged, useSideWidth, type ChatPane } from './ChatSide';
 import { bridge, cleanErr } from '../lib/api';
 
@@ -55,7 +57,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const [pane, setPaneState] = useState<ChatPane | null>(() => {
     try {
       const v = localStorage.getItem(PANE_KEY);
-      return v === 'code' || v === 'browser' ? v : null;
+      return v === 'session' || v === 'code' || v === 'run' || v === 'browser' ? v : null;
     } catch {
       return null;
     }
@@ -156,6 +158,24 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
 
   const queued = Boolean(chat?.messages.some((m) => m.queued));
 
+  // Модель по умолчанию — из настроек ролей; поле показывает её, даже когда у чата своей модели нет.
+  const [defaultModel, setDefaultModel] = useState<{ agent: AgentKind; model: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    bridge.core
+      .chatDefaultModel(conf.agent)
+      .then((model) => alive && setDefaultModel({ agent: conf.agent, model }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [conf.agent, settings?.models, settings?.agents]);
+  // В настройках пусто — модель выбирает CLI; если он уже отвечал этим агентом, показываем, какую выбрал.
+  const lastModel =
+    chat?.session?.agent === conf.agent ? [...chat.messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model : undefined;
+  const fallbackModel = (defaultModel?.agent === conf.agent ? defaultModel.model : '') || lastModel || '';
+  const shownModel = conf.model || fallbackModel;
+
   /** Текст очищается только после ответа ядра — без этого двойной Enter отправил бы сообщение дважды. */
   const sending = useRef(false);
   const send = async (override?: string) => {
@@ -186,6 +206,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mention.onKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
@@ -225,15 +246,30 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
   const changed = useChatChanged(chat, busy);
   const side = useSideWidth();
   const messages = chat?.messages ?? [];
+  // На вопросы агента отвечают, пока после них нет сообщения человека.
+  const lastUser = messages.reduce((at, m, i) => (m.role === 'user' ? i : at), -1);
   const empty = !loading && messages.length === 0;
   const projectPath = chat ? chat.projectPath : draft.projectPath;
+  const mention = useMentions({ text, setText, input, projectPath });
+
+  /** Элемент, указанный во вкладке «Браузер»: описание — в поле ввода, курсор — после него, чтобы дописать просьбу. */
+  const onPick = (el: PickedElement) => {
+    setText((t) => insertPick(t, formatPick(el)));
+    requestAnimationFrame(() => {
+      const box = input.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+      box.scrollTop = box.scrollHeight;
+    });
+  };
   const projectOptions = useMemo(() => {
     const paths = projects.map((p) => p.path);
     if (draft.projectPath && !paths.includes(draft.projectPath)) paths.unshift(draft.projectPath);
     return paths;
   }, [projects, draft.projectPath]);
-  // Без проекта вкладки «Код» нет — остаётся браузер.
-  const sidePane: ChatPane | null = pane === 'code' && !chat?.projectPath ? 'browser' : pane;
+  // Без проекта вкладок «Код» и «Запуск» нет — остаётся браузер.
+  const sidePane: ChatPane | null = (pane === 'code' || pane === 'run') && !chat?.projectPath ? 'browser' : pane;
   const toolOk = (a: AgentKind) => Boolean(state.tools?.[a]?.path && !state.tools[a].error);
 
   return (
@@ -279,42 +315,6 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
               ]}
             />
           )}
-          <div className="segmented small" role="radiogroup" aria-label="Агент">
-            {(['claude', 'codex'] as AgentKind[]).map((a) => (
-              <button
-                key={a}
-                role="radio"
-                aria-checked={conf.agent === a}
-                className={conf.agent === a ? 'is-on' : ''}
-                disabled={busy}
-                title={toolOk(a) ? undefined : `${a} не найден`}
-                onClick={() => conf.agent !== a && void setConf({ agent: a })}
-              >
-                {a}
-              </button>
-            ))}
-          </div>
-          <ComboInput
-            className="chat-model"
-            ariaLabel="Модель"
-            placeholder="модель по умолчанию"
-            value={conf.model}
-            disabled={busy}
-            options={MODEL_OPTIONS[conf.agent]}
-            onChange={(val) => (chat ? setChat({ ...chat, model: val }) : setDraft((d) => ({ ...d, model: val })))}
-            onCommit={(val) => chat && val !== (chat.model ?? '') && void setConf({ model: val })}
-          />
-          <button
-            role="switch"
-            aria-checked={conf.edits}
-            className={`switch chat-edits ${conf.edits ? 'is-on' : ''}`}
-            disabled={busy}
-            title={conf.edits ? 'Агент может менять файлы, когда вы просите' : 'Агент только читает файлы'}
-            onClick={() => void setConf({ edits: !conf.edits })}
-          >
-            <i />
-            <span>Правки</span>
-          </button>
           {chat && (
             <>
               <span className="chat-head-end">
@@ -371,8 +371,12 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                   </div>
                 </div>
               )}
-              {messages.map((m) =>
-                m.role === 'user' ? <UserMessage key={m.id} m={m} chatId={chat!.id} /> : <AssistantMessage key={m.id} m={m} />,
+              {messages.map((m, i) =>
+                m.role === 'user' ? (
+                  <UserMessage key={m.id} m={m} chatId={chat!.id} />
+                ) : (
+                  <AssistantMessage key={m.id} m={m} answerable={i > lastUser} onAnswer={(t) => void send(t)} />
+                ),
               )}
             </div>
           </div>
@@ -391,6 +395,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                 if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
               }}
             >
+              {mention.menu}
               {files.length > 0 && (
                 <div className="chat-files">
                   {files.map((f) => (
@@ -405,6 +410,28 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                 </div>
               )}
               <div className="chat-compose-row">
+                <textarea
+                  ref={input}
+                  rows={1}
+                  value={text}
+                  placeholder={
+                    busy
+                      ? 'Агент отвечает — можно дописать уточнение, оно уйдёт следующим'
+                      : conf.edits && projectPath
+                        ? 'Спросите или попросите правку… @ — файл, / — скилл'
+                        : projectPath
+                          ? 'Напишите сообщение… @ — файл, / — скилл'
+                          : 'Напишите сообщение… / — скилл'
+                  }
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    mention.onInput();
+                  }}
+                  onSelect={mention.onCaret}
+                  onKeyDown={onKey}
+                />
+              </div>
+              <div className="chat-compose-bar">
                 <button
                   type="button"
                   className="chat-attach"
@@ -423,41 +450,79 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                     e.target.value = '';
                   }}
                 />
-                <textarea
-                  ref={input}
-                  rows={1}
-                  value={text}
-                  placeholder={
-                    busy
-                      ? 'Агент отвечает — можно дописать уточнение, оно уйдёт следующим'
-                      : conf.edits && projectPath
-                        ? 'Спросите или попросите небольшую правку…'
-                        : 'Напишите сообщение…'
-                  }
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={onKey}
-                />
-                {busy && (
+                <div className="segmented chat-mode" role="radiogroup" aria-label="Режим">
                   <button
                     type="button"
-                    className="chat-send is-stop"
-                    title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'}
-                    onClick={() => chat && bridge.core.stopChat(chat.id).catch((e) => setError(cleanErr(e)))}
+                    role="radio"
+                    aria-checked={!conf.edits}
+                    className={!conf.edits ? 'is-on' : ''}
+                    disabled={busy}
+                    title="Агент только читает файлы и отвечает"
+                    onClick={() => conf.edits && void setConf({ edits: false })}
                   >
-                    <Square size={13} />
+                    Вопросы
                   </button>
-                )}
-                {(!busy || text.trim() || files.length > 0) && (
                   <button
-                    type="submit"
-                    className="chat-send"
-                    disabled={!text.trim() && !files.length}
-                    aria-label={busy ? 'В очередь: уйдёт после ответа' : 'Отправить'}
-                    title={busy ? 'В очередь: уйдёт после ответа' : undefined}
+                    type="button"
+                    role="radio"
+                    aria-checked={conf.edits}
+                    className={conf.edits ? 'is-on' : ''}
+                    disabled={busy}
+                    title="Агент может менять файлы, когда вы просите"
+                    onClick={() => !conf.edits && void setConf({ edits: true })}
                   >
-                    <ArrowUp size={16} />
+                    Правки
                   </button>
-                )}
+                </div>
+                <div className="segmented chat-agent" role="radiogroup" aria-label="Агент">
+                  {(['claude', 'codex'] as AgentKind[]).map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      role="radio"
+                      aria-checked={conf.agent === a}
+                      className={conf.agent === a ? 'is-on' : ''}
+                      disabled={busy}
+                      title={toolOk(a) ? undefined : `${a} не найден`}
+                      onClick={() => conf.agent !== a && void setConf({ agent: a })}
+                    >
+                      {a}
+                    </button>
+                  ))}
+                </div>
+                <ComboInput
+                  ariaLabel="Модель"
+                  className={`chat-model ${conf.model ? '' : 'is-default'}`}
+                  placeholder={fallbackModel || 'по умолчанию'}
+                  value={conf.model}
+                  disabled={busy}
+                  options={MODEL_OPTIONS[conf.agent]}
+                  onChange={(val) => (chat ? setChat({ ...chat, model: val }) : setDraft((d) => ({ ...d, model: val })))}
+                  onCommit={(val) => chat && val !== (chat.model ?? '') && void setConf({ model: val })}
+                />
+                <span className="chat-compose-end">
+                  {busy && (
+                    <button
+                      type="button"
+                      className="chat-send is-stop"
+                      title={queued ? 'Остановить ответ — сообщения из очереди уйдут сразу' : 'Остановить ответ'}
+                      onClick={() => chat && bridge.core.stopChat(chat.id).catch((e) => setError(cleanErr(e)))}
+                    >
+                      <Square size={13} />
+                    </button>
+                  )}
+                  {(!busy || text.trim() || files.length > 0) && (
+                    <button
+                      type="submit"
+                      className="chat-send"
+                      disabled={!text.trim() && !files.length}
+                      aria-label={busy ? 'В очередь: уйдёт после ответа' : 'Отправить'}
+                      title={busy ? 'В очередь: уйдёт после ответа' : undefined}
+                    >
+                      <ArrowUp size={16} />
+                    </button>
+                  )}
+                </span>
               </div>
             </form>
           </div>
@@ -468,6 +533,8 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
             chat={chat}
             busy={busy}
             pane={sidePane}
+            model={shownModel}
+            onPick={onPick}
             onPane={setPane}
             changed={changed}
             width={side.width}
@@ -510,67 +577,6 @@ function UserMessage({ m, chatId }: { m: ChatMessage; chatId: string }) {
           </button>
         </div>
       )}
-    </div>
-  );
-}
-
-/** Ответ: текст Markdown, вызовы инструментов — свёрнутыми строками между ним. */
-function AssistantMessage({ m }: { m: ChatMessage }) {
-  const parts = m.parts?.length ? m.parts : m.text ? [{ kind: 'text', text: m.text } as ChatPart] : [];
-  // Подряд идущие инструменты — одной группой.
-  const blocks: (ChatPart | { kind: 'tools'; items: string[] })[] = [];
-  for (const p of parts) {
-    const last = blocks[blocks.length - 1];
-    if (p.kind === 'tool') {
-      if (last && last.kind === 'tools') last.items.push(p.text);
-      else blocks.push({ kind: 'tools', items: [p.text] });
-    } else blocks.push(p);
-  }
-  return (
-    <div className={`chat-msg is-assistant ${m.error ? 'is-error' : ''}`}>
-      {blocks.map((b, i) =>
-        b.kind === 'tools' ? (
-          <ToolSteps key={i} items={b.items} live={Boolean(m.pending) && i === blocks.length - 1} />
-        ) : (
-          <Markdown key={i} className="md chat-md" source={(b as { text: string }).text} />
-        ),
-      )}
-      {m.pending && (blocks.length === 0 || blocks[blocks.length - 1].kind === 'tools') && (
-        <div className="chat-typing" aria-label="Агент отвечает">
-          <i />
-          <i />
-          <i />
-        </div>
-      )}
-      {m.changedFiles?.length ? (
-        <div className="chat-changed">
-          <FilePen size={13} />
-          <span>Изменены: </span>
-          {m.changedFiles.map((f) => (
-            <code key={f}>{f}</code>
-          ))}
-        </div>
-      ) : null}
-      {m.stopped && <p className="chat-note">Ответ остановлен.</p>}
-      {m.error && <p className="chat-msg-error">{cleanErr(m.error)}</p>}
-    </div>
-  );
-}
-
-function ToolSteps({ items, live }: { items: string[]; live: boolean }) {
-  const [open, setOpen] = useState(false);
-  const shown = open ? items : items.slice(-1);
-  return (
-    <div className={`chat-tools ${live ? 'is-live' : ''}`}>
-      <button className="chat-tools-head" onClick={() => setOpen(!open)}>
-        <Wrench size={12} /> {items.length === 1 ? '1 действие' : `${items.length} ${items.length < 5 ? 'действия' : 'действий'}`}
-        {open ? ' · скрыть' : items.length > 1 ? ' · показать все' : ''}
-      </button>
-      {shown.map((t, i) => (
-        <code key={i} className="chat-tool">
-          {t}
-        </code>
-      ))}
     </div>
   );
 }

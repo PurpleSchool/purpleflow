@@ -1,5 +1,9 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { CircleAlert, FileCode2, Globe, PanelRightClose, RefreshCw } from 'lucide-react';
+import { Activity, CircleAlert, FileCode2, Globe, PanelRightClose, Play, RefreshCw } from 'lucide-react';
+import { ChatRunPane } from './ChatRunPane';
+import { chatSession } from '../lib/chatSession';
+import type { PickedElement } from '../lib/pickElement';
+import { ChatSessionPane, ContextRing } from './ChatSessionPane';
 import type { ChatFile, DiffFile, ProjectConfig } from '@purpleflow/core';
 import { BrowserPane, usePreview } from '../components/BrowserPane';
 import { DiffReview } from '../components/diff/DiffReview';
@@ -7,7 +11,7 @@ import { PillTabs } from '../components/PillTabs';
 import { Button, Empty } from '../components/ui';
 import { bridge, cleanErr } from '../lib/api';
 
-export type ChatPane = 'code' | 'browser';
+export type ChatPane = 'session' | 'code' | 'run' | 'browser';
 
 /** Изменённые файлы проекта чата — счётчик на кнопке «Код»; обновляется после каждого хода агента. */
 export function useChatChanged(chat: ChatFile | null, busy: boolean): string[] | null {
@@ -79,7 +83,7 @@ export function useSideWidth() {
 }
 
 /**
- * Правая панель чата — карточка со вкладками «Код» и «Браузер», как у прогона.
+ * Правая панель чата — карточка со вкладками «Сессия», «Код» и «Браузер», как у прогона.
  * Обе вкладки остаются смонтированными — страница в браузере не перезагружается.
  */
 export function ChatSide({
@@ -91,8 +95,14 @@ export function ChatSide({
   width,
   onResize,
   onResetWidth,
+  model,
+  onPick,
 }: {
   chat: ChatFile;
+  /** Выбранная модель: своя у чата или по умолчанию. */
+  model: string;
+  /** Элемент, указанный во вкладке «Браузер», — в поле ввода чата. */
+  onPick: (el: PickedElement) => void;
   busy: boolean;
   pane: ChatPane;
   onPane: (p: ChatPane | null) => void;
@@ -126,18 +136,34 @@ export function ChatSide({
           value={pane}
           onChange={onPane}
           items={[
+            { id: 'session', label: 'Сессия', icon: <Activity size={15} /> },
             ...(chat.projectPath
               ? [
                   {
                     id: 'code' as const,
                     label: 'Код',
+                    icon: <FileCode2 size={15} />,
                     extra: changed?.length ? <span className="tab-badge">{changed.length}</span> : undefined,
+                  },
+                  {
+                    id: 'run' as const,
+                    label: 'Запуск',
+                    icon: <Play size={15} />,
+                    extra:
+                      preview.state.status === 'ready' ? (
+                        <span className="tab-dot is-ok" />
+                      ) : preview.state.status === 'starting' ? (
+                        <span className="tab-live" />
+                      ) : preview.state.status === 'failed' ? (
+                        <span className="tab-dot is-error" />
+                      ) : undefined,
                   },
                 ]
               : []),
             {
               id: 'browser',
               label: 'Браузер',
+              icon: <Globe size={15} />,
               extra:
                 preview.state.status === 'ready' ? (
                   <span className="tab-dot is-ok" />
@@ -152,14 +178,23 @@ export function ChatSide({
           <PanelRightClose size={16} />
         </button>
       </div>
+      <div className="chat-side-body" hidden={pane !== 'session'}>
+        {pane === 'session' && <ChatSessionPane chat={chat} model={model} busy={busy} />}
+      </div>
       <div className="chat-side-body" hidden={pane !== 'code'}>
         {chat.projectPath && <ChatCode chat={chat} busy={busy} />}
+      </div>
+      <div className="chat-side-body" hidden={pane !== 'run'}>
+        {chat.projectPath && pane === 'run' && (
+          <ChatRunPane projectPath={chat.projectPath} cfg={cfg} preview={preview} onOpenBrowser={() => onPane('browser')} />
+        )}
       </div>
       <div className="chat-side-body" hidden={pane !== 'browser'}>
         <BrowserPane
           preview={preview}
           canRun={canRun}
           manual
+          onPick={onPick}
           intro={
             canRun
               ? 'Приложение поднимется из папки проекта на свободном порту и откроется прямо здесь.'
@@ -171,10 +206,24 @@ export function ChatSide({
   );
 }
 
-/** Свёрнутая панель — узкая полоса справа, как у чата менеджера слева. */
+/** Свёрнутая панель — узкая полоса справа, как у чата менеджера слева; сверху — заполнение контекста, по клику — «Сессия». */
 export function ChatSideRail({ chat, changed, onOpen }: { chat: ChatFile; changed: string[] | null; onOpen: (p: ChatPane) => void }) {
+  const ctx = chatSession(chat).context;
   return (
     <aside className="run-main chat-side is-collapsed" aria-label="Код и браузер">
+      <button
+        className="chat-rail-session"
+        onClick={() => onOpen('session')}
+        title={
+          ctx
+            ? `Контекст: ${ctx.pct != null ? `${ctx.pct}% окна` : `${Math.round(ctx.used / 1000)} тыс. токенов`} — открыть сведения о сессии`
+            : 'Сведения о сессии'
+        }
+        aria-label="Сессия"
+      >
+        <ContextRing pct={ctx?.pct} />
+        {ctx?.pct != null && <span className="chat-rail-pct">{ctx.pct}%</span>}
+      </button>
       <button className="manager-rail" onClick={() => onOpen(chat.projectPath ? 'code' : 'browser')} title="Развернуть код и браузер">
         <span className="chat-rail-icons">
           {chat.projectPath && <FileCode2 size={15} />}

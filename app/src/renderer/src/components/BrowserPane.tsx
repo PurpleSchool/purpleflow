@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { WebviewTag } from 'electron';
-import { ArrowLeft, ArrowRight, ExternalLink, Globe, Monitor, RotateCw, Smartphone, Square, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Globe,
+  Monitor,
+  RotateCw,
+  Smartphone,
+  Square,
+  SquareMousePointer,
+  TriangleAlert,
+} from 'lucide-react';
+import { CANCEL_PICK_SCRIPT, PICK_SCRIPT, type PickedElement } from '../lib/pickElement';
 import type { PreviewState } from '@purpleflow/core';
 import { Button } from './ui';
 import { onCoreEvent } from '../lib/store';
@@ -132,12 +144,15 @@ export function BrowserPane({
   canRun,
   manual = false,
   intro,
+  onPick,
 }: {
   preview: ReturnType<typeof usePreview>;
   canRun: boolean;
   /** Можно открыть свой адрес (уже запущенный локальный сервер) без команды запуска. */
   manual?: boolean;
   intro?: string;
+  /** Есть — в панели кнопка «Указать элемент»: выбранный на странице элемент уходит сюда (в поле ввода чата). */
+  onPick?: (el: PickedElement) => void;
 }) {
   const { error, start, stop: stopApp } = preview;
   const [manualUrl, setManualUrl] = useState<string | null>(null);
@@ -209,6 +224,35 @@ export function BrowserPane({
     else if (!/^https?:\/\//.test(target)) target = `http://${target}`;
     void w.loadURL(target).catch(() => {});
   };
+
+  // Выбор элемента: скрипт в странице подсвечивает элемент под курсором и отдаёт описание по клику.
+  const [picking, setPicking] = useState(false);
+  const togglePick = async () => {
+    const w = view.current;
+    if (!w || !onPick) return;
+    if (picking) return void w.executeJavaScript(CANCEL_PICK_SCRIPT).catch(() => {});
+    setPicking(true);
+    setLoadError(null);
+    try {
+      const el = (await w.executeJavaScript(PICK_SCRIPT, true)) as PickedElement | null;
+      if (el) onPick(el);
+    } catch {
+      // Страница ушла на другой адрес посреди выбора — просто выходим из режима.
+    } finally {
+      setPicking(false);
+    }
+  };
+  // Уход со страницы или со вкладки снимает выбор.
+  useEffect(() => {
+    if (!picking) return;
+    const w = view.current;
+    const reset = () => setPicking(false);
+    w?.addEventListener('did-start-loading', reset);
+    return () => {
+      w?.removeEventListener('did-start-loading', reset);
+      void w?.executeJavaScript(CANCEL_PICK_SCRIPT).catch(() => {});
+    };
+  }, [picking]);
 
   const toggleMobile = (m: boolean) => {
     setMobile(m);
@@ -317,6 +361,17 @@ export function BrowserPane({
         >
           <input value={address} onChange={(e) => setAddress(e.target.value)} spellCheck={false} aria-label="Адрес" />
         </form>
+        {onPick && (
+          <Button
+            tone="quiet"
+            className={`browser-pick ${picking ? 'is-on' : ''}`}
+            icon={<SquareMousePointer size={15} />}
+            title={picking ? 'Отменить выбор (Esc)' : 'Указать элемент на странице — описание попадёт в поле ввода чата'}
+            aria-label="Указать элемент"
+            aria-pressed={picking}
+            onClick={() => void togglePick()}
+          />
+        )}
         <div className="segmented small" role="radiogroup" aria-label="Устройство">
           <button
             role="radio"
@@ -345,6 +400,7 @@ export function BrowserPane({
         />
       </div>
       {loadError && <p className="browser-error browser-load-error">{loadError}</p>}
+      {picking && <p className="browser-pick-hint">Наведите на элемент и нажмите — описание попадёт в чат. Esc — отмена.</p>}
       <div className={`browser-stage ${mobile ? 'is-mobile' : ''}`}>
         <webview
           ref={(el) => {

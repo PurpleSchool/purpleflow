@@ -18,9 +18,22 @@ const sys = opt('--append-system-prompt');
 if (process.env.FAKE_CLAUDE_LOG) fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, prompt })}\n`);
 
 const say = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
-function reply(text) {
-  say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });
-  say({ type: 'assistant', message: { content: [{ type: 'text', text }] } });
+/** session — для чата: MCP-серверы в init, заполнение контекста и окно модели. */
+function reply(text, session) {
+  say({
+    type: 'system',
+    subtype: 'init',
+    model: 'fake',
+    cwd: process.cwd(),
+    ...(session && { claude_code_version: '2.0.0', mcp_servers: [{ name: 'github', status: 'connected' }] }),
+  });
+  say({
+    type: 'assistant',
+    message: {
+      content: [{ type: 'text', text }],
+      ...(session && { usage: { input_tokens: 10, cache_read_input_tokens: 40_000, cache_creation_input_tokens: 9990, output_tokens: 0 } }),
+    },
+  });
   say({
     type: 'result',
     subtype: 'success',
@@ -28,6 +41,7 @@ function reply(text) {
     result: text,
     usage: { input_tokens: 21400, output_tokens: 1860 },
     total_cost_usd: 0.001,
+    ...(session && { modelUsage: { fake: { contextWindow: 200_000 } } }),
   });
   process.exit(0);
 }
@@ -37,6 +51,14 @@ const write = (file, text) => {
   fs.writeFileSync(file, text);
 };
 
+// Ручное сжатие контекста: как настоящий claude — статус, граница сжатия с размерами, пустой итог.
+if (prompt.trim() === '/compact') {
+  say({ type: 'system', subtype: 'status', status: 'compacting' });
+  say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });
+  say({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 50_000, post_tokens: 9000 } });
+  say({ type: 'result', subtype: 'success', is_error: false, result: '', usage: { input_tokens: 0, output_tokens: 0 } });
+  process.exit(0);
+}
 if (/Ты — менеджер прогона/.test(prompt)) reply('{"reply": "Всё идёт по плану."}');
 if (/Перед планом проверь/.test(prompt)) reply('{"questions": []}');
 if (/второй, независимый ревьюер/.test(prompt)) reply('{"items": []}');
@@ -90,4 +112,7 @@ if (/исполнитель/.test(sys) || /Реализуй изменение|�
 }
 
 // Служебное: профиль проекта, сводка, уроки, карта плана, подсказка режима.
+// Чат: ответ с таблицей и блоком кода — проверить разметку ответа.
+if (/чате PurpleFlow/.test(sys))
+  reply('Пример:\n\n| Механизм | Зачем |\n| --- | --- |\n| cgroups | ресурсы |\n\n```ts\nconst a: number = 1;\n```', true);
 reply('{}');

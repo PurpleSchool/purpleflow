@@ -25,8 +25,8 @@ export interface PublicSettings {
   /** Вход в PurpleSchool: null — не вошли. Токен в окно не передаётся. */
   account: { email: string; name: string; /** Аватар data URL; пусто — фото в профиле нет. */ photo: string } | null;
   authPrompted: boolean;
-  errorReports: boolean;
-  usageEvents: boolean;
+  /** Отчёты об ошибках и статистика использования — один выключатель. */
+  diagnostics: boolean;
 }
 
 export interface SettingsPatch {
@@ -44,8 +44,7 @@ export interface SettingsPatch {
   claudeAuth?: 'login' | 'env';
   userConfig?: boolean;
   authPrompted?: boolean;
-  errorReports?: boolean;
-  usageEvents?: boolean;
+  diagnostics?: boolean;
 }
 
 /** Ответ запросов к PurpleSchool: ошибки — понятным текстом, а не исключением IPC. */
@@ -177,6 +176,10 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
   chatToTask: true,
   getChatDiff: true,
   getChatChangedFiles: true,
+  listChatFiles: true,
+  listChatSkills: true,
+  chatDefaultModel: true,
+  compactChat: true,
 };
 
 export const coreMethodNames = Object.keys(CORE_METHODS) as CoreMethod[];

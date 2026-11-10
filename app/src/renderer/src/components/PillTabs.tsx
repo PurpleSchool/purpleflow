@@ -3,6 +3,8 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 export interface PillItem<T extends string> {
   id: T;
   label: ReactNode;
+  /** Иконка слева от подписи. */
+  icon?: ReactNode;
   disabled?: boolean;
   /** Дополнение справа от подписи: бейдж, точка статуса. */
   extra?: ReactNode;
@@ -69,6 +71,7 @@ export function PillTabs<T extends string>({
           disabled={it.disabled}
           onClick={() => onChange(it.id)}
         >
+          {it.icon}
           {it.label}
           {it.extra}
         </button>

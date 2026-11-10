@@ -209,3 +209,16 @@
   font-size: var(--fs-12);
   line-height: 1.55;
 }
+
+/* «Указать элемент»: кнопка горит, пока идёт выбор; подсказка — над страницей. */
+.browser-pick.is-on {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+.browser-pick-hint {
+  margin: 0;
+  padding: 6px var(--s-4);
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+  font-size: var(--fs-12);
+}
