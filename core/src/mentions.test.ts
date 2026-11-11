@@ -49,7 +49,8 @@ test('listSkills: скиллы и команды проекта и пользо�
   fs.mkdirSync(path.join(plugin, 'commands'));
   fs.writeFileSync(path.join(plugin, 'commands', 'ship.md'), 'Выкатить');
   const pj = path.join(home, '.claude/plugins/installed_plugins.json');
-  fs.writeFileSync(pj, fs.readFileSync(pj, 'utf8').replace('__PLUGIN__', plugin));
+  // Путь — как JSON-строка: на Windows в нём обратные слэши, без экранирования JSON не прочитается.
+  fs.writeFileSync(pj, fs.readFileSync(pj, 'utf8').replace('"__PLUGIN__"', JSON.stringify(plugin)));
   const all = listSkills({ projectPath: project, userConfig: true, home });
   assert.deepEqual(
     all.map((s) => [s.name, s.source, s.description]),
