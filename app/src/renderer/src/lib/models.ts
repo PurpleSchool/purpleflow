@@ -21,17 +21,33 @@ export const MODEL_OPTIONS: Record<AgentKind, DropOption<string>[]> = {
   ],
 };
 
-/** Сначала встроенные (с нашими подсказками), за ними — остальные модели прокси с их названием в подсказке. */
-export function mergeModelOptions(remote: ProxyModels | null): Record<AgentKind, DropOption<string>[]> {
+/**
+ * Своё семейство агента — модели самого вендора: работают и по подписке пользователя, без прокси.
+ * Остальные (например, Gemini у codex) прокси PurpleSchool отдаёт через совместимый API — только через него.
+ */
+const OWN_FAMILY: Record<AgentKind, RegExp> = { claude: /^claude-/, codex: /^(gpt-|o\d|codex-)/ };
+const PROXY_ONLY_HINT = 'только через AI-прокси PurpleSchool';
+
+/**
+ * Сначала встроенные (с нашими подсказками), за ними — остальные модели прокси с их названием в подсказке.
+ * viaProxy — агенты ходят через AI-прокси PurpleSchool: тогда видны и модели не своего семейства, с пометкой;
+ * без прокси они скрыты — по своей подписке такая модель не запустится.
+ */
+export function mergeModelOptions(remote: ProxyModels | null, viaProxy: boolean): Record<AgentKind, DropOption<string>[]> {
   if (!remote) return MODEL_OPTIONS;
-  const add = (base: DropOption<string>[], list: ProxyModels['anthropic']) => {
+  const add = (agent: AgentKind, list: ProxyModels['anthropic']) => {
+    const base = MODEL_OPTIONS[agent];
     const known = new Set(base.map((o) => o.value));
-    return [
-      ...base,
-      ...list
-        .filter((m) => !known.has(m.id))
-        .map((m) => ({ value: m.id, label: m.id, hint: m.displayName && m.displayName !== m.id ? m.displayName : undefined })),
-    ];
+    const extra: DropOption<string>[] = [];
+    for (const m of list) {
+      if (known.has(m.id)) continue;
+      const own = OWN_FAMILY[agent].test(m.id);
+      if (!own && !viaProxy) continue;
+      const name = m.displayName && m.displayName !== m.id ? m.displayName : '';
+      const hint = own ? name : [name, PROXY_ONLY_HINT].filter(Boolean).join(' · ');
+      extra.push({ value: m.id, label: m.id, hint: hint || undefined });
+    }
+    return [...base, ...extra];
   };
-  return { claude: add(MODEL_OPTIONS.claude, remote.anthropic), codex: add(MODEL_OPTIONS.codex, remote.openai) };
+  return { claude: add('claude', remote.anthropic), codex: add('codex', remote.openai) };
 }
