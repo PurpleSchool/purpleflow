@@ -50,11 +50,25 @@ npm run dist:linux -w @purpleflow/app
 npm run release -- 0.2.0
 ```
 
-Команда поднимает версию, ставит тег без префикса (`0.2.0`) и отправляет его из `main`. По тегу [Release](../.github/workflows/release.yml) собирает все ОС в черновик релиза; пользователи получат обновление, когда черновик опубликован на GitHub. Что нужно для работы:
+Команда поднимает версию, ставит тег без префикса (`0.2.0`) и отправляет его из `main`. По тегу [Release](../.github/workflows/release.yml) сначала заводит один черновик релиза, затем собирает в него Windows и Linux. macOS собирается локально и загружается в тот же черновик (ниже). Пользователи получат обновление, когда черновик опубликован на GitHub. Что нужно для работы:
 
 - репозиторий публичный: из приватного окно релизы не прочитает;
-- для macOS — секреты `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (сертификат Developer ID) и `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`: неподписанное приложение macOS обновить само не может, в окне будет ссылка на ручную загрузку;
+- macOS подписана и нотаризована: неподписанное приложение macOS обновить само не может, в окне будет ссылка на ручную загрузку;
 - на Linux само обновляется AppImage; `deb` и `rpm` при сбое показывают ту же ссылку.
+
+**Выпуск macOS.** После `npm run release` соберите мак на машине с сертификатом «Developer ID Application» в связке ключей. Данные для нотаризации удобно один раз сохранить в профиль notarytool — пароль приложения команда спросит сама и положит в связку ключей:
+
+```bash
+xcrun notarytool store-credentials purpleflow --apple-id ВАШ_APPLE_ID --team-id 3GE6BBBW2P
+```
+
+Затем из корня репозитория (версия в `app/package.json` должна совпадать с тегом):
+
+```bash
+APPLE_KEYCHAIN_PROFILE=purpleflow GH_TOKEN=$(gh auth token) npm run dist:mac -w @purpleflow/app -- --publish always
+```
+
+Соберутся arm64 и x64 (dmg и zip), подпишутся, пройдут нотаризацию и загрузятся в черновик вместе с `latest-mac.yml`. Проверить подпись: `spctl -a -vv app/release/mac-arm64/PurpleFlow.app` — должно быть `Notarized Developer ID`. Когда в черновике есть файлы всех трёх ОС, опубликуйте его.
 
 **macOS, подпись и нотаризация.** `electron-builder` берёт сертификат «Developer ID Application» из связки ключей (или `CSC_LINK` + `CSC_KEY_PASSWORD`). Нотаризация включена (`notarize: true` в `app/electron-builder.yml`) и требует переменных:
 

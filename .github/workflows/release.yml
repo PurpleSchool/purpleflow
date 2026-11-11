@@ -10,8 +10,28 @@ permissions:
   contents: write
 
 jobs:
+  # Черновик создаётся заранее и один: иначе задачи матрицы стартуют одновременно, не находят его
+  # и каждая заводит свой — файлы ОС расходятся по разным черновикам.
+  draft:
+    name: Черновик релиза
+    runs-on: ubuntu-latest
+    steps:
+      - name: Создать черновик, если его ещё нет
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          found=$(gh api "repos/$GH_REPO/releases?per_page=100" --jq "[.[] | select(.tag_name == \"$TAG\")] | length")
+          if [ "$found" = 0 ]; then
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes ""
+          else
+            echo "Релиз $TAG уже есть — файлы лягут в него."
+          fi
+
   build:
     name: Build (${{ matrix.os }})
+    needs: draft
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
