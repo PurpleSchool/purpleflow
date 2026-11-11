@@ -13,7 +13,7 @@ type Tier = 'low' | 'mid' | 'high' | 'max';
  * у claude алиасы CLI, у codex — линейка gpt-6 (astra — самая сильная, luna — быстрая).
  */
 const TIERS: Record<AgentKind, Record<Tier, string>> = {
-  claude: { low: 'haiku', mid: 'sonnet', high: 'opus', max: 'claude-fable-5-1' },
+  claude: { low: 'haiku', mid: 'sonnet', high: 'opus', max: 'claude-fable-5-2' },
   codex: { low: 'gpt-6-luna', mid: 'gpt-6-sol', high: 'gpt-6-astra', max: 'gpt-6-astra' },
 };
 

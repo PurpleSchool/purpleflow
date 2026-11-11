@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { ComboInput } from '../../components/Dropdown';
 import { QuickSetup } from '../../components/QuickSetup';
 import { Button, Field, Input } from '../../components/ui';
-import { MODEL_OPTIONS } from '../../lib/models';
+import { useModelOptions } from '../../lib/useModelOptions';
 import { useStore } from '../../lib/store';
 import { AgentSwitch, MODEL_PLACEHOLDER, ROLES } from './parts';
 import type { SettingsDraft } from './useSettingsDraft';
 
 export function ModelsTab({ draft }: { draft: SettingsDraft }) {
   const { state, saveSettings } = useStore();
+  const modelOptions = useModelOptions();
   const s = state.settings!;
   const tools = state.tools;
   const [quick, setQuick] = useState(false);
@@ -74,7 +75,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
               <ComboInput
                 className="role-model"
                 ariaLabel={`Модель: ${r.title}`}
-                options={MODEL_OPTIONS[agent]}
+                options={modelOptions[agent]}
                 placeholder={MODEL_PLACEHOLDER[agent]}
                 value={models[r.id]}
                 onChange={(v) => setModels({ ...models, [r.id]: v })}
@@ -97,7 +98,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           <ComboInput
             className="role-model"
             ariaLabel="Модель: визуальная проверка"
-            options={MODEL_OPTIONS[visualAgent]}
+            options={modelOptions[visualAgent]}
             placeholder={
               agents.executor === visualAgent && models.executor ? `как у исполнителя: ${models.executor}` : MODEL_PLACEHOLDER[visualAgent]
             }
@@ -118,7 +119,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           <ComboInput
             className="role-model"
             ariaLabel="Модель: менеджер прогона"
-            options={MODEL_OPTIONS[managerAgent]}
+            options={modelOptions[managerAgent]}
             placeholder={MODEL_PLACEHOLDER[managerAgent]}
             value={models.manager ?? ''}
             onChange={(v) => setModels({ ...models, manager: v })}

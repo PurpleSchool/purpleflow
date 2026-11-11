@@ -1,6 +1,7 @@
 // Контракт IPC: мост окна (preload), сообщения main ↔ utilityProcess ядра. Сам API ядра — CoreApi в @purpleflow/core.
 import type { CoreApi, AgentKind, Models, CoreEvent, Role, ToolName } from '@purpleflow/core';
 import type { UpdateState } from './update';
+import type { ProxyModels } from './models';
 
 export type { ChangeDocs, CoreApi } from '@purpleflow/core';
 
@@ -195,6 +196,8 @@ export interface PurpleFlowBridge {
     set(patch: SettingsPatch): Promise<PublicSettings>;
     encryptionAvailable(): Promise<boolean>;
   };
+  /** Модели AI-прокси PurpleSchool; null — список недоступен (нет сети и кэша или сборка без аккаунта). */
+  proxyModels(): Promise<ProxyModels | null>;
   /** Выбор папки; title — заголовок диалога. */
   pickFolder(title?: string): Promise<string | null>;
   pickFile(): Promise<string | null>;

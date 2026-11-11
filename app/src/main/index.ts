@@ -22,6 +22,7 @@ import type { CoreCommand, CoreEvent } from '@purpleflow/core';
 import type { CoreMethod, HostMessage, HostRequest, SettingsPatch } from '../shared/ipc';
 import { coreSettings, publicSettings, updateSettings } from './settings';
 import * as account from './account';
+import { proxyModels } from './models';
 import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
 import { errorReportingActive, initErrorReporting } from './error-reporting';
@@ -344,6 +345,7 @@ handle('account:restore', (_e, email: unknown) => account.restore(str(email)));
 handle('account:logout', () => account.logout());
 handle('account:profile', () => account.profile());
 handle('account:keys', () => account.keys());
+handle('models:list', () => proxyModels());
 handle('account:createKey', async () => {
   const r = await account.createKey();
   if (r.ok) pushSettings();

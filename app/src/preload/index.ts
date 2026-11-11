@@ -35,6 +35,7 @@ const bridge: PurpleFlowBridge = {
     set: (patch) => ipcRenderer.invoke('settings:set', patch),
     encryptionAvailable: () => ipcRenderer.invoke('settings:encryption'),
   },
+  proxyModels: () => ipcRenderer.invoke('models:list'),
   pickFolder: (title?: string) => ipcRenderer.invoke('dialog:folder', title),
   pickFile: () => ipcRenderer.invoke('dialog:file'),
   openPath: (p) => ipcRenderer.invoke('shell:open', p),

@@ -5,7 +5,7 @@ import { AssistantMessage } from './ChatAnswer';
 import { useMentions } from './ChatMentions';
 import { Button } from '../components/ui';
 import { ComboInput, Select } from '../components/Dropdown';
-import { MODEL_OPTIONS } from '../lib/models';
+import { useModelOptions } from '../lib/useModelOptions';
 import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { formatPick, insertPick, type PickedElement } from '../lib/pickElement';
@@ -29,6 +29,7 @@ interface Picked {
 
 /** Чат с агентом вне конвейера: вопросы по проекту и небольшие правки без плана и ревью. */
 export function ChatScreen({ chatId, initialProject }: { chatId?: string; initialProject?: string }) {
+  const modelOptions = useModelOptions();
   const { state, go } = useStore();
   const settings = state.settings;
   const [chat, setChat] = useState<ChatFile | null>(null);
@@ -496,7 +497,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                   placeholder={fallbackModel || 'по умолчанию'}
                   value={conf.model}
                   disabled={busy}
-                  options={MODEL_OPTIONS[conf.agent]}
+                  options={modelOptions[conf.agent]}
                   onChange={(val) => (chat ? setChat({ ...chat, model: val }) : setDraft((d) => ({ ...d, model: val })))}
                   onCommit={(val) => chat && val !== (chat.model ?? '') && void setConf({ model: val })}
                 />
