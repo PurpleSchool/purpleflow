@@ -8,6 +8,8 @@ export type View =
   | { name: 'run'; runId: string }
   | { name: 'settings' }
   | { name: 'welcome' }
+  /** Онбординг первого проекта: выбор папки, сканирование, подключение. */
+  | { name: 'start' }
   /** Чат; без chatId — новый, создаётся с первым сообщением. */
   | { name: 'chat'; chatId?: string; project?: string }
   | { name: 'projects' }

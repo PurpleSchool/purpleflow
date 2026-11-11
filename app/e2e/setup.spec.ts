@@ -17,7 +17,7 @@ test.afterEach(async () => {
   expect(errors, 'необработанные ошибки страницы').toEqual([]);
 });
 
-test('после пропуска входа открывается окно настройки, а «Готово» ведёт к задаче', async () => {
+test('после пропуска входа открывается окно настройки, а «Готово» ведёт к первому проекту и задаче', async () => {
   await start({ authPrompted: false });
   await l.page.getByRole('button', { name: 'Пропустить' }).click();
 
@@ -25,9 +25,19 @@ test('после пропуска входа открывается окно н�
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Node.js', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Готово, к задаче' }).click();
-
   await expect(dialog).toBeHidden();
+
+  // Проектов ещё нет — онбординг первого проекта. Системный выбор папки подменяем папкой песочницы.
+  await expect(l.page.getByRole('heading', { name: 'Первый проект' })).toBeVisible();
+  await l.app.evaluate(({ dialog: d }, repo) => {
+    d.showOpenDialog = (async () => ({ canceled: false, filePaths: [repo] })) as typeof d.showOpenDialog;
+  }, box.repo);
+  await l.page.getByRole('button', { name: 'Выбрать папку…' }).click();
+  await expect(l.page.getByText('demo', { exact: true })).toBeVisible();
+  await l.page.getByRole('button', { name: 'Быстрое подключение' }).click();
+
   await expect(l.page.locator('#task')).toBeVisible();
+  await expect(l.page.locator('.project-pick').getByText('demo', { exact: true })).toBeVisible();
 });
 
 test('«Настроить» показывает причину сбоя, а «Позже» оставляет вкладку «Инструменты»', async () => {
@@ -46,4 +56,16 @@ test('«Настроить» показывает причину сбоя, а «
   await expect(dialog).toBeHidden();
   await expect(l.page.getByRole('heading', { name: 'Инструменты' })).toBeVisible();
   await expect(l.page.getByRole('button', { name: 'Настроить' })).toBeVisible();
+});
+
+test('пока проектов нет, «Как начать?» в меню открывает онбординг первого проекта', async () => {
+  await start({ onboarded: true });
+  const startBtn = l.page.getByRole('button', { name: 'Как начать?' });
+  await startBtn.click();
+  await expect(l.page.getByRole('heading', { name: 'Первый проект' })).toBeVisible();
+  await expect(l.page.locator('.side')).toHaveCount(0);
+
+  await l.page.getByRole('button', { name: /Пропустить/ }).click();
+  await expect(l.page.locator('#task')).toBeVisible();
+  await expect(startBtn).toBeVisible();
 });

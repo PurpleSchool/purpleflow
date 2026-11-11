@@ -323,3 +323,17 @@
   min-height: 0 !important;
   color: var(--wait) !important;
 }
+
+/* «Как начать?» — пока нет ни одного проекта */
+.side-link.side-start {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.side-link.side-start:hover {
+  background: rgba(138, 116, 238, 0.16);
+  color: var(--text-1);
+}
+.side-start-icon {
+  color: var(--accent-hi);
+}

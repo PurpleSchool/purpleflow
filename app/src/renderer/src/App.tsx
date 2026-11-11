@@ -9,6 +9,7 @@ import { RunScreen } from './screens/Run';
 import { SettingsScreen } from './screens/settings/SettingsScreen';
 import { WelcomeScreen } from './screens/Welcome';
 import { ChatScreen } from './screens/Chat';
+import { FirstProjectScreen } from './screens/FirstProject';
 import { bridge } from './lib/api';
 
 const SIDEBAR_KEY = 'purpleflow.sidebarCollapsed';
@@ -65,11 +66,10 @@ export function App() {
   }, []);
 
   // Экран входа при первом запуске — на всё окно, без боковой панели.
-  if (v.name === 'welcome') {
+  // Онбординг первого проекта — так же на всё окно: при первом запуске это главный шаг.
+  if (v.name === 'welcome' || v.name === 'start') {
     return (
-      <div className={`app app-onboard os-${bridge.platform}`}>
-        <WelcomeScreen />
-      </div>
+      <div className={`app app-onboard os-${bridge.platform}`}>{v.name === 'welcome' ? <WelcomeScreen /> : <FirstProjectScreen />}</div>
     );
   }
 

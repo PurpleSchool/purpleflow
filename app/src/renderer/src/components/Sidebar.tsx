@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react';
-import { ChevronDown, FolderGit2, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, Workflow } from 'lucide-react';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, FolderGit2, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Rocket, Settings, Workflow } from 'lucide-react';
 import type { ChatSummary, RunSummary, ToolName } from '@purpleflow/core';
 import { useActions, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
@@ -58,6 +58,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const { state, go } = useStore();
   const v = state.view;
   const groups = useMemo(() => groupItems(state.runs, state.chats), [state.runs, state.chats]);
+  // Пока не подключён ни один проект — кнопка «Как начать?» открывает онбординг первого проекта.
+  const [noProjects, setNoProjects] = useState(false);
+  useEffect(() => {
+    void bridge.core
+      .listProjects()
+      .then((l) => setNoProjects(l.length === 0))
+      .catch(() => {});
+  }, [v.name, state.runs]);
   const waiting = state.runs.filter((r) => r.status === 'waiting').length;
   const toggleTitle = `${collapsed ? 'Показать' : 'Скрыть'} панель (${bridge.platform === 'darwin' ? '⌘' : 'Ctrl+'}B)`;
   const [menu, setMenu] = useState(false);
@@ -82,6 +90,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         <button className="side-icon" title="Проекты" onClick={() => go({ name: 'projects' })}>
           <FolderGit2 size={17} />
         </button>
+        {noProjects && (
+          <button className="side-icon side-start-icon" title="Как начать?" onClick={() => go({ name: 'start' })}>
+            <Rocket size={17} />
+          </button>
+        )}
       </div>
     );
   }
@@ -164,6 +177,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       </nav>
 
       <div className="side-bottom">
+        {noProjects && (
+          <button className="side-link side-start" onClick={() => go({ name: 'start' })}>
+            <Rocket size={16} /> Как начать?
+          </button>
+        )}
         <button className={`side-link ${v.name === 'settings' ? 'is-on' : ''}`} onClick={() => go({ name: 'settings' })}>
           <Settings size={16} /> Настройки
         </button>

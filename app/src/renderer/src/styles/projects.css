@@ -799,3 +799,200 @@
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+/* ——— Первый проект: три шага до первой задачи ——— */
+.fp {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: var(--s-12) var(--page-x);
+  animation: rise 0.5s var(--ease);
+  isolation: isolate;
+}
+.fp-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: var(--s-8);
+}
+.fp-head .onboard-logo {
+  width: 104px;
+  height: 104px;
+  border-radius: 30px;
+}
+.fp-head h1 {
+  margin: var(--s-6) 0 0;
+  font-size: var(--fs-40);
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+.fp-head p {
+  margin: var(--s-3) 0 0;
+  max-width: 50ch;
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.fp-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.fp-step {
+  display: flex;
+  gap: var(--s-4);
+  padding: var(--s-6);
+  border-radius: var(--r-card);
+  background: var(--bg-3);
+  box-shadow: var(--highlight);
+  transition: opacity 0.3s var(--ease);
+}
+.fp-step.is-pending {
+  opacity: 0.5;
+}
+.fp-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-5);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.fp-step.is-active .fp-num {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.fp-step.is-done .fp-num {
+  background: var(--ok-wash);
+  color: var(--ok);
+}
+.fp-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+.fp-body h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 3px 0 0;
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.fp-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  max-width: 62ch;
+}
+.fp-project {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3);
+  border-radius: var(--r-l);
+  background: var(--bg-2);
+}
+.fp-project-icon,
+.fp-scan-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-m);
+  background: var(--bg-4);
+  color: var(--text-2);
+}
+.fp-project-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fp-project-name .mono {
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fp-scan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 100%;
+}
+.fp-scan-row {
+  display: grid;
+  grid-template-columns: auto 160px 1fr;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3) var(--s-2) var(--s-2);
+  border-radius: var(--r-l);
+  background: var(--bg-2);
+  font-size: var(--fs-13);
+}
+.fp-scan-row strong {
+  font-weight: 500;
+}
+.fp-scan-row.is-done .fp-scan-icon {
+  background: var(--ok-wash);
+  color: var(--ok);
+}
+.fp-scan-row.is-error .fp-scan-icon {
+  background: var(--err-wash);
+  color: var(--err);
+}
+.fp-scan-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-12);
+}
+.fp-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-1);
+}
+.fp-actions .btn {
+  height: 40px;
+  padding: 0 18px;
+}
+.fp-skip {
+  display: block;
+  margin: var(--s-6) auto 0;
+  color: var(--text-3);
+  font-size: var(--fs-13);
+}
+@media (max-width: 720px) {
+  .fp-scan-row {
+    grid-template-columns: auto 1fr;
+  }
+  .fp-scan-info {
+    grid-column: 1 / -1;
+  }
+}

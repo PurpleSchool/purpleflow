@@ -1,6 +1,6 @@
 // Экран «Проекты»: все проекты, с которыми работали.
 import type { ProjectListItem } from '@purpleflow/core';
-import { FolderGit2, FolderOpen, Plus } from 'lucide-react';
+import { FolderGit2, FolderOpen, Plus, Rocket } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Topbar } from '../../components/ui';
 import { shortPath, when } from '../../lib/format';
@@ -46,8 +46,8 @@ export function ProjectsScreen() {
               </span>
               <strong>Проектов пока нет</strong>
               <p>Откройте папку git-репозитория — приложение найдёт команды проекта и соберёт знания о нём.</p>
-              <Button tone="primary" icon={<FolderOpen size={15} />} onClick={() => void open()}>
-                Открыть папку…
+              <Button tone="primary" icon={<Rocket size={15} />} onClick={() => go({ name: 'start' })}>
+                Подключить первый проект
               </Button>
             </section>
           ) : (
