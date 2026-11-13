@@ -617,6 +617,9 @@
   backdrop-filter: blur(6px);
   animation: fadeIn 0.25s var(--ease) both;
 }
+.qs.sub-gate {
+  width: min(480px, 100%);
+}
 .qs {
   width: min(640px, 100%);
   max-height: 100%;

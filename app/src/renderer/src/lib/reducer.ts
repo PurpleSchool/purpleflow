@@ -3,10 +3,12 @@ import type { ChatFile, ChatSummary, RunFile, RunSummary, ToolInfo, ToolName, Ne
 import type { PublicSettings } from '../../../shared/ipc';
 
 export type ProjectTab = 'overview' | 'commands' | 'knowledge';
+export type SettingsTab = 'account' | 'stats' | 'tools' | 'models' | 'window';
 export type View =
   | { name: 'new'; project?: string; draft?: NextPartDraft }
   | { name: 'run'; runId: string }
-  | { name: 'settings' }
+  /** tab — открыть сразу на этой вкладке (например, «Аккаунт» для входа в PurpleSchool). */
+  | { name: 'settings'; tab?: SettingsTab }
   | { name: 'welcome' }
   /** Онбординг первого проекта: выбор папки, сканирование, подключение. */
   | { name: 'start' }

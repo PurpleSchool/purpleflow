@@ -4,7 +4,7 @@ import type { PublicSettings } from '../../../shared/ipc';
 import { bridge } from './api';
 import { chatSummary, reducer, type State, type View } from './reducer';
 
-export type { ProjectTab, State, View } from './reducer';
+export type { ProjectTab, SettingsTab, State, View } from './reducer';
 
 /** Действия стабильны: кому нужны только они, тот не перерисовывается при каждом событии прогона. */
 interface Actions {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MODEL_OPTIONS, mergeModelOptions } from './models';
+import { MODEL_OPTIONS, PROXY_ONLY_BADGE as badge, PROXY_ONLY_TITLE as badgeTitle, mergeModelOptions, proxyOnly } from './models';
 
 const remote = {
   anthropic: [
@@ -16,12 +16,11 @@ const remote = {
 };
 
 test('mergeModelOptions: без списка прокси — встроенные', () => {
-  assert.equal(mergeModelOptions(null, true), MODEL_OPTIONS);
-  assert.equal(mergeModelOptions(null, false), MODEL_OPTIONS);
+  assert.equal(mergeModelOptions(null), MODEL_OPTIONS);
 });
 
 test('mergeModelOptions: новые модели прокси — после встроенных, без дублей', () => {
-  const m = mergeModelOptions(remote, true);
+  const m = mergeModelOptions(remote);
   assert.deepEqual(
     m.claude.map((o) => o.value),
     [...MODEL_OPTIONS.claude.map((o) => o.value), 'claude-opus-5-5', 'claude-x'],
@@ -32,21 +31,20 @@ test('mergeModelOptions: новые модели прокси — после в�
   assert.equal(m.claude.find((o) => o.value === 'claude-x')!.hint, undefined);
 });
 
-test('mergeModelOptions: модели не своего семейства — только через прокси и с пометкой', () => {
-  const on = mergeModelOptions(remote, true);
-  assert.deepEqual(on.codex.slice(MODEL_OPTIONS.codex.length), [
+test('mergeModelOptions: модели не своего семейства видны всегда — с пометкой подписки PurpleSchool', () => {
+  const m = mergeModelOptions(remote);
+  assert.deepEqual(m.codex.slice(MODEL_OPTIONS.codex.length), [
     { value: 'gpt-6.1-sol', label: 'gpt-6.1-sol', hint: 'GPT-6.1 Sol' },
-    { value: 'gemini-4-argon', label: 'gemini-4-argon', hint: 'Gemini 4 Argon · только через AI-прокси PurpleSchool' },
-    { value: 'gemini-3.8-flash', label: 'gemini-3.8-flash', hint: 'только через AI-прокси PurpleSchool' },
+    { value: 'gemini-4-argon', label: 'gemini-4-argon', hint: 'Gemini 4 Argon', badge, badgeTitle },
+    { value: 'gemini-3.8-flash', label: 'gemini-3.8-flash', hint: undefined, badge, badgeTitle },
   ]);
-  // Без прокси Gemini не запустится по подписке OpenAI — его не предлагаем; свои модели остаются.
-  const off = mergeModelOptions(remote, false);
-  assert.deepEqual(
-    off.codex.map((o) => o.value),
-    [...MODEL_OPTIONS.codex.map((o) => o.value), 'gpt-6.1-sol'],
-  );
-  assert.deepEqual(
-    off.claude.map((o) => o.value),
-    on.claude.map((o) => o.value),
-  );
+});
+
+test('proxyOnly: только помеченные модели из списка; своё и введённое вручную — нет', () => {
+  const m = mergeModelOptions(remote);
+  assert.equal(proxyOnly(m.codex, 'gemini-4-argon'), true);
+  assert.equal(proxyOnly(m.codex, ' gemini-4-argon '), true);
+  assert.equal(proxyOnly(m.codex, 'gpt-6.1-sol'), false);
+  assert.equal(proxyOnly(m.codex, 'my-local-model'), false);
+  assert.equal(proxyOnly(m.codex, ''), false);
 });

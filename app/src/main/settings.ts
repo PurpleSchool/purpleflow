@@ -12,8 +12,8 @@ interface StoredSettings {
   /** enabled: false — ключ сохранён, но агенты работают по своим подпискам. */
   proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string; enabled: boolean };
   models: CoreSettings['models'];
-  /** Роли конвейера; visual — по умолчанию claude, manager — claude, если установлен, иначе codex. */
-  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
+  /** Роли конвейера; visual — по умолчанию claude, manager и scan — claude, если установлен, иначе codex. */
+  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
   agentTimeoutMin: number;
   testTimeoutMin: number;
   maxParallel: number;
@@ -42,7 +42,7 @@ interface StoredSettings {
 const DEFAULTS: StoredSettings = {
   toolPaths: {},
   proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '', enabled: true },
-  models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '', manager: '' },
+  models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '', manager: '', scan: '' },
   agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
   agentTimeoutMin: 30,
   maxParallel: 2,

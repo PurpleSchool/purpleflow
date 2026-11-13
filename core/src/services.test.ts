@@ -14,6 +14,7 @@ import { applyPending } from './services/control.js';
 import { cleanStorage, getStorage } from './services/disk.js';
 import { attachmentsBlock, saveAttachments } from './services/attachments.js';
 import { testConnection } from './services/connection.js';
+import { detectCommandsAI } from './services/projects.js';
 import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import { RunStore } from './store.js';
 import type { CoreSettings, RunFile } from './types.js';
@@ -353,3 +354,52 @@ test(
     await assert.rejects(startPreview(k, 'r'), /Запуск приложения/);
   },
 );
+
+test('сканирование: на выбранном агенте с его моделью; не настроен — повтор на другом, таймаут — без повтора', async (t) => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-scan-'));
+  t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
+  for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'detect-commands.md'), 'найди команды');
+  const settings = {
+    toolPaths: { claude: path.join(bin, 'claude'), codex: path.join(bin, 'codex') },
+    proxy: { baseUrl: '', apiKey: '' },
+    models: { planner: 'opus', executor: 'sonnet', reviewer: 'gpt', scan: 'gpt-mini' },
+    agents: { planner: 'claude', executor: 'claude', reviewer: 'codex', scan: 'codex' },
+  } as unknown as CoreSettings;
+  const calls: { agent: string; model?: string }[] = [];
+  const reply = JSON.stringify({ setup: 'npm ci', lint: '', test: 'npm test', run: '', url: '', notes: {} });
+  let codex: { ok: boolean; error?: string; timedOut?: boolean } = { ok: false, error: 'codex: агент не авторизован' };
+  const k = new Kernel({
+    dataDir: bin,
+    promptsDir: bin,
+    env: process.env,
+    getSettings: () => settings,
+    runners: {
+      claude: (async (o: { model?: string }) => {
+        calls.push({ agent: 'claude', model: o.model });
+        return { ok: true, text: reply, usage: emptyUsage() };
+      }) as never,
+      codex: (async (o: { model?: string }) => {
+        calls.push({ agent: 'codex', model: o.model });
+        return { ...codex, text: codex.ok ? reply : '', usage: emptyUsage() };
+      }) as never,
+    },
+  });
+  // codex не вошёл — повторяет claude со своей моделью, а не с моделью codex.
+  const r = await detectCommandsAI(k, bin);
+  assert.equal(r.testCommand, 'npm test');
+  assert.deepEqual(calls, [
+    { agent: 'codex', model: 'gpt-mini' },
+    { agent: 'claude', model: 'sonnet' },
+  ]);
+
+  calls.length = 0;
+  codex = { ok: true };
+  await detectCommandsAI(k, bin);
+  assert.deepEqual(calls, [{ agent: 'codex', model: 'gpt-mini' }]);
+
+  calls.length = 0;
+  codex = { ok: false, error: 'codex: превышен предельный таймаут', timedOut: true };
+  await assert.rejects(detectCommandsAI(k, bin), /таймаут/);
+  assert.deepEqual(calls, [{ agent: 'codex', model: 'gpt-mini' }]);
+});

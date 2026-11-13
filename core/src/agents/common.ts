@@ -69,6 +69,8 @@ export interface AgentResult {
   usage: TokenUsage;
   error?: string;
   stopped?: boolean;
+  /** Остановлен по таймауту (завис или работал слишком долго). */
+  timedOut?: boolean;
 }
 
 export const emptyUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });

@@ -359,6 +359,7 @@ export async function runClaude(o: AgentRunOptions): Promise<AgentResult> {
       ok: false,
       text: finalText,
       usage,
+      timedOut: true,
       error: r.idle
         ? `claude: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен`
         : `claude: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин`,

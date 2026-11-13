@@ -889,9 +889,11 @@ button.dd:hover:not(:disabled),
 }
 
 .dd-pop {
-  position: fixed;
+  position: absolute;
   z-index: 80;
   overflow-y: auto;
+  /* Докрутили список до края — колесо не уходит странице. Колесо вне списка крутит страницу, список едет с ней. */
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 14px;
   background: var(--pop-bg);
@@ -955,6 +957,22 @@ button.dd:hover:not(:disabled),
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.dd-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.dd-combo .dd-badge {
+  margin-left: 4px;
 }
 .dd-opt-check {
   flex: none;

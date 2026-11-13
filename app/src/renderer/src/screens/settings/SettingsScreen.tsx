@@ -5,7 +5,7 @@ import { PillTabs } from '../../components/PillTabs';
 import { Mark } from '../../components/Sidebar';
 import { Button, Topbar } from '../../components/ui';
 import { bridge } from '../../lib/api';
-import { useStore } from '../../lib/store';
+import { useStore, type SettingsTab } from '../../lib/store';
 import { AccountTab } from './AccountTab';
 import { AppTab } from './AppTab';
 import { ModelsTab } from './ModelsTab';
@@ -14,7 +14,6 @@ import { ToolsTab } from './ToolsTab';
 import { useSettingsDraft } from './useSettingsDraft';
 import { useToolSetup } from './useToolSetup';
 
-type SettingsTab = 'account' | 'stats' | 'tools' | 'models' | 'window';
 export function SettingsScreen() {
   const { state, saveSettings, reloadSettings, go } = useStore();
   const s = state.settings;
@@ -23,7 +22,13 @@ export function SettingsScreen() {
   const setup = useToolSetup(draft);
   const [setupClosed, setSetupClosed] = useState(false);
   // Первый запуск идёт после экрана входа — начинаем с инструментов; дальше первой открывается вкладка аккаунта.
-  const [tab, setTab] = useState<SettingsTab>(() => (s && (!s.onboarded || !s.accountEnabled) ? 'tools' : 'account'));
+  const view = state.view;
+  const wanted = view.name === 'settings' ? view.tab : undefined;
+  const [tab, setTab] = useState<SettingsTab>(() => wanted ?? (s && (!s.onboarded || !s.accountEnabled) ? 'tools' : 'account'));
+  // Переход с вкладкой, пока настройки уже открыты (например, из выбора модели на «Моделях» — во вход на «Аккаунт»).
+  useEffect(() => {
+    if (wanted) setTab(wanted);
+  }, [view, wanted]);
 
   // Имя и аватар могли поменяться на сайте — обновляем при открытии вкладки аккаунта.
   const accountEmail = s?.account?.email;

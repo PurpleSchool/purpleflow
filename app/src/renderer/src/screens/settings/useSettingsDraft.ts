@@ -11,8 +11,8 @@ export type SettingsDraft = ReturnType<typeof useSettingsDraft>;
 export function useSettingsDraft() {
   const { state, saveSettings, refreshTools } = useStore();
   const s = state.settings;
-  const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '' });
-  const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind }>({
+  const [models, setModels] = useState<Models>({ planner: '', executor: '', reviewer: '', visual: '', manager: '', scan: '' });
+  const [agents, setAgents] = useState<Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind }>({
     planner: 'claude',
     executor: 'claude',
     reviewer: 'codex',
@@ -86,9 +86,11 @@ export function useSettingsDraft() {
   const claudeFound = Boolean(tools?.claude.path && !tools.claude.error);
   const visualAgent = agents.visual ?? 'claude';
   const managerAgent = agents.manager ?? (tools && !claudeFound ? 'codex' : 'claude');
-  const pickAgent = (id: Role | 'visual' | 'manager', a: AgentKind) => {
-    if ((id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : agents[id]) === a && (id !== 'manager' || agents.manager))
-      return;
+  const scanAgent = agents.scan ?? (tools && !claudeFound ? 'codex' : 'claude');
+  const pickAgent = (id: Role | 'visual' | 'manager' | 'scan', a: AgentKind) => {
+    const current = id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : id === 'scan' ? scanAgent : agents[id];
+    // Менеджер и сканирование без явного выбора — «авто»: нажатие на текущий вариант закрепляет его.
+    if (current === a && (id === 'manager' ? agents.manager : id === 'scan' ? agents.scan : true)) return;
     setAgents({ ...agents, [id]: a });
     // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
     setModels({ ...models, [id]: '' });
@@ -124,6 +126,7 @@ export function useSettingsDraft() {
     claudeFound,
     visualAgent,
     managerAgent,
+    scanAgent,
     pickAgent,
     allFound,
   };

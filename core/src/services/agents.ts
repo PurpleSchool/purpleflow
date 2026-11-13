@@ -2,39 +2,58 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { type AgentResult } from '../agents/common.js';
+import { addUsage, type AgentResult } from '../agents/common.js';
 import { prependPath } from '../env.js';
 import type { Kernel } from '../kernel.js';
 import type { AgentKind, Role, RunFile } from '../types.js';
 import { DEFAULT_AGENTS } from '../types.js';
 import { knowledgeBlock, relatedRepos } from './projects.js';
 
+type ServiceOptions = {
+  prompt: string;
+  group: string;
+  timeoutMs: number;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  tools?: string[];
+  /** Модель для агента из agent (или для служебного агента, если agent не задан). */
+  model?: string;
+  addDirs?: string[];
+  idleTimeoutMs?: number;
+  userConfig?: boolean;
+  onOutput?: (t: string) => void;
+  /** Агент, выбранный в настройках (менеджер, сканирование, проверка окружения); если его нет на машине — как у служебных вызовов. */
+  agent?: AgentKind;
+  /** Нужен браузер и запись вне рабочей копии (проверка окружения) — у codex песочница без ограничений. */
+  fullAccess?: boolean;
+  /**
+   * Агент не справился (не вошёл, нет ключа, упал) — повторить на другом, если он установлен.
+   * Остановку человеком и таймаут не повторяем: это не про настройку агента.
+   */
+  fallback?: boolean;
+};
+
 /**
- * Служебный вызов claude — сводка, уроки, карта плана, команды, режим, профиль, проверка окружения:
+ * Служебный вызов агента — сводка, уроки, карта плана, команды, режим, профиль, проверка окружения:
  * прокси, вход и модель из настроек в одном месте. По умолчанию без инструментов и во временной папке.
  */
-export async function service(
-  k: Kernel,
-  o: {
-    prompt: string;
-    group: string;
-    timeoutMs: number;
-    cwd?: string;
-    env?: NodeJS.ProcessEnv;
-    tools?: string[];
-    model?: string;
-    addDirs?: string[];
-    idleTimeoutMs?: number;
-    userConfig?: boolean;
-    onOutput?: (t: string) => void;
-    /** Агент, выбранный в настройках (менеджер, проверка окружения); если его нет на машине — как у служебных вызовов. */
-    agent?: AgentKind;
-    /** Нужен браузер и запись вне рабочей копии (проверка окружения) — у codex песочница без ограничений. */
-    fullAccess?: boolean;
-  },
-): Promise<AgentResult> {
-  const s = k.opts.getSettings();
+export async function service(k: Kernel, o: ServiceOptions): Promise<AgentResult> {
   const agent = o.agent && (await k.hasTool(o.agent)) ? o.agent : await serviceAgent(k);
+  // Имя модели одного CLI другому не подходит: своя модель — только тому агенту, для которого её выбрали.
+  const ownModel = !o.agent || o.agent === agent ? o.model : undefined;
+  const res = await serviceOn(k, agent, ownModel, o);
+  if (res.ok || res.stopped || res.timedOut || !o.fallback) return res;
+  const other: AgentKind = agent === 'claude' ? 'codex' : 'claude';
+  if (!(await k.hasTool(other))) return res;
+  o.onOutput?.(`\n${agent} не справился (${res.error ?? 'без ответа'}) — пробую ${other}…\n`);
+  const second = await serviceOn(k, other, undefined, o);
+  const usage = addUsage(res.usage, second.usage);
+  if (second.ok) return { ...second, usage };
+  return { ...second, usage, error: `${res.error ?? `${agent}: без ответа`}; ${second.error ?? `${other}: без ответа`}` };
+}
+
+async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined, o: ServiceOptions): Promise<AgentResult> {
+  const s = k.opts.getSettings();
   const tools = await k.tools([agent]);
   const common = {
     bin: tools[agent],
@@ -49,17 +68,17 @@ export async function service(
     userConfig: o.userConfig,
   };
   if (agent === 'codex') {
-    // Без claude служебное — на codex в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
+    // Служебное на codex — в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
     return k.codex({
       ...common,
-      model: o.model || agentModel(k, 'codex', s.agents, s.models) || undefined,
+      model: model || agentModel(k, 'codex', s.agents, s.models) || undefined,
       sandbox: o.fullAccess ? 'danger-full-access' : 'read-only',
     });
   }
   return k.claude({
     ...common,
     claudeAuth: s.claudeAuth,
-    model: o.model || claudeModel(k, s.agents, s.models) || undefined,
+    model: model || claudeModel(k, s.agents, s.models) || undefined,
     addDirs: o.addDirs,
     tools: o.tools ?? [],
   });

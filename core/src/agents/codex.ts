@@ -254,6 +254,7 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
       ok: false,
       text,
       usage,
+      timedOut: true,
       error: r.idle
         ? `codex: молчал ${Math.round((o.idleTimeoutMs ?? 0) / 60000)} мин — похоже, завис; остановлен`
         : `codex: превышен предельный таймаут ${Math.round(o.timeoutMs / 60000)} мин`,

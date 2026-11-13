@@ -34,17 +34,17 @@ export type AgentKind = 'claude' | 'codex';
 
 /**
  * Модели ролей; visual — модель claude для визуальной проверки (пусто — как у исполнителя-claude),
- * manager — модель claude менеджера прогона (пусто — как у служебных вызовов).
+ * manager — модель менеджера прогона, scan — модель сканирования проекта (пусто — как у служебных вызовов).
  */
-export type Models = Record<Role, string> & { visual?: string; manager?: string };
+export type Models = Record<Role, string> & { visual?: string; manager?: string; scan?: string };
 
 export const DEFAULT_AGENTS: Record<Role, AgentKind> = { planner: 'claude', executor: 'claude', reviewer: 'codex' };
 
 /**
  * Агенты: роли конвейера плюс визуальная проверка (по умолчанию claude) и менеджер прогона
- * (по умолчанию — claude, если он установлен, иначе codex).
+ * и сканирование проекта — команды и профиль (оба по умолчанию — claude, если он установлен, иначе codex).
  */
-export type Agents = Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind };
+export type Agents = Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
 
 export interface CoreSettings {
   /** Ручные пути к CLI; пустая строка — искать в PATH. */

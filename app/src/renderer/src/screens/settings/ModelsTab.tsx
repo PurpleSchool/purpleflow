@@ -1,7 +1,7 @@
 // Вкладка «Модели»: агент и модель для каждой роли, таймауты и параллельные прогоны.
 import { Wand2 } from 'lucide-react';
 import { useState } from 'react';
-import { ComboInput } from '../../components/Dropdown';
+import { ModelInput } from '../../components/ModelInput';
 import { QuickSetup } from '../../components/QuickSetup';
 import { Button, Field, Input } from '../../components/ui';
 import { useModelOptions } from '../../lib/useModelOptions';
@@ -23,6 +23,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
     pickAgent,
     visualAgent,
     managerAgent,
+    scanAgent,
     claudeFound,
     flashSaved,
     agentTimeout,
@@ -39,8 +40,8 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           <h2>Агенты и модели по ролям</h2>
           <p>
             Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию.
-            Служебные вызовы (сводка, профиль, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны,
-            запущенные после сохранения.
+            Служебные вызовы (сводка, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после
+            сохранения.
           </p>
         </div>
         <Button tone="primary" icon={<Wand2 size={15} />} onClick={() => setQuick(true)}>
@@ -72,7 +73,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
               </div>
               <p>{r.text}</p>
               {sameAsExecutor && <p className="role-warn">Совпадает с исполнителем — ревью той же моделью находит меньше.</p>}
-              <ComboInput
+              <ModelInput
                 className="role-model"
                 ariaLabel={`Модель: ${r.title}`}
                 options={modelOptions[agent]}
@@ -95,7 +96,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
               : ''}{' '}
             Пусто — модель исполнителя, если он на том же агенте.
           </p>
-          <ComboInput
+          <ModelInput
             className="role-model"
             ariaLabel="Модель: визуальная проверка"
             options={modelOptions[visualAgent]}
@@ -116,13 +117,32 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
             {agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том же
             агенте.
           </p>
-          <ComboInput
+          <ModelInput
             className="role-model"
             ariaLabel="Модель: менеджер прогона"
             options={modelOptions[managerAgent]}
             placeholder={MODEL_PLACEHOLDER[managerAgent]}
             value={models.manager ?? ''}
             onChange={(v) => setModels({ ...models, manager: v })}
+          />
+        </div>
+        <div className={`role bezel role-${scanAgent}`}>
+          <div className="role-head">
+            <strong>Сканирование проекта</strong>
+            <AgentSwitch label="Сканирование проекта" value={scanAgent} onChange={(a) => pickAgent('scan', a)} />
+          </div>
+          <p>
+            Находит команды проекта и собирает профиль — стек, структуру, соглашения. Только читает код.
+            {agents.scan ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Если агент не вошёл в аккаунт или упал —
+            сканирование повторит другой. Пусто — модель первой роли на том же агенте.
+          </p>
+          <ModelInput
+            className="role-model"
+            ariaLabel="Модель: сканирование проекта"
+            options={modelOptions[scanAgent]}
+            placeholder={MODEL_PLACEHOLDER[scanAgent]}
+            value={models.scan ?? ''}
+            onChange={(v) => setModels({ ...models, scan: v })}
           />
         </div>
       </div>

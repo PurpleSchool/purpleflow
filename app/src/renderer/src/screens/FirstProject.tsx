@@ -1,17 +1,27 @@
 // Первый проект: выбрать папку, просканировать нейросетью (команды и знания) и подключить — три шага до первой задачи.
 import { ArrowRight, BookText, Check, FolderGit2, FolderOpen, ScanSearch, TerminalSquare, TriangleAlert, Zap } from 'lucide-react';
+import type { AgentKind } from '@purpleflow/core';
 import { useRef, useState, type ReactNode } from 'react';
 import { Mark } from '../components/Sidebar';
 import { Button } from '../components/ui';
 import { bridge, cleanErr } from '../lib/api';
 import { shortPath } from '../lib/format';
-import { useActions } from '../lib/store';
+import { useStore } from '../lib/store';
 import { CmdChips, type LoadedProject, loadProject, saveLoaded } from './projects/common';
+import { AgentSwitch } from './settings/parts';
 
 type Job = 'idle' | 'busy' | 'done' | 'error';
 
 export function FirstProjectScreen() {
-  const { go } = useActions();
+  const { state, go, saveSettings } = useStore();
+  const found = (a: AgentKind) => Boolean(state.tools?.[a].path && !state.tools[a].error);
+  // Как в настройках: не выбран — claude, если он установлен, иначе codex. Второй агент подстрахует, если первый не настроен.
+  const scanAgent: AgentKind = state.settings?.agents.scan ?? (state.tools && !found('claude') ? 'codex' : 'claude');
+  const pickScanAgent = (a: AgentKind) => {
+    if (a === scanAgent && state.settings?.agents.scan) return;
+    // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
+    void saveSettings({ agents: { scan: a }, models: { scan: '' } }).catch((e) => setScanError(cleanErr(e)));
+  };
   const [p, setP] = useState<LoadedProject | null>(null);
   const [picking, setPicking] = useState(false);
   const [cmdJob, setCmdJob] = useState<Job>('idle');
@@ -175,6 +185,14 @@ export function FirstProjectScreen() {
               <Button tone={scanned ? 'ghost' : 'primary'} icon={<ScanSearch size={16} />} disabled={!repo} busy={scanning} onClick={scan}>
                 {scanning ? 'Сканирую…' : scanned ? 'Сканировать заново' : 'Сканировать проект'}
               </Button>
+              {found('claude') && found('codex') ? (
+                <span className="fp-agent">
+                  <span className="muted">Агент</span>
+                  <AgentSwitch label="Сканирование проекта" value={scanAgent} onChange={pickScanAgent} />
+                </span>
+              ) : (
+                state.tools && <span className="muted">Сканирует {scanAgent}</span>
+              )}
             </div>
           </Step>
 

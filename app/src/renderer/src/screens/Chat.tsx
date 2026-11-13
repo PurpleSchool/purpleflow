@@ -4,7 +4,8 @@ import type { AgentKind, ChatFile, ChatMessage, ProjectListItem } from '@purplef
 import { AssistantMessage } from './ChatAnswer';
 import { useMentions } from './ChatMentions';
 import { Button } from '../components/ui';
-import { ComboInput, Select } from '../components/Dropdown';
+import { Select } from '../components/Dropdown';
+import { ModelInput } from '../components/ModelInput';
 import { useModelOptions } from '../lib/useModelOptions';
 import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
@@ -491,7 +492,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                     </button>
                   ))}
                 </div>
-                <ComboInput
+                <ModelInput
                   ariaLabel="Модель"
                   className={`chat-model ${conf.model ? '' : 'is-default'}`}
                   placeholder={fallbackModel || 'по умолчанию'}

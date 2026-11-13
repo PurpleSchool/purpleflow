@@ -103,8 +103,14 @@ export async function checkRelatedUntouched(k: Kernel, run: RunFile, before: Map
     );
 }
 
+/** Сканирование проекта (команды и профиль) — только чтение, на агенте из настроек; не настроен — на другом. */
+function scanOptions(k: Kernel) {
+  const s = k.opts.getSettings();
+  return { agent: s.agents?.scan, model: s.models.scan || undefined, fallback: true, tools: ['Read', 'Glob', 'Grep'] };
+}
+
 export async function profileFor(k: Kernel, repo: string, cwd: string, onOutput: (t: string) => void, group: string): Promise<AgentResult> {
-  return service(k, { prompt: k.prompts.raw('profile.md'), cwd, group, onOutput, timeoutMs: 10 * 60_000, tools: ['Read', 'Glob', 'Grep'] });
+  return service(k, { ...scanOptions(k), prompt: k.prompts.raw('profile.md'), cwd, group, onOutput, timeoutMs: 10 * 60_000 });
 }
 
 /** Профиль проекта — один раз, перед первым планом. Сбой не останавливает прогон. */
@@ -494,16 +500,16 @@ export function saveProjectConfig(k: Kernel, repo: string, cfg: Omit<ProjectConf
 }
 
 /**
- * Нейросеть осматривает проект (только чтение: Read/Glob/Grep) и предлагает команды
+ * Нейросеть осматривает проект (только чтение: Read/Glob/Grep у claude, песочница read-only у codex) и предлагает команды
  * подготовки, линтера и тестов. Работает в папке проекта, ничего не меняя.
  */
 export async function detectCommandsAI(k: Kernel, dir: string): Promise<AiCommands> {
   const res = await service(k, {
+    ...scanOptions(k),
     prompt: k.prompts.raw('detect-commands.md'),
     cwd: dir,
     group: `detect-${Date.now()}`,
     timeoutMs: 3 * 60_000,
-    tools: ['Read', 'Glob', 'Grep'],
   });
   if (!res.ok) throw new Error(res.error ?? 'Не удалось определить команды');
   try {

@@ -4,7 +4,6 @@ import type { DropOption } from '../components/Dropdown';
 import type { ProxyModels } from '../../../shared/models';
 import { bridge } from './api';
 import { mergeModelOptions } from './models';
-import { useStore } from './store';
 
 /** Один запрос на всё окно: main кэширует ответ, здесь — только чтобы не дёргать IPC на каждый экран. */
 let loaded: Promise<ProxyModels | null> | null = null;
@@ -12,12 +11,9 @@ let last: ProxyModels | null = null;
 
 /**
  * Подсказки моделей: сразу встроенные, следом — с моделями AI-прокси, когда список придёт.
- * Модели, доступные только через прокси, видны, пока прокси включён и задан ключ.
+ * Модели, доступные только через прокси, видны всегда — с пометкой; выбор без подписки перехватывает ModelInput.
  */
 export function useModelOptions(): Record<AgentKind, DropOption<string>[]> {
-  const { state } = useStore();
-  const proxy = state.settings?.proxy;
-  const viaProxy = Boolean(proxy?.enabled && proxy.hasKey);
   const [remote, setRemote] = useState(last);
   useEffect(() => {
     let alive = true;
@@ -30,5 +26,5 @@ export function useModelOptions(): Record<AgentKind, DropOption<string>[]> {
       alive = false;
     };
   }, []);
-  return useMemo(() => mergeModelOptions(remote, viaProxy), [remote, viaProxy]);
+  return useMemo(() => mergeModelOptions(remote), [remote]);
 }

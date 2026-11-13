@@ -11,7 +11,7 @@ export interface PublicSettings {
   /** enabled — ключ подставляется агентам; выключенный ключ хранится, но не используется. */
   proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean; enabled: boolean };
   models: Models;
-  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind };
+  agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
   agentTimeoutMin: number;
   testTimeoutMin: number;
   maxParallel: number;
@@ -34,7 +34,7 @@ export interface SettingsPatch {
   toolPaths?: Partial<Record<ToolName, string>>;
   proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string; enabled?: boolean };
   models?: Partial<Models>;
-  agents?: Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind };
+  agents?: Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
   agentTimeoutMin?: number;
   testTimeoutMin?: number;
   maxParallel?: number;

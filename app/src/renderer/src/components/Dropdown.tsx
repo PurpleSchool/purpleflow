@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
@@ -9,35 +9,69 @@ export interface DropOption<T extends string | number = string> {
   hint?: ReactNode;
   icon?: ReactNode;
   disabled?: boolean;
+  /** Короткая метка справа (например, «подписка PurpleSchool»); в ComboInput видна и в поле у выбранного значения. */
+  badge?: string;
+  /** Пояснение к метке во всплывающей подсказке. */
+  badgeTitle?: string;
 }
 
-/** Позиция списка под полем (или над ним, если снизу не хватает места). Список — в портале: его не обрезают прокрутки. */
-function usePopover(open: boolean, anchor: React.RefObject<HTMLElement | null>, minWidth?: number) {
-  const [style, setStyle] = useState<CSSProperties>({});
+function Badge({ text, title }: { text: string; title?: string }) {
+  return (
+    <span className="dd-badge" title={title}>
+      {text}
+    </span>
+  );
+}
+
+/** Ближайший предок с прокруткой: список живёт в нём и едет вместе с содержимым. Нет такого — документ. */
+function scrollParent(el: HTMLElement): HTMLElement {
+  for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+    const st = getComputedStyle(n);
+    if (/auto|scroll|overlay/.test(st.overflowY + st.overflowX)) return n;
+  }
+  return document.body;
+}
+
+type Popover = { style: CSSProperties; container: HTMLElement | null };
+
+/**
+ * Позиция списка под полем (или над ним, если снизу не хватает места). Список — в портале внутри ближайшего прокручиваемого
+ * предка поля, с position: absolute: при прокрутке страницы браузер сдвигает его вместе с полем сам, без отставания в кадр,
+ * как обычный select. Обрезает его только сам этот контейнер, а не промежуточные overflow: hidden.
+ */
+function usePopover(open: boolean, anchor: React.RefObject<HTMLElement | null>, minWidth?: number): Popover {
+  const [pop, setPop] = useState<Popover>({ style: {}, container: null });
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
-      const r = anchor.current?.getBoundingClientRect();
-      if (!r) return;
+      const a = anchor.current;
+      if (!a) return;
+      const sp = scrollParent(a);
+      const doc = sp === document.body;
+      // Координаты absolute отсчитываются от позиционированного предка: контейнер прокрутки делаем им.
+      if (!doc && getComputedStyle(sp).position === 'static') sp.style.position = 'relative';
+      const r = a.getBoundingClientRect();
+      // Начало содержимого контейнера (с учётом прокрутки) в координатах окна и высота его «нулевой» области для bottom.
+      const c = doc ? { left: 0, top: 0 } : sp.getBoundingClientRect();
+      const ox = doc ? -window.scrollX : c.left + sp.clientLeft - sp.scrollLeft;
+      const oy = doc ? -window.scrollY : c.top + sp.clientTop - sp.scrollTop;
+      const boxH = doc ? window.innerHeight : sp.clientHeight;
       const below = window.innerHeight - r.bottom - 12;
       const up = below < 220 && r.top > below;
       const width = Math.max(r.width, minWidth ?? 0);
-      const left = Math.min(r.left, window.innerWidth - width - 8);
-      setStyle(
-        up
-          ? { left, width, bottom: window.innerHeight - r.top + 6, maxHeight: Math.min(320, r.top - 12) }
-          : { left, width, top: r.bottom + 6, maxHeight: Math.min(320, below) },
-      );
+      const left = Math.min(r.left, window.innerWidth - width - 8) - ox;
+      setPop({
+        container: sp,
+        style: up
+          ? { left, width, bottom: boxH - (r.top - oy) + 6, maxHeight: Math.min(320, r.top - 12) }
+          : { left, width, top: r.bottom - oy + 6, maxHeight: Math.min(320, below) },
+      });
     };
     place();
     window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
+    return () => window.removeEventListener('resize', place);
   }, [open, anchor, minWidth]);
-  return style;
+  return pop;
 }
 
 function useOutside(open: boolean, refs: React.RefObject<HTMLElement | null>[], close: () => void) {
@@ -58,7 +92,7 @@ function OptionList<T extends string | number>({
   active,
   setActive,
   pick,
-  style,
+  pop,
   listRef,
   empty,
   mono,
@@ -68,7 +102,7 @@ function OptionList<T extends string | number>({
   active: number;
   setActive: (i: number) => void;
   pick: (o: DropOption<T>) => void;
-  style: CSSProperties;
+  pop: Popover;
   listRef: React.RefObject<HTMLDivElement | null>;
   empty?: ReactNode;
   mono?: boolean;
@@ -76,8 +110,9 @@ function OptionList<T extends string | number>({
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [active, listRef]);
+  if (!pop.container) return null;
   return createPortal(
-    <div className={`dd-pop ${mono ? 'is-mono' : ''}`} style={style} ref={listRef} role="listbox">
+    <div className={`dd-pop ${mono ? 'is-mono' : ''}`} style={pop.style} ref={listRef} role="listbox">
       {options.length === 0 && <div className="dd-empty">{empty ?? 'Ничего не найдено'}</div>}
       {options.map((o, i) => (
         <button
@@ -97,11 +132,12 @@ function OptionList<T extends string | number>({
             <span className="dd-opt-label">{o.label}</span>
             {o.hint && <span className="dd-opt-hint">{o.hint}</span>}
           </span>
+          {o.badge && <Badge text={o.badge} title={o.badgeTitle} />}
           {o.value === value && <Check size={14} className="dd-opt-check" />}
         </button>
       ))}
     </div>,
-    document.body,
+    pop.container,
   );
 }
 
@@ -135,8 +171,9 @@ export function Select<T extends string | number>({
   const [active, setActive] = useState(0);
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const style = usePopover(open, btn, minWidth);
-  useOutside(open, [btn, list], () => setOpen(false));
+  const close = useCallback(() => setOpen(false), []);
+  const pop = usePopover(open, btn, minWidth);
+  useOutside(open, [btn, list], close);
   const current = options.find((o) => o.value === value);
   const enabled = options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
 
@@ -204,7 +241,7 @@ export function Select<T extends string | number>({
           active={active}
           setActive={setActive}
           pick={pick}
-          style={style}
+          pop={pop}
           listRef={list}
           mono={mono}
         />
@@ -242,11 +279,13 @@ export function ComboInput({
   const wrap = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const style = usePopover(open, wrap, 300);
-  useOutside(open, [wrap, list], () => setOpen(false));
+  const close = useCallback(() => setOpen(false), []);
+  const pop = usePopover(open, wrap, 300);
+  useOutside(open, [wrap, list], close);
   // Пока человек не начал печатать — весь список; потом — подходящие.
   const q = value.trim().toLowerCase();
   const shown = typed && q ? options.filter((o) => String(o.value).toLowerCase().includes(q)) : options;
+  const current = options.find((o) => o.value === value.trim());
 
   const pick = (o: DropOption<string>) => {
     setOpen(false);
@@ -297,6 +336,7 @@ export function ComboInput({
         onBlur={() => onCommit?.(value)}
         onKeyDown={onKey}
       />
+      {current?.badge && <Badge text={current.badge} title={current.badgeTitle} />}
       <button
         type="button"
         tabIndex={-1}
@@ -316,16 +356,7 @@ export function ComboInput({
         <ChevronDown size={14} className="dd-chev" />
       </button>
       {open && shown.length > 0 && (
-        <OptionList
-          options={shown}
-          value={value}
-          active={active}
-          setActive={setActive}
-          pick={pick}
-          style={style}
-          listRef={list}
-          mono={mono}
-        />
+        <OptionList options={shown} value={value} active={active} setActive={setActive} pick={pick} pop={pop} listRef={list} mono={mono} />
       )}
     </div>
   );
