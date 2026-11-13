@@ -31,6 +31,8 @@ type ServiceOptions = {
    * Остановку человеком и таймаут не повторяем: это не про настройку агента.
    */
   fallback?: boolean;
+  /** Изображения от человека: codex получает их флагом, claude — путями, открывает инструментом Read. */
+  images?: string[];
 };
 
 /**
@@ -67,20 +69,28 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
     proxy: s.proxy.baseUrl ? s.proxy : undefined,
     userConfig: o.userConfig,
   };
+  const images = o.images?.filter((f) => fs.existsSync(f)) ?? [];
   if (agent === 'codex') {
     // Служебное на codex — в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
     return k.codex({
       ...common,
+      images: images.length ? images : undefined,
       model: model || agentModel(k, 'codex', s.agents, s.models) || undefined,
       sandbox: o.fullAccess ? 'danger-full-access' : 'read-only',
     });
   }
+  // claude не принимает изображения флагом — даём пути и доступ к их папке; без Read он их не откроет.
+  const dirs = [...new Set([...(o.addDirs ?? []), ...images.map((f) => path.dirname(f))])];
+  const allowed = o.tools ?? [];
   return k.claude({
     ...common,
+    prompt: images.length
+      ? `${o.prompt}\n\nИзображения от человека (открой инструментом Read):\n${images.map((f) => `- ${f}`).join('\n')}`
+      : o.prompt,
     claudeAuth: s.claudeAuth,
     model: model || claudeModel(k, s.agents, s.models) || undefined,
-    addDirs: o.addDirs,
-    tools: o.tools ?? [],
+    addDirs: dirs.length ? dirs : undefined,
+    tools: images.length && !allowed.includes('Read') ? [...allowed, 'Read'] : allowed,
   });
 }
 

@@ -59,6 +59,19 @@ export class Git {
     return (await this.git(dir, ['rev-parse', '--show-toplevel'])).trim();
   }
 
+  /** Корень репозитория, внутри которого лежит папка, — если сама папка не корень (подпапка чужого репозитория). */
+  async enclosingRoot(dir: string): Promise<string | null> {
+    const root = await this.topLevel(dir);
+    const real = (p: string) => {
+      try {
+        return fs.realpathSync(p);
+      } catch {
+        return path.resolve(p);
+      }
+    };
+    return real(root) === real(dir) ? null : root;
+  }
+
   async head(dir: string): Promise<string> {
     return (await this.git(dir, ['rev-parse', 'HEAD'])).trim();
   }

@@ -7,7 +7,7 @@ import { Button } from '../components/ui';
 import { bridge, cleanErr } from '../lib/api';
 import { shortPath } from '../lib/format';
 import { useStore } from '../lib/store';
-import { CmdChips, type LoadedProject, loadProject, saveLoaded } from './projects/common';
+import { CmdChips, NotRepoNote, type LoadedProject, loadProject, saveLoaded } from './projects/common';
 import { AgentSwitch } from './settings/parts';
 
 type Job = 'idle' | 'busy' | 'done' | 'error';
@@ -37,7 +37,17 @@ export function FirstProjectScreen() {
     setError(null);
     try {
       const dir = await bridge.pickFolder('Папка проекта');
-      if (!dir) return;
+      if (dir) await open(dir);
+    } catch (e) {
+      setError(cleanErr(e));
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const open = async (dir: string) => {
+    setError(null);
+    try {
       current.current = dir;
       const x = await loadProject(dir);
       if (current.current !== dir) return;
@@ -47,8 +57,6 @@ export function FirstProjectScreen() {
       setScanError(null);
     } catch (e) {
       setError(cleanErr(e));
-    } finally {
-      setPicking(false);
     }
   };
 
@@ -144,12 +152,7 @@ export function FirstProjectScreen() {
                 </Button>
               </>
             )}
-            {p && !repo && (
-              <p className="inline-error">
-                <TriangleAlert size={14} /> Это не git-репозиторий. Выполните <code>git init</code> и первый коммит или выберите другую
-                папку.
-              </p>
-            )}
+            {p && <NotRepoNote project={p.info} onRoot={(dir) => void open(dir)} />}
           </Step>
 
           <Step n={2} title="Сканирование" state={!repo ? 'pending' : scanned ? 'done' : 'active'} optional>

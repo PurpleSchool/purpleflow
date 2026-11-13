@@ -165,6 +165,7 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
   projectStats: true,
   getManagerChat: true,
   askManager: true,
+  getManagerImage: true,
   resolveManagerAction: true,
   listChats: true,
   getChat: true,

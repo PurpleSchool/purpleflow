@@ -348,10 +348,11 @@ body.is-manager-resizing .manager-resize::after {
 }
 .manager-compose {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--s-2);
   margin: 0 var(--s-3) var(--s-1) 0;
-  padding: 8px 8px 8px var(--s-4);
+  padding: 8px;
   border-radius: 22px;
   background: var(--bg-3);
   box-shadow:
@@ -398,6 +399,80 @@ body.is-manager-resizing .manager-resize::after {
 }
 .manager-send:active:not(:disabled) {
   transform: scale(0.94);
+}
+
+/* ——— Изображения: в поле ввода (до отправки) и в сообщениях ——— */
+.manager-attach {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--text-3);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+.manager-attach:hover {
+  background: var(--bg-4);
+  color: var(--text-1);
+}
+.manager-images {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px 0;
+}
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.msg-user:has(.msg-images):not(:has(p)) .msg-images {
+  margin-bottom: 0;
+}
+.manager-thumb {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--bg-2);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.manager-thumb.is-sent {
+  width: 96px;
+  height: 72px;
+  cursor: zoom-in;
+}
+.manager-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.manager-thumb button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.manager-thumb-gone {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-4);
+  font-size: var(--fs-12);
 }
 
 @media (max-width: 900px) {

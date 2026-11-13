@@ -35,9 +35,18 @@ export function Overview({ p, onTab }: { p: LoadedProject; onTab: (t: ProjectTab
         <span className="browser-empty-icon">
           <TriangleAlert size={22} />
         </span>
-        <strong>Это не git-репозиторий</strong>
+        <strong>{p.info.repoRoot ? 'Папка внутри другого репозитория' : 'Это не git-репозиторий'}</strong>
         <p>
-          Выполните <code>git init</code> и первый коммит — прогоны работают в отдельных ветках.
+          {p.info.repoRoot ? (
+            <>
+              Папка лежит в репозитории <code>{p.info.repoRoot}</code> — задачи ушли бы в него. Выполните в папке <code>git init</code> или
+              откройте корень репозитория.
+            </>
+          ) : (
+            <>
+              Выполните <code>git init</code> и первый коммит — прогоны работают в отдельных ветках.
+            </>
+          )}
         </p>
       </section>
     );

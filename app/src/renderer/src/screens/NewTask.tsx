@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Archive, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles, TriangleAlert } from 'lucide-react';
+import { Archive, Eraser, GitBranch, RotateCw, MonitorCheck, Sparkles } from 'lucide-react';
 import type { ProjectBranches, Workspace, NextPartDraft } from '@purpleflow/core';
 import { Button, Topbar } from '../components/ui';
 import { Select } from '../components/Dropdown';
@@ -7,7 +7,7 @@ import { useStore } from '../lib/store';
 import { FileDrop, type PickedFile } from '../components/FileDrop';
 import { MODES, stagesFor, type Mode } from '../lib/stages';
 import { MODE_ICON } from '../components/ModeIcon';
-import { ProjectPicker, WORKSPACES, loadProject, saveLoaded, type LoadedProject } from './projects/common';
+import { NotRepoNote, ProjectPicker, WORKSPACES, loadProject, saveLoaded, type LoadedProject } from './projects/common';
 import { bridge, cleanErr } from '../lib/api';
 
 const LAST_PROJECT = 'purpleflow.lastProject';
@@ -200,11 +200,7 @@ export function NewTaskScreen({ initialProject, draft }: { initialProject?: stri
       <div className="scroll">
         <div className="newtask">
           <div className="newtask-main step-enter">
-            {project && !project.isRepo && (
-              <p className="inline-error">
-                <TriangleAlert size={14} /> Это не git-репозиторий. Выполните git init и первый коммит.
-              </p>
-            )}
+            {project && <NotRepoNote project={project} onRoot={(dir) => void choose(dir)} />}
             <div className="modes" role="radiogroup" aria-label="Режим">
               {MODES.map((m) => (
                 <button

@@ -80,3 +80,19 @@ test('грязная копия в режиме «ветка»: ничего н�
   assert.equal(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8'), 'правка человека\n', 'чужая правка цела');
   assert.deepEqual(await core.listRuns(), []);
 });
+
+test('подпапка репозитория: не проект — прогон не уходит в корень внешнего репозитория', unix, async (t) => {
+  const { core, repo, g } = setup(t, 'exit 1');
+  const sub = path.join(repo, 'packages', 'web');
+  fs.mkdirSync(sub, { recursive: true });
+  const det = await core.detectProject(sub);
+  assert.equal(det.isRepo, false);
+  assert.equal(det.repoRoot, repo);
+  assert.equal((await core.detectProject(repo)).repoRoot, undefined, 'корень — обычный проект');
+  await assert.rejects(
+    core.dispatch({ type: 'run.start', input: { projectPath: sub, task: 'Задача', testCommand: 'true', mode: 'task' } as never }),
+    /лежит внутри репозитория/,
+  );
+  assert.equal(g('branch', '--list', 'purpleflow/*'), '');
+  assert.deepEqual(await core.listRuns(), []);
+});

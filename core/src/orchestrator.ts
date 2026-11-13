@@ -13,7 +13,7 @@ import * as chat from './services/chat.js';
 import { testConnection } from './services/connection.js';
 import { control } from './services/control.js';
 import { cleanStorage, getStorage } from './services/disk.js';
-import { askManager, getManagerChat, resolveManagerAction } from './services/manager.js';
+import { askManager, getManagerChat, getManagerImage, resolveManagerAction } from './services/manager.js';
 import * as pr from './services/pr.js';
 import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import * as projects from './services/projects.js';
@@ -186,8 +186,11 @@ export class Orchestrator implements CoreApi {
   async getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }> {
     return { messages: getManagerChat(this.kernel, id), thinking: this.kernel.managerBusy.has(id) };
   }
-  askManager(id: string, text: string) {
-    return askManager(this.kernel, id, text);
+  askManager(id: string, text: string, images?: { name: string; data: Uint8Array }[]) {
+    return askManager(this.kernel, id, text, images);
+  }
+  async getManagerImage(id: string, file: string) {
+    return getManagerImage(this.kernel, id, file);
   }
   resolveManagerAction(id: string, messageId: string, apply: boolean) {
     return resolveManagerAction(this.kernel, id, messageId, apply);
@@ -214,11 +217,14 @@ export class Orchestrator implements CoreApi {
 
   // ——— Проекты ———
 
-  async detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }> {
+  async detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; repoRoot?: string }> {
     const { env, getSettings } = this.kernel.opts;
     const gitBin = getSettings().toolPaths.git || which('git', env) || 'git';
-    const isRepo = await new Git(gitBin, env).isRepo(dir).catch(() => false);
-    return { ...detectProjectCommands(dir), envFiles: findEnvFiles(dir), isRepo, name: path.basename(dir) };
+    const git = new Git(gitBin, env);
+    const inside = await git.isRepo(dir).catch(() => false);
+    // Подпапка чужого репозитория — не проект: прогон ушёл бы в корень того репозитория.
+    const repoRoot = inside ? ((await git.enclosingRoot(dir).catch(() => null)) ?? undefined) : undefined;
+    return { ...detectProjectCommands(dir), envFiles: findEnvFiles(dir), isRepo: inside && !repoRoot, repoRoot, name: path.basename(dir) };
   }
   async checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>> {
     return Object.fromEntries(Object.entries(cmds).map(([key, cmd]) => [key, cmd.trim() ? checkCommand(dir, cmd) : []]));

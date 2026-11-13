@@ -1,12 +1,13 @@
 // Общее для экранов проектов и «Новой задачи»: загрузка и сохранение команд проекта, выбор проекта, режимы работы.
 import type { ProjectCommands, ProjectConfig, ProjectListItem, RelatedRepo, Workspace } from '@purpleflow/core';
-import { Check, ChevronDown, FolderGit2, FolderOpen, Minus, Plus, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, FolderGit2, FolderOpen, Minus, Plus, Settings2, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { shortPath } from '../../lib/format';
 import { useActions } from '../../lib/store';
 import { bridge } from '../../lib/api';
 
-export type ProjectInfo = ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; path: string };
+/** repoRoot — папка лежит внутри другого репозитория и сама проектом не считается. */
+export type ProjectInfo = ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; path: string; repoRoot?: string };
 export type Cmd = 'setup' | 'lint' | 'test' | 'run' | 'url';
 export type Cmds = Record<Cmd, string>;
 /** Проект с командами: сохранёнными или найденными по файлам проекта (черновик). */
@@ -199,6 +200,26 @@ export function ProjectPicker({ project, draft, onPick }: { project: ProjectInfo
         </>
       )}
     </div>
+  );
+}
+/** Почему папка не годится под проект: не репозиторий или подпапка чужого — тогда предлагаем его корень. */
+export function NotRepoNote({ project, onRoot }: { project: ProjectInfo; onRoot: (dir: string) => void }) {
+  if (project.isRepo) return null;
+  if (project.repoRoot)
+    return (
+      <p className="inline-error">
+        <TriangleAlert size={14} /> Папка лежит внутри репозитория <code>{shortPath(project.repoRoot)}</code> — задача ушла бы в него.
+        Выполните в папке <code>git init</code> или{' '}
+        <button className="link" onClick={() => onRoot(project.repoRoot!)}>
+          возьмите корень репозитория
+        </button>
+        .
+      </p>
+    );
+  return (
+    <p className="inline-error">
+      <TriangleAlert size={14} /> Это не git-репозиторий. Выполните <code>git init</code> и первый коммит или выберите другую папку.
+    </p>
   );
 }
 export function plural(n: number, one: string, few: string, many: string) {

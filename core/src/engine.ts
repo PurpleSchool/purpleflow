@@ -93,6 +93,11 @@ export async function start(k: Kernel, input: StartRunInput): Promise<string> {
   if (!input.task.trim()) throw new Error('Опишите задачу');
   if (!(await git.isRepo(input.projectPath))) throw new Error('Выбранная папка не является git-репозиторием');
   const repo = await git.topLevel(input.projectPath);
+  // Подпапку чужого репозитория не подменяем молча его корнем: задача ушла бы в другой проект.
+  if (await git.enclosingRoot(input.projectPath))
+    throw new Error(
+      `Папка ${input.projectPath} лежит внутри репозитория ${repo} — выберите корень репозитория или сделайте в папке git init`,
+    );
   const head = await git.head(repo).catch(() => {
     throw new Error('В репозитории нет ни одного коммита — сделайте первый коммит');
   });

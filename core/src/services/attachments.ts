@@ -65,7 +65,11 @@ export function getAttachment(k: Kernel, id: string, index: number): string | nu
   const r = k.mustLoad(id);
   const file = r.attachments?.[index];
   if (!file || !fs.existsSync(file) || !isImageFile(file)) return null;
+  return imageDataUrl(file);
+}
+
+export function imageDataUrl(file: string): string {
   const ext = path.extname(file).slice(1).toLowerCase();
-  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext || 'png'}`;
+  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'svg' ? 'image/svg+xml' : `image/${ext || 'png'}`;
   return `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`;
 }

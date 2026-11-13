@@ -860,3 +860,60 @@ test('менеджер на codex по выбору в настройках, д�
   await core.askManager(runId, 'Как дела?');
   assert.deepEqual(calls, ['codex']);
 });
+
+test(
+  'менеджеру можно приложить скриншот: путь в промпте, Read и папка доступны, картинка отдаётся окну',
+  { skip: !hasOpenspec, timeout: 120_000 },
+  async () => {
+    const repo = fs.realpathSync(makeRepo());
+    const fake = fakeClaude({ implement: () => {}, review: () => ({ blocking: [], notes: [] }) });
+    const seen: { prompt: string; tools?: string[]; addDirs?: string[] }[] = [];
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\necho "claude 1.0.0"\n', { mode: 0o755 });
+    const settings = {
+      toolPaths: { claude: path.join(bin, 'claude') },
+      proxy: { baseUrl: '', apiKey: '' },
+      models: { planner: '', executor: '', reviewer: '' },
+      agents: { planner: 'claude', executor: 'claude', reviewer: 'claude' },
+      agentTimeoutMin: 5,
+      testTimeoutMin: 2,
+      maxParallel: 2,
+    } as unknown as CoreSettings;
+    const core = new Orchestrator({
+      dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')),
+      promptsDir: PROMPTS,
+      env,
+      getSettings: () => settings,
+      runners: {
+        claude: (async (o: { prompt: string; cwd: string; tools?: string[]; addDirs?: string[] }) => {
+          if (/Ты — менеджер прогона/.test(o.prompt)) seen.push(o);
+          return fake.fn(o);
+        }) as never,
+      },
+    });
+    const { runId } = await core.dispatch({
+      type: 'run.start',
+      input: {
+        projectPath: repo,
+        task: 'Добавь функцию mul(a, b) в src/math.js.',
+        testCommand: 'node --test',
+        mode: 'task',
+        workspace: 'worktree',
+      } as never,
+    });
+    await untilGate(core, runId, 'gate1');
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    await assert.rejects(core.askManager(runId, 'Смотри', [{ name: 'log.txt', data: png }]), /только изображения/);
+    const chat = await core.askManager(runId, '', [{ name: 'Снимок экрана.png', data: png }]);
+    const sent = chat.find((m) => m.role === 'user')!;
+    assert.equal(sent.images?.length, 1);
+    const file = sent.images![0];
+    assert.ok(fs.existsSync(file));
+    const call = seen.at(-1)!;
+    assert.ok(call.prompt.includes(file), 'путь к картинке в промпте');
+    assert.ok(call.tools?.includes('Read'));
+    assert.ok(call.addDirs?.includes(path.dirname(file)));
+    assert.match((await core.getManagerImage(runId, file))!, /^data:image\/png;base64,/);
+    assert.equal(await core.getManagerImage(runId, path.join(repo, 'src/math.js')), null, 'чужие файлы окну не отдаются');
+  },
+);

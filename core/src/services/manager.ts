@@ -1,6 +1,8 @@
 // Менеджер прогона: отвечает на вопросы человека по фактам прогона и предлагает действия, которые применяются кнопкой.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
+import { isImageFile } from '../files.js';
 import { Git } from '../git.js';
 import type { Kernel } from '../kernel.js';
 
@@ -9,6 +11,7 @@ import { availableActions, replansLeft } from '../route.js';
 import { isGate, STAGE_TITLES } from '../stage-info.js';
 import type { CommandAction, ManagerAction, ManagerMessage, RunFile } from '../types.js';
 import { service } from './agents.js';
+import { attachmentsDir, imageDataUrl, writeFiles } from './attachments.js';
 import { control } from './control.js';
 import { relatedBlock, relatedRepos } from './projects.js';
 import { taskText } from './prompting.js';
@@ -46,10 +49,21 @@ function publish(k: Kernel, id: string, messages: ManagerMessage[]) {
 }
 
 /** Вопрос или просьба человека: менеджер отвечает по фактам прогона и, если нужно, предлагает действие. */
-export async function askManager(k: Kernel, id: string, text: string): Promise<ManagerMessage[]> {
+/** Картинки чата менеджера — среди вложений прогона: удаляются вместе с ним. */
+const imagesDir = (k: Kernel, id: string) => path.join(attachmentsDir(k, id), 'manager');
+
+export async function askManager(
+  k: Kernel,
+  id: string,
+  text: string,
+  files: { name: string; data: Uint8Array }[] = [],
+): Promise<ManagerMessage[]> {
   const run = k.mustLoad(id);
-  if (!text.trim()) throw new Error('Пустое сообщение');
+  const pictures = files.filter((f) => isImageFile(f.name));
+  if (pictures.length < files.length) throw new Error('Менеджеру можно приложить только изображения');
+  if (!text.trim() && !pictures.length) throw new Error('Пустое сообщение');
   if (k.managerBusy.has(id)) throw new Error('Менеджер ещё отвечает на прошлое сообщение');
+  const images = writeFiles(imagesDir(k, id), pictures, (i) => `${Date.now().toString(36)}-${i}`);
   const msg = (role: ManagerMessage['role'], t: string, extra: Partial<ManagerMessage> = {}): ManagerMessage => ({
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
@@ -60,7 +74,7 @@ export async function askManager(k: Kernel, id: string, text: string): Promise<M
   const history = k.store.readChat(id);
   // Новое сообщение отменяет непринятые предложения: менеджер предложит заново, если нужно.
   for (const m of history) if (m.actionState === 'proposed') m.actionState = 'dismissed';
-  const messages = [...history, msg('user', text.trim())];
+  const messages = [...history, msg('user', text.trim(), images.length ? { images } : {})];
   k.managerBusy.add(id);
   publish(k, id, messages);
   try {
@@ -74,7 +88,7 @@ export async function askManager(k: Kernel, id: string, text: string): Promise<M
         .slice(-HISTORY)
         .map(
           (m) =>
-            `${m.role === 'user' ? 'Человек' : 'Менеджер'}: ${m.text}${m.action ? `\n(предложено: ${describe(m.action)} — ${m.actionState === 'applied' ? 'применено' : m.actionState === 'dismissed' ? 'отклонено' : 'ждёт'})` : ''}${m.result ? `\n(результат: код ${m.result.code ?? '—'}\n${tail(m.result.output, 1500)})` : ''}`,
+            `${m.role === 'user' ? 'Человек' : 'Менеджер'}: ${m.text || '(без текста)'}${m.images?.length ? `\n(приложены изображения: ${m.images.join(', ')})` : ''}${m.action ? `\n(предложено: ${describe(m.action)} — ${m.actionState === 'applied' ? 'применено' : m.actionState === 'dismissed' ? 'отклонено' : 'ждёт'})` : ''}${m.result ? `\n(результат: код ${m.result.code ?? '—'}\n${tail(m.result.output, 1500)})` : ''}`,
         )
         .join('\n\n'),
     });
@@ -87,8 +101,13 @@ export async function askManager(k: Kernel, id: string, text: string): Promise<M
       model: s.models.manager || undefined,
       agent: s.agents?.manager,
       cwd,
-      addDirs: [run.projectPath, ...relatedRepos(k, run.projectPath).map((r) => r.path)],
+      addDirs: [
+        run.projectPath,
+        ...relatedRepos(k, run.projectPath).map((r) => r.path),
+        ...(fs.existsSync(imagesDir(k, id)) ? [imagesDir(k, id)] : []),
+      ],
       tools: ['Read', 'Grep', 'Glob'],
+      images,
     });
     if (!res.ok) throw new Error(res.error ?? 'Менеджер не ответил');
     const parsed = parseReply(res.text);
@@ -107,6 +126,14 @@ export async function askManager(k: Kernel, id: string, text: string): Promise<M
   }
   publish(k, id, messages);
   return messages;
+}
+
+/** Картинка из чата менеджера: отдаём только файлы из его папки — путь приходит из окна. */
+export function getManagerImage(k: Kernel, id: string, file: string): string | null {
+  const dir = imagesDir(k, id);
+  const full = path.resolve(file);
+  if (path.dirname(full) !== dir || !fs.existsSync(full) || !isImageFile(full)) return null;
+  return imageDataUrl(full);
 }
 
 /** Человек принял или отклонил предложение менеджера. */

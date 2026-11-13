@@ -51,7 +51,8 @@ export interface CoreApi {
   /** Поставить Node.js в свою папку: адрес и контрольная сумма зашиты в ядре. */
   installNode(): Promise<NodeInstallResult>;
   testConnection(): Promise<ConnectionCheck[]>;
-  detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string }>;
+  /** repoRoot — папка лежит внутри другого репозитория (не его корень); тогда isRepo = false. */
+  detectProject(dir: string): Promise<ProjectCommands & { envFiles: string[]; isRepo: boolean; name: string; repoRoot?: string }>;
   isDriving(id: string): Promise<boolean>;
   listBranches(id: string): Promise<{ branches: string[]; current: string | null; suggested: string | null }>;
   getAttachment(id: string, index: number): Promise<string | null>;
@@ -83,7 +84,10 @@ export interface CoreApi {
   projectStats(dir: string): Promise<ProjectStats>;
   /** Чат менеджера прогона; thinking — ответ ещё готовится. */
   getManagerChat(id: string): Promise<{ messages: ManagerMessage[]; thinking: boolean }>;
-  askManager(id: string, text: string): Promise<ManagerMessage[]>;
+  /** images — скриншоты и макеты к вопросу; только изображения. */
+  askManager(id: string, text: string, images?: { name: string; data: Uint8Array }[]): Promise<ManagerMessage[]>;
+  /** Изображение из чата менеджера для показа в окне: data URL; null — файла нет или он не из этого чата. */
+  getManagerImage(id: string, file: string): Promise<string | null>;
   resolveManagerAction(id: string, messageId: string, apply: boolean): Promise<ManagerMessage[]>;
   /** Чаты: разговор с агентом вне конвейера. Ответ приходит событиями chat.updated. */
   listChats(): Promise<ChatSummary[]>;

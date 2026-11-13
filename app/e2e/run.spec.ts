@@ -89,8 +89,43 @@ test('менеджер прогона отвечает на вопрос', async
   await expect(l.page.getByText('Всё идёт по плану.').first()).toBeVisible({ timeout: 60_000 });
 });
 
+test('менеджеру можно приложить скриншот: превью в поле, картинка в сообщении', async () => {
+  await startRun(l.page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
+  await expect(accept(l.page)).toBeVisible({ timeout: 60_000 });
+  // Однопиксельный PNG.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await l.page.locator('.manager-compose input[type=file]').setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: png });
+  await expect(l.page.locator('.manager-images img')).toHaveCount(1);
+  await l.page.locator('.manager-compose textarea').fill('Что на скриншоте?');
+  await l.page.getByRole('button', { name: 'Отправить' }).click();
+  await expect(l.page.locator('.msg-user .msg-images img')).toHaveAttribute('src', /^data:image\/png/);
+  await expect(l.page.locator('.manager-images')).toHaveCount(0);
+  await expect(l.page.getByText('Всё идёт по плану.').first()).toBeVisible({ timeout: 60_000 });
+  const prompt = box.calls().find((c) => /Ты — менеджер прогона/.test(c.prompt))!.prompt;
+  expect(prompt).toMatch(/Изображения от человека[\s\S]*shot\.png/);
+});
+
 test('запуск: инструменты найдены, настройки открываются', async () => {
   await expect(l.page.getByTitle(/bin\/claude 2\.0\.0/)).toBeVisible();
   await l.page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await expect(l.page.getByRole('heading', { name: 'Настройки', level: 1 })).toBeVisible();
+});
+
+test('подпапка чужого репозитория: прогон не уходит в его корень, предлагается корень', async () => {
+  // Новый проект внутри уже подключённого: раньше задача молча запускалась в корне внешнего репозитория.
+  const sub = path.join(box.repo, 'packages/web');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, 'package.json'), '{"name":"web"}');
+  await l.app.evaluate(({ dialog }, dir) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [dir] })) as typeof dialog.showOpenDialog;
+  }, sub);
+  await l.page.getByRole('button', { name: /Выберите проект/ }).click();
+  await l.page.getByRole('menuitem', { name: /Новый проект/ }).click();
+  await expect(l.page.getByText(/Папка лежит внутри репозитория/)).toBeVisible();
+  await l.page.locator('#task').fill('Добавь страницу в packages/web');
+  await expect(l.page.getByRole('button', { name: 'Запустить прогон' })).toBeDisabled();
+  await l.page.getByRole('button', { name: 'возьмите корень репозитория' }).click();
+  await expect(l.page.getByText(/Папка лежит внутри репозитория/)).toHaveCount(0);
+  await expect(l.page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
+  await expect(l.page.getByRole('button', { name: 'Запустить прогон' })).toBeEnabled();
 });

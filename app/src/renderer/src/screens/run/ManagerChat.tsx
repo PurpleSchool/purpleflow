@@ -7,7 +7,19 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { ArrowUp, Check, PanelLeftClose, Pause, RotateCcw, SquareTerminal, StickyNote, Undo2, UserRoundCog, X } from 'lucide-react';
+import {
+  ArrowUp,
+  Check,
+  ImagePlus,
+  PanelLeftClose,
+  Pause,
+  RotateCcw,
+  SquareTerminal,
+  StickyNote,
+  Undo2,
+  UserRoundCog,
+  X,
+} from 'lucide-react';
 import type { ManagerAction, ManagerMessage, RunFile } from '@purpleflow/core';
 import { Markdown } from '../../components/Markdown';
 import { onCoreEvent } from '../../lib/store';
@@ -24,6 +36,14 @@ const ACTION: Record<ManagerAction['kind'], { title: string; icon: ReactNode; hi
 const SUGGEST = ['Как идут дела?', 'Что сейчас мешает?', 'Что уже сделано по плану?'];
 
 const LAYOUT_KEY = 'purpleflow.manager';
+const MAX_MB = 10;
+const isImage = (f: File) => /^image\/(png|jpe?g|gif|webp|bmp)$/.test(f.type);
+
+interface Picked {
+  id: string;
+  file: File;
+  url: string;
+}
 const DEFAULT_W = 300;
 const MIN_W = 240;
 const MAX_W = 640;
@@ -87,8 +107,24 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
   const [text, setText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [images, setImages] = useState<Picked[]>([]);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /** Скриншоты и макеты: вставка из буфера, перетаскивание или выбор файла. Не изображения менеджер не принимает. */
+  const addImages = (list: FileList | File[]) => {
+    const all = [...list];
+    const skipped = all.filter((f) => !isImage(f) || f.size > MAX_MB * 1024 * 1024);
+    setError(skipped.length ? `Пропущено — только изображения до ${MAX_MB} МБ: ${skipped.map((f) => f.name || 'файл').join(', ')}` : null);
+    const ok = all
+      .filter((f) => isImage(f) && f.size <= MAX_MB * 1024 * 1024)
+      .map((f, i) => ({ id: `${Date.now()}-${i}`, file: f, url: URL.createObjectURL(f) }));
+    setImages((prev) => [...prev, ...ok]);
+  };
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  useEffect(() => () => imagesRef.current.forEach((i) => URL.revokeObjectURL(i.url)), []);
 
   useEffect(() => {
     let alive = true;
@@ -126,14 +162,21 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
 
   const send = async (t = text) => {
     const q = t.trim();
-    if (!q || thinking) return;
+    const sent = images;
+    if ((!q && !sent.length) || thinking) return;
     setText('');
+    setImages([]);
     setError(null);
     setThinking(true);
     try {
-      setMessages(await bridge.core.askManager(runId, q));
+      const files = await Promise.all(
+        sent.map(async (i) => ({ name: i.file.name || 'screenshot.png', data: new Uint8Array(await i.file.arrayBuffer()) })),
+      );
+      setMessages(await bridge.core.askManager(runId, q, files));
+      sent.forEach((i) => URL.revokeObjectURL(i.url));
     } catch (e) {
       setText(q);
+      setImages(sent);
       setError(cleanErr(e));
     } finally {
       setThinking(false);
@@ -224,7 +267,14 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
         )}
         {messages.map((m) => (
           <div key={m.id} className={`msg msg-${m.role} ${m.error ? 'is-error' : ''}`}>
-            {m.role === 'user' ? <p>{m.text}</p> : <Markdown className="md msg-md" source={m.text} />}
+            {m.images?.length ? (
+              <div className="msg-images">
+                {m.images.map((f) => (
+                  <ManagerImage key={f} runId={runId} file={f} />
+                ))}
+              </div>
+            ) : null}
+            {m.role === 'user' ? m.text && <p>{m.text}</p> : <Markdown className="md msg-md" source={m.text} />}
             {m.result && m.result.output && <pre className="msg-output">{m.result.output}</pre>}
             {m.action && <ActionCard m={m} busy={busy} onResolve={resolve} />}
           </div>
@@ -245,13 +295,64 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
           e.preventDefault();
           void send();
         }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files.length) addImages(e.dataTransfer.files);
+        }}
       >
+        {images.length > 0 && (
+          <div className="manager-images">
+            {images.map((i) => (
+              <span key={i.id} className="manager-thumb">
+                <img src={i.url} alt={i.file.name || 'скриншот'} />
+                <button
+                  type="button"
+                  aria-label="Убрать изображение"
+                  onClick={() => {
+                    URL.revokeObjectURL(i.url);
+                    setImages((x) => x.filter((y) => y.id !== i.id));
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="manager-attach"
+          title="Приложить скриншот или макет (можно вставить из буфера или перетащить)"
+          aria-label="Приложить изображение"
+          onClick={() => fileInput.current?.click()}
+        >
+          <ImagePlus size={15} />
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp,image/bmp"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files) addImages(e.target.files);
+            e.target.value = '';
+          }}
+        />
         <textarea
           ref={input}
           rows={1}
           value={text}
           placeholder={run.status === 'finished' || run.status === 'cancelled' ? 'Спросить о прогоне' : 'Спросить или поправить…'}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            const pasted = [...e.clipboardData.files];
+            if (pasted.length) {
+              e.preventDefault();
+              addImages(pasted);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -259,11 +360,31 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
             }
           }}
         />
-        <button type="submit" className="manager-send" disabled={!text.trim() || thinking} aria-label="Отправить">
+        <button type="submit" className="manager-send" disabled={(!text.trim() && !images.length) || thinking} aria-label="Отправить">
           <ArrowUp size={15} />
         </button>
       </form>
     </aside>
+  );
+}
+
+/** Картинка из переписки: грузится из ядра, по клику открывается в системном просмотрщике. */
+function ManagerImage({ runId, file }: { runId: string; file: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void bridge.core
+      .getManagerImage(runId, file)
+      .then((u) => alive && setSrc(u))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [runId, file]);
+  return (
+    <button type="button" className="manager-thumb is-sent" title="Открыть" onClick={() => void bridge.openPath(file)}>
+      {src ? <img src={src} alt="" /> : <span className="manager-thumb-gone">нет файла</span>}
+    </button>
   );
 }
 
