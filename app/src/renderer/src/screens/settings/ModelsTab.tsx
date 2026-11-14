@@ -39,9 +39,9 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
         <div>
           <h2>Агенты и модели по ролям</h2>
           <p>
-            Каждую роль может выполнять claude или codex. Имя модели передаётся выбранному CLI как есть, пусто — его модель по умолчанию.
-            Служебные вызовы (сводка, уроки) — на claude, а если его нет — на codex. Новые настройки действуют на прогоны, запущенные после
-            сохранения.
+            Каждую роль может выполнять claude, codex или opencode. Имя модели передаётся выбранному CLI как есть, пусто — его модель по
+            умолчанию. Служебные вызовы (сводка, уроки) — на первом доступном агенте: claude, codex, opencode. Новые настройки действуют на
+            прогоны, запущенные после сохранения.
           </p>
         </div>
         <Button tone="primary" icon={<Wand2 size={15} />} onClick={() => setQuick(true)}>
@@ -50,7 +50,11 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
       </header>
       {quick && (
         <QuickSetup
-          installed={{ claude: claudeFound, codex: Boolean(tools?.codex.path && !tools.codex.error) }}
+          installed={{
+            claude: claudeFound,
+            codex: Boolean(tools?.codex.path && !tools.codex.error),
+            opencode: Boolean(tools?.opencode.path && !tools.opencode.error),
+          }}
           initialMain={agents.executor}
           onClose={() => setQuick(false)}
           onApply={async (v) => {
@@ -114,7 +118,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           </div>
           <p>
             Отвечает в чате прогона, как идут дела, и предлагает поправить ход работы. Хватит быстрой модели.
-            {agents.manager ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Пусто — модель первой роли на том же
+            {agents.manager ? '' : ' Пока не выбран — первый доступный из claude, codex, opencode.'} Пусто — модель первой роли на том же
             агенте.
           </p>
           <ModelInput
@@ -133,7 +137,7 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           </div>
           <p>
             Находит команды проекта и собирает профиль — стек, структуру, соглашения. Только читает код.
-            {agents.scan ? '' : ' Пока не выбран — claude, если он установлен, иначе codex.'} Если агент не вошёл в аккаунт или упал —
+            {agents.scan ? '' : ' Пока не выбран — первый доступный из claude, codex, opencode.'} Если агент не вошёл в аккаунт или упал —
             сканирование повторит другой. Пусто — модель первой роли на том же агенте.
           </p>
           <ModelInput
@@ -154,12 +158,16 @@ export function ModelsTab({ draft }: { draft: SettingsDraft }) {
           onClick={() => void saveSettings({ userConfig: !s.userConfig })}
         >
           <i />
-          <span>Мои настройки агентов</span>
+          <span>Мои настройки Claude и Codex</span>
         </button>
         <p>
           {s.userConfig
             ? 'Агенты работают с вашими настройками из ~/.claude и ~/.codex: MCP-серверы, скиллы, плагины, CLAUDE.md — как в обычном claude и codex. Хуки claude в прогонах выключены. Файлы настроек PurpleFlow не меняет.'
             : 'Агенты запускаются изолированно: только настройки самого проекта, без ваших MCP-серверов, скиллов, плагинов и хуков. Прогоны повторяемее, но, например, задачу из трекера через MCP агент не прочитает.'}
+        </p>
+        <p>
+          OpenCode V2 всегда использует свои настройки, провайдеры и авторизацию. Модель: provider/model#variant; пусто — модель OpenCode по
+          умолчанию. Общий AI-прокси PurpleFlow на него не влияет.
         </p>
       </div>
       <div className="grid-2 narrow">

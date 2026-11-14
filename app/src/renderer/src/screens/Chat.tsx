@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUp, Clock, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, X } from 'lucide-react';
 import type { AgentKind, ChatFile, ChatMessage, ProjectListItem } from '@purpleflow/core';
+import { AGENT_KINDS } from '@purpleflow/core';
 import { AssistantMessage } from './ChatAnswer';
 import { useMentions } from './ChatMentions';
 import { Button } from '../components/ui';
@@ -30,7 +31,6 @@ interface Picked {
 
 /** Чат с агентом вне конвейера: вопросы по проекту и небольшие правки без плана и ревью. */
 export function ChatScreen({ chatId, initialProject }: { chatId?: string; initialProject?: string }) {
-  const modelOptions = useModelOptions();
   const { state, go } = useStore();
   const settings = state.settings;
   const [chat, setChat] = useState<ChatFile | null>(null);
@@ -44,6 +44,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
     edits: true,
   }));
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const modelOptions = useModelOptions(chat?.projectPath ?? draft.projectPath);
   const [text, setText] = useState('');
   const [files, setFiles] = useState<Picked[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -477,7 +478,7 @@ export function ChatScreen({ chatId, initialProject }: { chatId?: string; initia
                   </button>
                 </div>
                 <div className="segmented chat-agent" role="radiogroup" aria-label="Агент">
-                  {(['claude', 'codex'] as AgentKind[]).map((a) => (
+                  {AGENT_KINDS.map((a) => (
                     <button
                       key={a}
                       type="button"

@@ -7,7 +7,7 @@ import { MODES } from '../lib/stages';
 import { toolNeeded } from '../lib/tools';
 import { bridge } from '../lib/api';
 
-const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
+const TOOLS: ToolName[] = ['git', 'claude', 'codex', 'opencode', 'openspec'];
 
 const STATUS_WORD: Record<RunSummary['status'], string> = {
   queued: 'в очереди',

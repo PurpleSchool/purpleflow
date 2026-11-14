@@ -7,6 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { runClaude } from '../src/agents/claude.js';
 import { runCodex } from '../src/agents/codex.js';
+import { runOpenCode } from '../src/agents/opencode.js';
+import { AGENT_KINDS } from '../src/types.js';
 import { detectTool, loadLoginShellEnv } from '../src/env.js';
 
 const live = process.argv.includes('--live');
@@ -23,7 +25,7 @@ const report = (name: string, ok: boolean, detail: string) => {
   if (!ok) failed = true;
 };
 
-for (const name of ['claude', 'codex'] as const) {
+for (const name of AGENT_KINDS) {
   if (!wanted(name)) continue;
   const t = await detectTool(name, env);
   report(`${name} --version`, Boolean(t.version), t.version ?? t.error ?? 'нет версии');
@@ -60,6 +62,11 @@ if (live) {
     const bin = (await detectTool('codex', env)).path;
     const r = bin ? await runCodex({ ...common, bin, sandbox: 'read-only' }) : null;
     report('codex: запрос и разбор JSONL', Boolean(r?.ok && r.text.trim()), r?.error ?? `«${r?.text.trim()}»`);
+  }
+  if (wanted('opencode')) {
+    const bin = (await detectTool('opencode', env)).path;
+    const r = bin ? await runOpenCode({ ...common, bin, readOnly: true }) : null;
+    report('opencode: запрос и разбор JSONL', Boolean(r?.ok && r.text.trim()), r?.error ?? `«${r?.text.trim()}»`);
   }
   fs.rmSync(cwd, { recursive: true, force: true });
 }

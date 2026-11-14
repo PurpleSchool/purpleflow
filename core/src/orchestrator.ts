@@ -11,6 +11,7 @@ import type { CoreOptions, Listener } from './runtime.js';
 import { getAttachment } from './services/attachments.js';
 import * as chat from './services/chat.js';
 import { testConnection } from './services/connection.js';
+import { openCodeModels } from './services/models.js';
 import { control } from './services/control.js';
 import { cleanStorage, getStorage } from './services/disk.js';
 import { askManager, getManagerChat, getManagerImage, resolveManagerAction } from './services/manager.js';
@@ -200,6 +201,10 @@ export class Orchestrator implements CoreApi {
 
   detectTools() {
     return detectTools(this.kernel.opts.env, this.kernel.opts.getSettings().toolPaths);
+  }
+
+  openCodeModels(directory?: string) {
+    return openCodeModels(this.kernel, directory);
   }
   installTool(name: ToolName) {
     const { env, getSettings } = this.kernel.opts;

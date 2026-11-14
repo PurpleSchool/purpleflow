@@ -25,6 +25,12 @@ function gitHint(): string {
 const tail = (s: string) => s.trim().split('\n').slice(-3).join('\n').slice(-400);
 
 export async function installTool(name: ToolName, env: NodeJS.ProcessEnv, manual?: string): Promise<ToolInstallResult> {
+  if (name === 'opencode')
+    return {
+      name,
+      ok: false,
+      error: 'Установите OpenCode V2 по инструкции https://opencode.ai/v2/docs/cli и укажите путь к opencode в настройках.',
+    };
   const pkg = NPM_PACKAGES[name];
   if (!pkg) return { name, ok: false, error: name === 'git' ? gitHint() : `Неизвестный инструмент: ${name}` };
   // Установка не исправит чужой путь: окно продолжит запускать файл, указанный вручную.

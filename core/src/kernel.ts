@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import path from 'node:path';
 import { runClaude } from './agents/claude.js';
 import { runCodex } from './agents/codex.js';
+import { runOpenCode } from './agents/opencode.js';
 import { type AgentResult, addUsage, c, crlf, emptyUsage } from './agents/common.js';
 import { detectTools } from './env.js';
 import { run as runProc, setPidTracker } from './proc.js';
@@ -199,7 +200,13 @@ export class Kernel {
     if (missing.length) {
       throw new Error(`Не найдены: ${missing.join(', ')}. Укажите пути в настройках.`);
     }
-    return { git: found.git.path!, claude: found.claude.path!, codex: found.codex.path!, openspec: found.openspec.path! };
+    return {
+      git: found.git.path!,
+      claude: found.claude.path!,
+      codex: found.codex.path!,
+      opencode: found.opencode.path!,
+      openspec: found.openspec.path!,
+    };
   }
 
   async hasTool(name: keyof Tools): Promise<boolean> {
@@ -214,6 +221,10 @@ export class Kernel {
 
   codex(o: Parameters<typeof runCodex>[0]) {
     return (this.opts.runners?.codex ?? runCodex)(o);
+  }
+
+  opencode(o: Parameters<typeof runOpenCode>[0]) {
+    return (this.opts.runners?.opencode ?? runOpenCode)(o);
   }
 
   shell(run: RunFile, command: string, timeoutMin: number) {

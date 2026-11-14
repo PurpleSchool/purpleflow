@@ -130,6 +130,7 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
   getChangedFiles: true,
   getChangeDocs: true,
   detectTools: true,
+  openCodeModels: true,
   installTool: true,
   detectNode: true,
   installNode: true,

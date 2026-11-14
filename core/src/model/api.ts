@@ -45,6 +45,7 @@ export interface CoreApi {
   getChangedFiles(id: string): Promise<string[]>;
   getChangeDocs(id: string): Promise<ChangeDocs>;
   detectTools(): Promise<Record<ToolName, ToolInfo>>;
+  openCodeModels(directory?: string): Promise<string[]>;
   /** Поставить недостающий инструмент; окно передаёт только имя, команда зашита в ядре. */
   installTool(name: ToolName): Promise<ToolInstallResult>;
   detectNode(): Promise<NodeInfo>;

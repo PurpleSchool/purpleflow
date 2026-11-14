@@ -8,6 +8,7 @@ export { checkCommand, detectProjectCommands, findEnvFiles } from './detect.js';
 export { killAll, liveCount } from './proc.js';
 export { claudeArgs } from './agents/claude.js';
 export { codexArgs } from './agents/codex.js';
+export { openCodeArgs } from './agents/opencode.js';
 export { Git } from './git.js';
 export { stagesOf } from './modes.js';
 export * from './route.js';

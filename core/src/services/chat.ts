@@ -222,7 +222,11 @@ export async function sendChat(k: Kernel, id: string, text: string, files: { nam
 export async function compactChat(k: Kernel, id: string): Promise<void> {
   const chat = must(k, id);
   if (chat.agent !== 'claude' || chat.session?.agent !== 'claude')
-    throw new Error(chat.agent === 'claude' ? 'Сжимать пока нечего — сессия начнётся с первым сообщением' : 'codex сжимает контекст сам');
+    throw new Error(
+      chat.agent === 'claude'
+        ? 'Сжимать пока нечего — сессия начнётся с первым сообщением'
+        : `${chat.agent} управляет сжатием контекста самостоятельно`,
+    );
   if (k.chatBusy.has(id)) throw new Error('Агент отвечает — сожмите контекст после ответа');
   await drive(k, chat, true);
 }
@@ -343,7 +347,19 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
       userConfig: s.userConfig,
       addDirs: attachments.length ? [path.dirname(attachments[0])] : undefined,
     };
-    if (agent === 'codex') {
+    if (agent === 'opencode') {
+      res = await k.opencode({
+        ...common,
+        prompt,
+        systemPrompt: session ? undefined : sys,
+        images,
+        readOnly: !chat.edits,
+        resume: session,
+        onSession: (sid) => {
+          chat.session = { agent, id: sid };
+        },
+      });
+    } else if (agent === 'codex') {
       let thread = session;
       res = await k.codex({
         ...common,

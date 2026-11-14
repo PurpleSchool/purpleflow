@@ -233,7 +233,7 @@ test('testConnection: отвечают найденные агенты, у ка�
   t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
   for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   const settings = {
-    toolPaths: { claude: path.join(bin, 'claude'), codex: path.join(bin, 'codex') },
+    toolPaths: { claude: process.execPath, codex: process.execPath, opencode: process.execPath },
     proxy: { baseUrl: '', apiKey: '' },
     models: { planner: 'opus', executor: '', reviewer: 'gpt' },
     agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
@@ -246,12 +246,14 @@ test('testConnection: отвечают найденные агенты, у ка�
     runners: {
       claude: (async () => ({ ok: true, text: 'готово\n', usage: emptyUsage() })) as never,
       codex: (async () => ({ ok: false, text: '', error: 'нет ключа', usage: emptyUsage() })) as never,
+      opencode: async () => ({ ok: true, text: 'готово OpenCode', usage: emptyUsage() }),
     },
   });
   const checks = await testConnection(k);
   const of = (a: string) => checks.find((c) => c.agent === a)!;
   assert.deepEqual([of('claude').ok, of('claude').model, of('claude').reply], [true, 'opus', 'готово']);
   assert.deepEqual([of('codex').ok, of('codex').model, of('codex').error], [false, 'gpt', 'нет ключа']);
+  assert.deepEqual([of('opencode').ok, of('opencode').model, of('opencode').reply], [true, 'по умолчанию', 'готово OpenCode']);
 
   const none = new Kernel({
     dataDir: bin,
@@ -361,7 +363,7 @@ test('сканирование: на выбранном агенте с его �
   for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'detect-commands.md'), 'найди команды');
   const settings = {
-    toolPaths: { claude: path.join(bin, 'claude'), codex: path.join(bin, 'codex') },
+    toolPaths: { claude: process.execPath, codex: process.execPath, opencode: path.join(bin, 'missing-opencode') },
     proxy: { baseUrl: '', apiKey: '' },
     models: { planner: 'opus', executor: 'sonnet', reviewer: 'gpt', scan: 'gpt-mini' },
     agents: { planner: 'claude', executor: 'claude', reviewer: 'codex', scan: 'codex' },

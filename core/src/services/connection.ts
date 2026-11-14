@@ -4,27 +4,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { detectTools } from '../env.js';
 import type { Kernel } from '../kernel.js';
-import type { ConnectionCheck, Role } from '../types.js';
-import { DEFAULT_AGENTS } from '../types.js';
+import type { AgentKind, ConnectionCheck, Role } from '../types.js';
+import { AGENT_KINDS, DEFAULT_AGENTS } from '../types.js';
 
 /** Тестовый запрос каждым агентом с текущими настройками прокси и моделей. */
 export async function testConnection(k: Kernel): Promise<ConnectionCheck[]> {
   const s = k.opts.getSettings();
   const found = await detectTools(k.opts.env, s.toolPaths);
-  const present = (['claude', 'codex'] as const).filter((a) => found[a].path && !found[a].error);
-  if (!present.length) throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
-  const tools = { claude: found.claude.path!, codex: found.codex.path! };
+  const present = AGENT_KINDS.filter((a) => found[a].path && !found[a].error);
+  if (!present.length) throw new Error('Не найдены claude, codex или opencode. Укажите пути в настройках.');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-check-'));
   const proxy = s.proxy.baseUrl ? s.proxy : undefined;
   const prompt = 'Это проверка подключения. Ответь ровно одним словом: готово';
-  const one = async (agent: 'claude' | 'codex'): Promise<ConnectionCheck> => {
+  const one = async (agent: AgentKind): Promise<ConnectionCheck> => {
     const t0 = Date.now();
     // Модель — из первой роли, которую выполняет этот агент.
     const agents = { ...DEFAULT_AGENTS, ...s.agents };
     const role = (['planner', 'executor', 'reviewer'] as Role[]).find((x) => agents[x] === agent);
     const model = role ? s.models[role] : '';
     const base = {
-      bin: tools[agent],
+      bin: found[agent].path!,
       cwd: dir,
       env: k.opts.env,
       prompt,
@@ -35,7 +34,12 @@ export async function testConnection(k: Kernel): Promise<ConnectionCheck[]> {
       proxy,
       claudeAuth: s.claudeAuth,
     };
-    const r = agent === 'claude' ? await k.claude(base) : await k.codex({ ...base, sandbox: 'read-only' });
+    const r =
+      agent === 'opencode'
+        ? await k.opencode({ ...base, readOnly: true })
+        : agent === 'claude'
+          ? await k.claude(base)
+          : await k.codex({ ...base, sandbox: 'read-only' });
     return {
       agent,
       ok: r.ok,
@@ -48,6 +52,6 @@ export async function testConnection(k: Kernel): Promise<ConnectionCheck[]> {
   try {
     return await Promise.all(present.map(one));
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

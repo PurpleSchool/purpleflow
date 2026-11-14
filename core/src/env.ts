@@ -86,6 +86,7 @@ function extraDirs(): string[] {
       path.join(appData, 'npm'),
       path.join(h, '.local', 'bin'),
       path.join(h, '.bun', 'bin'),
+      path.join(h, '.opencode', 'bin'),
       path.join(local, 'Programs', 'Git', 'cmd'),
       'C:\\Program Files\\Git\\cmd',
       'C:\\Program Files\\nodejs',
@@ -95,6 +96,7 @@ function extraDirs(): string[] {
     nodeBinDir(),
     path.join(h, '.local', 'bin'),
     path.join(h, '.bun', 'bin'),
+    path.join(h, '.opencode', 'bin'),
     path.join(h, '.npm-global', 'bin'),
     path.join(h, '.volta', 'bin'),
     path.join(h, '.claude', 'local'),
@@ -154,6 +156,7 @@ const VERSION_ARGS: Record<ToolName, string[]> = {
   git: ['--version'],
   claude: ['--version'],
   codex: ['--version'],
+  opencode: ['--version'],
   openspec: ['--version'],
 };
 
@@ -175,7 +178,7 @@ export async function detectTools(
   env: NodeJS.ProcessEnv,
   manual: Partial<Record<ToolName, string>> = {},
 ): Promise<Record<ToolName, ToolInfo>> {
-  const names: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
+  const names: ToolName[] = ['git', 'claude', 'codex', 'opencode', 'openspec'];
   const list = await Promise.all(names.map((n) => detectTool(n, env, manual[n])));
   return Object.fromEntries(list.map((t) => [t.name, t])) as Record<ToolName, ToolInfo>;
 }

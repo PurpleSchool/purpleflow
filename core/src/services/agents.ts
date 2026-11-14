@@ -6,7 +6,7 @@ import { addUsage, type AgentResult } from '../agents/common.js';
 import { prependPath } from '../env.js';
 import type { Kernel } from '../kernel.js';
 import type { AgentKind, Role, RunFile } from '../types.js';
-import { DEFAULT_AGENTS } from '../types.js';
+import { AGENT_KINDS, DEFAULT_AGENTS } from '../types.js';
 import { knowledgeBlock, relatedRepos } from './projects.js';
 
 type ServiceOptions = {
@@ -43,15 +43,16 @@ export async function service(k: Kernel, o: ServiceOptions): Promise<AgentResult
   const agent = o.agent && (await k.hasTool(o.agent)) ? o.agent : await serviceAgent(k);
   // Имя модели одного CLI другому не подходит: своя модель — только тому агенту, для которого её выбрали.
   const ownModel = !o.agent || o.agent === agent ? o.model : undefined;
-  const res = await serviceOn(k, agent, ownModel, o);
-  if (res.ok || res.stopped || res.timedOut || !o.fallback) return res;
-  const other: AgentKind = agent === 'claude' ? 'codex' : 'claude';
-  if (!(await k.hasTool(other))) return res;
-  o.onOutput?.(`\n${agent} не справился (${res.error ?? 'без ответа'}) — пробую ${other}…\n`);
-  const second = await serviceOn(k, other, undefined, o);
-  const usage = addUsage(res.usage, second.usage);
-  if (second.ok) return { ...second, usage };
-  return { ...second, usage, error: `${res.error ?? `${agent}: без ответа`}; ${second.error ?? `${other}: без ответа`}` };
+  let res = await serviceOn(k, agent, ownModel, o);
+  for (const other of AGENT_KINDS.filter((a) => a !== agent)) {
+    if (res.ok || res.stopped || res.timedOut || !o.fallback) break;
+    if (!(await k.hasTool(other))) continue;
+    o.onOutput?.(`\n${res.error ?? `${agent}: без ответа`} — пробую ${other}…\n`);
+    const next = await serviceOn(k, other, undefined, o);
+    const usage = addUsage(res.usage, next.usage);
+    res = next.ok ? { ...next, usage } : { ...next, usage, error: `${res.error ?? 'без ответа'}; ${next.error ?? `${other}: без ответа`}` };
+  }
+  return res;
 }
 
 async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined, o: ServiceOptions): Promise<AgentResult> {
@@ -70,6 +71,15 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
     userConfig: o.userConfig,
   };
   const images = o.images?.filter((f) => fs.existsSync(f)) ?? [];
+  if (agent === 'opencode') {
+    return k.opencode({
+      ...common,
+      images,
+      addDirs: o.addDirs,
+      readOnly: !o.fullAccess,
+      model: model || agentModel(k, agent, s.agents, s.models) || undefined,
+    });
+  }
   if (agent === 'codex') {
     // Служебное на codex — в песочнице только для чтения: соседние каталоги он читает и так, список инструментов не нужен.
     return k.codex({
@@ -94,11 +104,10 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
   });
 }
 
-/** Кто выполняет служебные вызовы (сводка, профиль, уроки, менеджер): claude, а если его нет — codex. */
+/** Служебные вызовы выполняет первый доступный CLI из AGENT_KINDS. */
 export async function serviceAgent(k: Kernel): Promise<AgentKind> {
-  if (await k.hasTool('claude')) return 'claude';
-  if (await k.hasTool('codex')) return 'codex';
-  throw new Error('Не найдены ни claude, ни codex. Укажите пути в настройках.');
+  for (const agent of AGENT_KINDS) if (await k.hasTool(agent)) return agent;
+  throw new Error('Не найдены claude, codex или opencode. Укажите пути в настройках.');
 }
 
 /** Модель первой роли, которую выполняет этот агент. */
@@ -151,6 +160,18 @@ export async function runRole(
   const model = run.models[role] || undefined;
   // Знания о проекте (профиль и уроки) — всем ролям; в продолжении сессии они уже в контексте.
   const systemPrompt = o.resume ? o.systemPrompt : `${o.systemPrompt ?? ''}${knowledgeBlock(k, run)}` || undefined;
+  if (agent === 'opencode') {
+    return k.opencode({
+      ...base,
+      prompt: o.prompt,
+      systemPrompt,
+      model,
+      readOnly: o.readOnly,
+      images: o.images,
+      outputSchema: o.outputSchema,
+      resume: o.resume,
+    });
+  }
   if (agent === 'codex') {
     return k.codex({
       ...base,

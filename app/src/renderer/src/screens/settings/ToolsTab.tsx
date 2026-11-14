@@ -24,7 +24,12 @@ export function ToolsTab({ draft, setup }: { draft: SettingsDraft; setup: ToolSe
           <p>
             Ищем в PATH вашего login-шелла. Если что-то не найдено, укажите путь вручную. «Проверить подключение» отправит агентам короткий
             запрос —{' '}
-            {proxyOn ? (s.accountEnabled ? 'через AI-прокси PurpleSchool' : 'через AI-прокси') : 'по вашим подпискам claude и codex'}.
+            {proxyOn
+              ? s.accountEnabled
+                ? 'claude и codex через AI-прокси PurpleSchool'
+                : 'claude и codex через AI-прокси'
+              : 'через ваши настройки провайдеров'}
+            . OpenCode всегда использует собственные провайдеры и авторизацию.
           </p>
         </div>
         <div className="panel-actions">
@@ -60,7 +65,7 @@ export function ToolsTab({ draft, setup }: { draft: SettingsDraft; setup: ToolSe
             </div>
           </div>
         )}
-        {(['git', 'claude', 'codex', 'openspec'] as ToolName[]).map((t) => {
+        {(['git', 'claude', 'codex', 'opencode', 'openspec'] as ToolName[]).map((t) => {
           const info = tools?.[t];
           const ok = info?.path && !info.error;
           const needed = toolNeeded(t, agents);

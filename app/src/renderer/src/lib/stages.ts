@@ -1,4 +1,4 @@
-import type { RunFile, StageAttempt, StageId } from '@purpleflow/core';
+import type { AgentKind, RunFile, StageAttempt, StageId } from '@purpleflow/core';
 import { currentRow, limitRow, stagesOf } from '@purpleflow/route';
 
 // Маршрут — общий с ядром (core/src/route.ts).
@@ -7,7 +7,7 @@ export { acceptTarget, limitRow, plannedRoute } from '@purpleflow/route';
 export interface StageDef {
   id: StageId;
   title: string;
-  actor: 'claude' | 'codex' | 'человек' | 'оркестратор';
+  actor: AgentKind | 'человек' | 'оркестратор';
   role?: 'planner' | 'executor' | 'reviewer';
   gate?: boolean;
   hint: string;

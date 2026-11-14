@@ -288,6 +288,7 @@ export function ComboInput({
   const current = options.find((o) => o.value === value.trim());
 
   const pick = (o: DropOption<string>) => {
+    if (o.disabled) return;
     setOpen(false);
     setTyped(false);
     onChange(o.value);

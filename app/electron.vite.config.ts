@@ -29,7 +29,13 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
-    resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src'), '@purpleflow/route': resolve(__dirname, '../core/src/route.ts') } },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src/renderer/src'),
+        '@purpleflow/core': resolve(__dirname, '../core/src/types.ts'),
+        '@purpleflow/route': resolve(__dirname, '../core/src/route.ts'),
+      },
+    },
     plugins: [react()],
     worker: { format: 'es' },
   },

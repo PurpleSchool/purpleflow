@@ -6,7 +6,7 @@ import { useStore } from '../../lib/store';
 import { toolNeeded } from '../../lib/tools';
 import type { SettingsDraft } from './useSettingsDraft';
 
-export const TOOL_NAMES: ToolName[] = ['git', 'claude', 'codex', 'openspec'];
+export const TOOL_NAMES: ToolName[] = ['git', 'claude', 'codex', 'opencode', 'openspec'];
 
 export type SetupStep = ToolName | 'node';
 
@@ -26,8 +26,8 @@ export function useToolSetup(draft: SettingsDraft) {
   const tools = state.tools;
   const missing = tools ? TOOL_NAMES.filter((t) => toolNeeded(t, draft.agents) && (!tools[t].path || tools[t].error)) : [];
 
-  // Git ставится средствами ОС, остальным нужен npm.
-  const needsNode = missing.some((t) => t !== 'git');
+  // Git и OpenCode ставятся отдельно, остальным нужен npm.
+  const needsNode = missing.some((t) => t !== 'git' && t !== 'opencode');
 
   const run = async () => {
     setRunning(true);
@@ -38,7 +38,7 @@ export function useToolSetup(draft: SettingsDraft) {
       const found = await bridge.core.detectTools();
       const failed: Partial<Record<SetupStep, string>> = {};
       const need = TOOL_NAMES.filter((t) => toolNeeded(t, draft.agents) && (!found[t].path || found[t].error));
-      if (need.some((t) => t !== 'git') && !(await bridge.core.detectNode()).path) {
+      if (need.some((t) => t !== 'git' && t !== 'opencode') && !(await bridge.core.detectNode()).path) {
         setCurrent('node');
         const r = await bridge.core.installNode();
         if (r.ok) setNode(r.info ?? null);
@@ -46,7 +46,7 @@ export function useToolSetup(draft: SettingsDraft) {
       }
       for (const t of need) {
         // Без Node.js npm-пакеты не поставить: причина уже показана на его строке.
-        if (failed.node && t !== 'git') continue;
+        if (failed.node && t !== 'git' && t !== 'opencode') continue;
         setCurrent(t);
         const r = await bridge.core.installTool(t);
         if (!r.ok) failed[t] = r.error;

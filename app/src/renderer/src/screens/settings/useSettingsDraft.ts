@@ -1,5 +1,6 @@
 // Черновик настроек, общий для вкладок «Инструменты» и «Модели»: правки копятся здесь и уходят одним «Сохранить».
 import type { AgentKind, ConnectionCheck, Models, Role, ToolName } from '@purpleflow/core';
+import { AGENT_KINDS } from '@purpleflow/core';
 import { useEffect, useRef, useState } from 'react';
 import { bridge } from '../../lib/api';
 import { useStore } from '../../lib/store';
@@ -85,8 +86,9 @@ export function useSettingsDraft() {
   const tools = state.tools;
   const claudeFound = Boolean(tools?.claude.path && !tools.claude.error);
   const visualAgent = agents.visual ?? 'claude';
-  const managerAgent = agents.manager ?? (tools && !claudeFound ? 'codex' : 'claude');
-  const scanAgent = agents.scan ?? (tools && !claudeFound ? 'codex' : 'claude');
+  const automaticAgent = AGENT_KINDS.find((a) => tools?.[a].path && !tools[a].error) ?? 'claude';
+  const managerAgent = agents.manager ?? automaticAgent;
+  const scanAgent = agents.scan ?? automaticAgent;
   const pickAgent = (id: Role | 'visual' | 'manager' | 'scan', a: AgentKind) => {
     const current = id === 'visual' ? visualAgent : id === 'manager' ? managerAgent : id === 'scan' ? scanAgent : agents[id];
     // Менеджер и сканирование без явного выбора — «авто»: нажатие на текущий вариант закрепляет его.
@@ -98,7 +100,9 @@ export function useSettingsDraft() {
 
   const allFound =
     tools &&
-    (['git', 'claude', 'codex', 'openspec'] as ToolName[]).every((t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents));
+    (['git', 'claude', 'codex', 'opencode', 'openspec'] as ToolName[]).every(
+      (t) => (tools[t].path && !tools[t].error) || !toolNeeded(t, agents),
+    );
 
   return {
     models,

@@ -1,6 +1,6 @@
 // Настройки ядра, инструменты и роли агентов.
 
-export type ToolName = 'git' | 'claude' | 'codex' | 'openspec';
+export type ToolName = 'git' | 'claude' | 'codex' | 'opencode' | 'openspec';
 
 export interface ToolInfo {
   name: ToolName;
@@ -30,7 +30,8 @@ export interface NodeInstallResult {
 export type Role = 'planner' | 'executor' | 'reviewer';
 
 /** CLI-агент, который выполняет роль. */
-export type AgentKind = 'claude' | 'codex';
+export const AGENT_KINDS = ['claude', 'codex', 'opencode'] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
 
 /**
  * Модели ролей; visual — модель claude для визуальной проверки (пусто — как у исполнителя-claude),
@@ -78,7 +79,7 @@ export interface CoreSettings {
 }
 
 export interface ConnectionCheck {
-  agent: 'claude' | 'codex';
+  agent: AgentKind;
   ok: boolean;
   model: string;
   durationMs: number;

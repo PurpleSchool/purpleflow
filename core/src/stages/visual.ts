@@ -32,7 +32,7 @@ export async function stageVisual(k: Kernel, run: RunFile) {
   const tools = await k.tools([agent]);
   // Пусто — модель исполнителя (или другой роли), если она на том же агенте.
   const model =
-    run.models.visual || (agent === 'claude' ? claudeModel(k, run.agents, run.models) : agentModel(k, 'codex', run.agents, run.models));
+    run.models.visual || (agent === 'claude' ? claudeModel(k, run.agents, run.models) : agentModel(k, agent, run.agents, run.models));
   const attempt = k.begin(run, 'visual', model || agent);
   const dir = visualDir(k, run, attempt.attempt);
   fs.mkdirSync(dir, { recursive: true });
@@ -135,12 +135,14 @@ export async function stageVisual(k: Kernel, run: RunFile) {
         ? // pw пишет скриншоты и сессию вне рабочей копии, npx — в свой кэш, браузеру нужна сеть: в песочнице codex это не работает.
           // Код не меняет — это требование промпта, как и у claude.
           await k.codex({ ...base, sandbox: 'danger-full-access' })
-        : await k.claude({
-            ...base,
-            addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
-            // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
-            tools: ['Bash', 'Read', 'Glob', 'Grep'],
-          });
+        : agent === 'opencode'
+          ? await k.opencode({ ...base, addDirs: [dir, ...(base.addDirs ?? [])] })
+          : await k.claude({
+              ...base,
+              addDirs: [dir, ...(run.attachments?.length ? [path.dirname(run.attachments[0])] : [])],
+              // Только смотреть: браузер через Bash (pw), чтение кода — без правки файлов.
+              tools: ['Bash', 'Read', 'Glob', 'Grep'],
+            });
     k.afterAgent(run, attempt, res);
 
     const parsed = parseReview(res.text);

@@ -1,6 +1,7 @@
 // Первый проект: выбрать папку, просканировать нейросетью (команды и знания) и подключить — три шага до первой задачи.
 import { ArrowRight, BookText, Check, FolderGit2, FolderOpen, ScanSearch, TerminalSquare, TriangleAlert, Zap } from 'lucide-react';
 import type { AgentKind } from '@purpleflow/core';
+import { AGENT_KINDS } from '@purpleflow/core';
 import { useRef, useState, type ReactNode } from 'react';
 import { Mark } from '../components/Sidebar';
 import { Button } from '../components/ui';
@@ -15,8 +16,8 @@ type Job = 'idle' | 'busy' | 'done' | 'error';
 export function FirstProjectScreen() {
   const { state, go, saveSettings } = useStore();
   const found = (a: AgentKind) => Boolean(state.tools?.[a].path && !state.tools[a].error);
-  // Как в настройках: не выбран — claude, если он установлен, иначе codex. Второй агент подстрахует, если первый не настроен.
-  const scanAgent: AgentKind = state.settings?.agents.scan ?? (state.tools && !found('claude') ? 'codex' : 'claude');
+  // Как в настройках: первый установленный агент, остальные подстрахуют при сбое.
+  const scanAgent: AgentKind = state.settings?.agents.scan ?? AGENT_KINDS.find(found) ?? 'claude';
   const pickScanAgent = (a: AgentKind) => {
     if (a === scanAgent && state.settings?.agents.scan) return;
     // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.
@@ -188,7 +189,7 @@ export function FirstProjectScreen() {
               <Button tone={scanned ? 'ghost' : 'primary'} icon={<ScanSearch size={16} />} disabled={!repo} busy={scanning} onClick={scan}>
                 {scanning ? 'Сканирую…' : scanned ? 'Сканировать заново' : 'Сканировать проект'}
               </Button>
-              {found('claude') && found('codex') ? (
+              {AGENT_KINDS.filter(found).length > 1 ? (
                 <span className="fp-agent">
                   <span className="muted">Агент</span>
                   <AgentSwitch label="Сканирование проекта" value={scanAgent} onChange={pickScanAgent} />

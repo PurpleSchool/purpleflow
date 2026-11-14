@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Gauge, Leaf, Sparkles, X } from 'lucide-react';
 import type { AgentKind, Models, Role } from '@purpleflow/core';
+import { AGENT_KINDS } from '@purpleflow/core';
 import { Button } from './ui';
 
 export type Agents = Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
@@ -15,6 +16,8 @@ type Tier = 'low' | 'mid' | 'high' | 'max';
 const TIERS: Record<AgentKind, Record<Tier, string>> = {
   claude: { low: 'haiku', mid: 'sonnet', high: 'opus', max: 'claude-fable-5-2' },
   codex: { low: 'gpt-6-luna', mid: 'gpt-6.1-terra', high: 'gpt-6-sol', max: 'gpt-6-astra' },
+  // Провайдер и модель выбираются в OpenCode; универсальных уровней для них нет.
+  opencode: { low: '', mid: '', high: '', max: '' },
 };
 
 type Slot = Role | 'visual' | 'manager' | 'scan';
@@ -99,11 +102,7 @@ export function QuickSetup({
   onClose: () => void;
 }) {
   const [main, setMain] = useState<AgentKind>(
-    installed[initialMain] || !installed[initialMain === 'claude' ? 'codex' : 'claude']
-      ? initialMain
-      : initialMain === 'claude'
-        ? 'codex'
-        : 'claude',
+    installed[initialMain] ? initialMain : (AGENT_KINDS.find((a) => installed[a]) ?? initialMain),
   );
   const [preset, setPreset] = useState<PresetId>('optimal');
   const [busy, setBusy] = useState(false);
@@ -131,7 +130,7 @@ export function QuickSetup({
         <header className="qs-head">
           <div>
             <h2 id="qs-title">Быстрая настройка</h2>
-            <p>Выберите основного агента и уровень — роли и модели расставятся сами. Потом любую роль можно поправить вручную.</p>
+            <p>Выберите основного агента — роли и модели расставятся сами. Потом любую роль можно поправить вручную.</p>
           </div>
           <button className="qs-close" aria-label="Закрыть" onClick={onClose}>
             <X size={16} />
@@ -141,7 +140,7 @@ export function QuickSetup({
         <div className="qs-section">
           <span className="qs-label">Основной агент</span>
           <div className="segmented qs-agents" role="radiogroup" aria-label="Основной агент">
-            {(['claude', 'codex'] as AgentKind[]).map((a) => (
+            {AGENT_KINDS.map((a) => (
               <button key={a} role="radio" aria-checked={main === a} className={main === a ? 'is-on' : ''} onClick={() => setMain(a)}>
                 {a}
                 {!installed[a] && <em> · не найден</em>}
@@ -150,21 +149,23 @@ export function QuickSetup({
           </div>
         </div>
 
-        <div className="qs-presets" role="radiogroup" aria-label="Пресет">
-          {PRESETS.map((p) => (
-            <button
-              key={p.id}
-              role="radio"
-              aria-checked={preset === p.id}
-              className={`qs-preset ${preset === p.id ? 'is-on' : ''}`}
-              onClick={() => setPreset(p.id)}
-            >
-              <span className="qs-preset-icon">{p.icon}</span>
-              <strong>{p.title}</strong>
-              <span>{p.text}</span>
-            </button>
-          ))}
-        </div>
+        {main !== 'opencode' && (
+          <div className="qs-presets" role="radiogroup" aria-label="Пресет">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                role="radio"
+                aria-checked={preset === p.id}
+                className={`qs-preset ${preset === p.id ? 'is-on' : ''}`}
+                onClick={() => setPreset(p.id)}
+              >
+                <span className="qs-preset-icon">{p.icon}</span>
+                <strong>{p.title}</strong>
+                <span>{p.text}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="qs-plan">
           {(Object.keys(ROLE_TITLE) as Slot[]).map((r) => (
@@ -172,13 +173,19 @@ export function QuickSetup({
               <span>{ROLE_TITLE[r]}</span>
               <span className="grow" />
               <span className={`qs-agent qs-agent-${plan.agents[r] ?? main}`}>{plan.agents[r] ?? main}</span>
-              <code>{plan.models[r]}</code>
+              <code>{plan.models[r] || 'по умолчанию OpenCode'}</code>
             </div>
           ))}
           <p className="qs-note">
-            Все роли — на {main}
-            {main === 'claude' ? ', модели Anthropic' : ', модели OpenAI'}. Самые сильные модели — у планировщика и ревьюера: от плана и
-            проверки зависит качество. Ревьюер работает на другой модели, чем исполнитель: так он находит больше ошибок.
+            {main === 'opencode' ? (
+              'Все роли — на OpenCode с его моделью по умолчанию. Провайдеры и вход настраиваются в OpenCode. Отдельные модели в формате provider/model#variant можно задать по ролям после применения.'
+            ) : (
+              <>
+                Все роли — на {main}
+                {main === 'claude' ? ', модели Anthropic' : ', модели OpenAI'}. Самые сильные модели — у планировщика и ревьюера: от плана и
+                проверки зависит качество. Ревьюер работает на другой модели, чем исполнитель: так он находит больше ошибок.
+              </>
+            )}
           </p>
         </div>
 

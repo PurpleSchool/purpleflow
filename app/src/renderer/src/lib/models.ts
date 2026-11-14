@@ -7,6 +7,7 @@ import type { ProxyModels } from '../../../shared/models';
  * Остальные модели прокси подмешиваются из GET /public/ai-proxy/models (mergeModelOptions). Можно ввести и любое имя.
  */
 export const MODEL_OPTIONS: Record<AgentKind, DropOption<string>[]> = {
+  opencode: [],
   claude: [
     { value: 'claude-fable-5-2', label: 'claude-fable-5-2', hint: 'Fable 5.2 — самая сильная, сложные задачи и планирование' },
     { value: 'claude-fable-5-1', label: 'claude-fable-5-1', hint: 'Fable 5.1 — предыдущая Fable' },
@@ -26,7 +27,7 @@ export const MODEL_OPTIONS: Record<AgentKind, DropOption<string>[]> = {
  * Своё семейство агента — модели самого вендора: работают и по подписке пользователя, без прокси.
  * Остальные (например, Gemini у codex) прокси PurpleSchool отдаёт через совместимый API — только через него.
  */
-const OWN_FAMILY: Record<AgentKind, RegExp> = { claude: /^claude-/, codex: /^(gpt-|o\d|codex-)/ };
+const OWN_FAMILY = { claude: /^claude-/, codex: /^(gpt-|o\d|codex-)/ };
 /** Модель из списка, которая работает только через AI-прокси PurpleSchool. */
 export function proxyOnly(options: DropOption<string>[], model: string): boolean {
   const v = model.trim();
@@ -45,7 +46,7 @@ export const PROXY_ONLY_TITLE =
  */
 export function mergeModelOptions(remote: ProxyModels | null): Record<AgentKind, DropOption<string>[]> {
   if (!remote) return MODEL_OPTIONS;
-  const add = (agent: AgentKind, list: ProxyModels['anthropic']) => {
+  const add = (agent: keyof typeof OWN_FAMILY, list: ProxyModels['anthropic']) => {
     const base = MODEL_OPTIONS[agent];
     const known = new Set(base.map((o) => o.value));
     const extra: DropOption<string>[] = [];
@@ -62,5 +63,5 @@ export function mergeModelOptions(remote: ProxyModels | null): Record<AgentKind,
     }
     return [...base, ...extra];
   };
-  return { claude: add('claude', remote.anthropic), codex: add('codex', remote.openai) };
+  return { claude: add('claude', remote.anthropic), codex: add('codex', remote.openai), opencode: MODEL_OPTIONS.opencode };
 }

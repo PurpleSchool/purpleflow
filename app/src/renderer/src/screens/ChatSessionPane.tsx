@@ -125,8 +125,8 @@ function ContextCard({ s, chat, busy }: { s: ChatSessionSummary; chat: ChatFile;
         </>
       ) : (
         <p className="ses-hint">
-          {agent === 'codex'
-            ? 'codex не сообщает, сколько контекста занято.'
+          {agent !== 'claude'
+            ? `${agent} не сообщает, сколько контекста занято.`
             : s.answers
               ? 'Последний ответ не сообщил о контексте.'
               : 'Появится после первого ответа агента.'}
