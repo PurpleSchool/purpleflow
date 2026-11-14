@@ -16,8 +16,8 @@ type Job = 'idle' | 'busy' | 'done' | 'error';
 export function FirstProjectScreen() {
   const { state, go, saveSettings } = useStore();
   const found = (a: AgentKind) => Boolean(state.tools?.[a].path && !state.tools[a].error);
-  // Как в настройках: первый установленный агент, остальные подстрахуют при сбое.
-  const scanAgent: AgentKind = state.settings?.agents.scan ?? AGENT_KINDS.find(found) ?? 'claude';
+  // Как в настройках: сканирование по умолчанию наследует исполнителя.
+  const scanAgent: AgentKind = state.settings?.agents.scan ?? state.settings?.agents.executor ?? AGENT_KINDS.find(found) ?? 'claude';
   const pickScanAgent = (a: AgentKind) => {
     if (a === scanAgent && state.settings?.agents.scan) return;
     // Имя модели одного CLI другому не подходит — сбрасываем на модель по умолчанию.

@@ -357,13 +357,13 @@ test(
   },
 );
 
-test('сканирование: на выбранном агенте с его моделью; не настроен — повтор на другом, таймаут — без повтора', async (t) => {
+test('сканирование: выбранный агент и модель сохраняются при ошибке авторизации и таймауте', async (t) => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-scan-'));
   t.after(() => fs.rmSync(bin, { recursive: true, force: true }));
   for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'detect-commands.md'), 'найди команды');
   const settings = {
-    toolPaths: { claude: process.execPath, codex: process.execPath, opencode: path.join(bin, 'missing-opencode') },
+    toolPaths: { claude: process.execPath, codex: process.execPath, opencode: process.execPath },
     proxy: { baseUrl: '', apiKey: '' },
     models: { planner: 'opus', executor: 'sonnet', reviewer: 'gpt', scan: 'gpt-mini' },
     agents: { planner: 'claude', executor: 'claude', reviewer: 'codex', scan: 'codex' },
@@ -385,15 +385,15 @@ test('сканирование: на выбранном агенте с его �
         calls.push({ agent: 'codex', model: o.model });
         return { ...codex, text: codex.ok ? reply : '', usage: emptyUsage() };
       }) as never,
+      opencode: async (o) => {
+        calls.push({ agent: 'opencode', model: o.model });
+        return { ok: true, text: reply, usage: emptyUsage() };
+      },
     },
   });
-  // codex не вошёл — повторяет claude со своей моделью, а не с моделью codex.
-  const r = await detectCommandsAI(k, bin);
-  assert.equal(r.testCommand, 'npm test');
-  assert.deepEqual(calls, [
-    { agent: 'codex', model: 'gpt-mini' },
-    { agent: 'claude', model: 'sonnet' },
-  ]);
+  // Ошибка выбранного агента не переключает запрос на чужую подписку или модель.
+  await assert.rejects(detectCommandsAI(k, bin), /codex: агент не авторизован/);
+  assert.deepEqual(calls, [{ agent: 'codex', model: 'gpt-mini' }]);
 
   calls.length = 0;
   codex = { ok: true };
@@ -404,4 +404,44 @@ test('сканирование: на выбранном агенте с его �
   codex = { ok: false, error: 'codex: превышен предельный таймаут', timedOut: true };
   await assert.rejects(detectCommandsAI(k, bin), /таймаут/);
   assert.deepEqual(calls, [{ agent: 'codex', model: 'gpt-mini' }]);
+});
+
+test('сканирование: без отдельной настройки наследует OpenCode исполнителя и выбранную модель', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-scan-model-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'detect-commands.md'), 'найди команды');
+  const settings: CoreSettings = {
+    toolPaths: { claude: process.execPath, codex: process.execPath, opencode: process.execPath },
+    proxy: { baseUrl: '', apiKey: '' },
+    agents: { executor: 'opencode', planner: 'opencode', reviewer: 'codex' },
+    models: { executor: '', planner: 'vendor/chosen-model', reviewer: '' },
+    claudeAuth: 'login',
+    agentTimeoutMin: 1,
+    testTimeoutMin: 1,
+  };
+  const calls: (string | undefined)[] = [];
+  const k = new Kernel({
+    dataDir: dir,
+    promptsDir: dir,
+    env: process.env,
+    getSettings: () => settings,
+    runners: {
+      claude: async () => {
+        throw new Error('Нельзя переключаться на Claude');
+      },
+      codex: async () => {
+        throw new Error('Нельзя переключаться на Codex');
+      },
+      opencode: async (o) => {
+        calls.push(o.model);
+        assert.equal(o.readOnly, true);
+        return { ok: true, text: '{"test":"npm test"}', usage: emptyUsage() };
+      },
+    },
+  });
+  await detectCommandsAI(k, dir);
+  settings.agents!.scan = 'opencode';
+  settings.models.scan = 'vendor/scan-model';
+  await detectCommandsAI(k, dir);
+  assert.deepEqual(calls, ['vendor/chosen-model', 'vendor/scan-model']);
 });

@@ -22,12 +22,12 @@ type ServiceOptions = {
   idleTimeoutMs?: number;
   userConfig?: boolean;
   onOutput?: (t: string) => void;
-  /** Агент, выбранный в настройках (менеджер, сканирование, проверка окружения); если его нет на машине — как у служебных вызовов. */
+  /** Явный выбор агента: отсутствие CLI или ошибка не переключают запрос на другого. */
   agent?: AgentKind;
   /** Нужен браузер и запись вне рабочей копии (проверка окружения) — у codex песочница без ограничений. */
   fullAccess?: boolean;
   /**
-   * Агент не справился (не вошёл, нет ключа, упал) — повторить на другом, если он установлен.
+   * В автоматическом режиме агент не справился — повторить на другом, если он установлен.
    * Остановку человеком и таймаут не повторяем: это не про настройку агента.
    */
   fallback?: boolean;
@@ -40,12 +40,12 @@ type ServiceOptions = {
  * прокси, вход и модель из настроек в одном месте. По умолчанию без инструментов и во временной папке.
  */
 export async function service(k: Kernel, o: ServiceOptions): Promise<AgentResult> {
-  const agent = o.agent && (await k.hasTool(o.agent)) ? o.agent : await serviceAgent(k);
+  const agent = o.agent ?? (await serviceAgent(k));
   // Имя модели одного CLI другому не подходит: своя модель — только тому агенту, для которого её выбрали.
   const ownModel = !o.agent || o.agent === agent ? o.model : undefined;
   let res = await serviceOn(k, agent, ownModel, o);
   for (const other of AGENT_KINDS.filter((a) => a !== agent)) {
-    if (res.ok || res.stopped || res.timedOut || !o.fallback) break;
+    if (res.ok || res.stopped || res.timedOut || !o.fallback || o.agent) break;
     if (!(await k.hasTool(other))) continue;
     o.onOutput?.(`\n${res.error ?? `${agent}: без ответа`} — пробую ${other}…\n`);
     const next = await serviceOn(k, other, undefined, o);
@@ -104,8 +104,10 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
   });
 }
 
-/** Служебные вызовы выполняет первый доступный CLI из AGENT_KINDS. */
+/** Служебные вызовы наследуют выбранного исполнителя; при отсутствии настройки — первый доступный CLI. */
 export async function serviceAgent(k: Kernel): Promise<AgentKind> {
+  const preferred = k.opts.getSettings().agents?.executor;
+  if (preferred) return preferred;
   for (const agent of AGENT_KINDS) if (await k.hasTool(agent)) return agent;
   throw new Error('Не найдены claude, codex или opencode. Укажите пути в настройках.');
 }
@@ -118,7 +120,7 @@ export function agentModel(
   models: Record<Role, string>,
 ): string {
   const a = { ...DEFAULT_AGENTS, ...agents };
-  const role = (['executor', 'planner', 'reviewer'] as Role[]).find((r) => a[r] === agent);
+  const role = (['executor', 'planner', 'reviewer'] as Role[]).find((r) => a[r] === agent && models[r]?.trim());
   return role ? models[role] : '';
 }
 

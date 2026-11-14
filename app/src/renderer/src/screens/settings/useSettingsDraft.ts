@@ -86,7 +86,7 @@ export function useSettingsDraft() {
   const tools = state.tools;
   const claudeFound = Boolean(tools?.claude.path && !tools.claude.error);
   const visualAgent = agents.visual ?? 'claude';
-  const automaticAgent = AGENT_KINDS.find((a) => tools?.[a].path && !tools[a].error) ?? 'claude';
+  const automaticAgent = agents.executor ?? AGENT_KINDS.find((a) => tools?.[a].path && !tools[a].error) ?? 'claude';
   const managerAgent = agents.manager ?? automaticAgent;
   const scanAgent = agents.scan ?? automaticAgent;
   const pickAgent = (id: Role | 'visual' | 'manager' | 'scan', a: AgentKind) => {

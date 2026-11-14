@@ -103,10 +103,10 @@ export async function checkRelatedUntouched(k: Kernel, run: RunFile, before: Map
     );
 }
 
-/** Сканирование проекта (команды и профиль) — только чтение, на агенте из настроек; не настроен — на другом. */
+/** Сканирование проекта — на выбранном агенте, по умолчанию наследует исполнителя. */
 function scanOptions(k: Kernel) {
   const s = k.opts.getSettings();
-  return { agent: s.agents?.scan, model: s.models.scan || undefined, fallback: true, tools: ['Read', 'Glob', 'Grep'] };
+  return { agent: s.agents?.scan ?? s.agents?.executor, model: s.models.scan || undefined, tools: ['Read', 'Glob', 'Grep'] };
 }
 
 export async function profileFor(k: Kernel, repo: string, cwd: string, onOutput: (t: string) => void, group: string): Promise<AgentResult> {
