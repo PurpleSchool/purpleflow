@@ -1,5 +1,6 @@
 import spawn from 'cross-spawn';
 import type { ChildProcess } from 'node:child_process';
+import type { Writable } from 'node:stream';
 import treeKill from 'tree-kill';
 import { trace } from './trace.js';
 
@@ -38,6 +39,22 @@ export interface RunResult {
 const MAX_BUFFER = 4 * 1024 * 1024;
 /** Процесс вышел, а его фоновый потомок держит stdout: столько ждём вывод, потом перестаём. */
 const OUTPUT_GRACE_MS = 3000;
+const STOP_GRACE_MS = 3000;
+
+// Надзиратель остаётся в группе после выхода шелла сервера. Через отдельный канал он сигналит
+// своей группе, поэтому остановка не зависит от PID вышедшего шелла. EOF также гасит группу
+// при аварийном закрытии PurpleFlow. Сам сервер не наследует канал и видит обычные stdin/out/err.
+const SERVER_WRAPPER = `
+(
+  trap '' TERM
+  while IFS= read -r signal; do
+    if [ "$signal" = TERM ]; then kill -s TERM 0; fi
+  done
+  kill -s KILL 0
+) <&3 3<&- >/dev/null 2>&1 &
+exec 3<&-
+exec /bin/sh -c "$1"
+`;
 
 export interface PidTracker {
   add(group: string, pid: number): void;
@@ -81,6 +98,7 @@ export async function killPid(pid: number, recordedAt?: number): Promise<void> {
 /** Все живые дочерние процессы по группам — чтобы «Стоп» убивал деревья целиком. */
 const live = new Map<string, Set<ChildProcess>>();
 const killedByUs = new WeakSet<ChildProcess>();
+const serverControls = new WeakMap<ChildProcess, Writable>();
 
 function closeOutput(child: ChildProcess) {
   child.stdout?.destroy();
@@ -89,20 +107,38 @@ function closeOutput(child: ChildProcess) {
 
 function killTree(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => {
-    if (child.pid == null) return resolve();
+    const pid = child.pid;
+    if (pid == null) return resolve();
     killedByUs.add(child);
-    // Сам процесс уже вышел, вывод держит его фоновый потомок: без этого close не наступит, а «Стоп» и таймаут ничего не сделают.
+    const control = serverControls.get(child);
+    if (control) {
+      // Шелл мог выйти, но группа ещё существует. Ждём закрытия потоков, а не выхода шелла.
+      const onClose = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        child.off('close', onClose);
+        if (!control.writableEnded) control.end();
+        closeOutput(child);
+        resolve();
+      }, STOP_GRACE_MS);
+      child.once('close', onClose);
+      if (!control.writableEnded) control.write('TERM\n');
+      return;
+    }
+    // Вне отдельной группы можно закончить ожидание вывода, даже если потомок держит потоки.
     if (child.exitCode !== null || child.signalCode !== null) {
       closeOutput(child);
       return resolve();
     }
-    treeKill(child.pid, 'SIGTERM', () => {
+    treeKill(pid, 'SIGTERM', () => {
       if (child.exitCode !== null || child.signalCode !== null) return resolve();
       // Если за 3 секунды не умер — добиваем.
       const t = setTimeout(() => {
-        if (child.exitCode === null && child.pid != null) treeKill(child.pid, 'SIGKILL', () => resolve());
+        if (child.exitCode === null) treeKill(pid, 'SIGKILL', () => resolve());
         else resolve();
-      }, 3000);
+      }, STOP_GRACE_MS);
       child.once('exit', () => {
         clearTimeout(t);
         resolve();
@@ -132,10 +168,18 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
   const started = Date.now();
   return new Promise((resolve) => {
     let child: ChildProcess;
+    const superviseServer = process.platform !== 'win32' && opts.shell && opts.waitForOutput;
+    const spawnOptions = { cwd: opts.cwd, env: opts.env, windowsHide: true };
     try {
-      child = opts.shell
-        ? spawn(cmd, { cwd: opts.cwd, env: opts.env, shell: true, windowsHide: true })
-        : spawn(cmd, args, { cwd: opts.cwd, env: opts.env, windowsHide: true });
+      if (superviseServer) {
+        child = spawn('/bin/sh', ['-c', SERVER_WRAPPER, 'purpleflow-server', cmd], {
+          ...spawnOptions,
+          detached: true,
+          stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+        });
+      } else {
+        child = opts.shell ? spawn(cmd, { ...spawnOptions, shell: true }) : spawn(cmd, args, spawnOptions);
+      }
     } catch (e) {
       resolve({
         code: null,
@@ -154,6 +198,25 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
     if (!live.has(group)) live.set(group, new Set());
     live.get(group)!.add(child);
     const pid = child.pid;
+    const control = superviseServer ? (child.stdio[3] as Writable | null) : null;
+    if (control) {
+      serverControls.set(child, control);
+      control.on('error', (e) => trace('proc: канал остановки сервера', e));
+      const release = () => {
+        // При перенаправленном выводе потомки могут остаться и после закрытия обоих потоков.
+        // Закрываем канал только после выхода команды, чтобы не гасить ещё работающий сервер.
+        if (
+          (child.exitCode !== null || child.signalCode !== null) &&
+          child.stdout?.destroyed &&
+          child.stderr?.destroyed &&
+          !control.writableEnded
+        )
+          control.end();
+      };
+      child.once('exit', release);
+      child.stdout?.once('close', release);
+      child.stderr?.once('close', release);
+    }
     // Учёт PID — страховка; сбой записи не должен оставить запущенный процесс без присмотра.
     const track = (fn: () => void) => {
       try {

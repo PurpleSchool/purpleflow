@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { killGroup, killPid, liveCount, parseEtime, run, setPidTracker } from './proc.js';
 
 test('killGroup убивает всё дерево процессов', { skip: process.platform === 'win32' }, async () => {
@@ -34,20 +35,67 @@ test('процесс вышел, фоновый потомок держит вы
   assert.ok(r.durationMs < 10_000, `ждали ${r.durationMs} мс`);
 });
 
-test('сервер в фоне считается живым, пока держит вывод; «Стоп» завершает ожидание', { skip: process.platform === 'win32' }, async () => {
-  let done = false;
-  const p = run('sh', ['-c', 'sleep 30 & exit 0'], { cwd: process.cwd(), env: process.env, group: 'g-server', waitForOutput: true });
-  void p.then(() => (done = true));
-  await new Promise((r) => setTimeout(r, 300));
-  assert.equal(done, false);
-  await killGroup('g-server');
-  const r = await p;
-  assert.equal(r.killed, true);
-  assert.equal(liveCount('g-server'), 0);
-});
+async function running(pid: number): Promise<boolean> {
+  const result = await run('ps', ['-o', 'stat=', '-p', String(pid)], { cwd: process.cwd(), env: process.env, timeoutMs: 2000 });
+  assert.ok(!result.spawnError && !result.timedOut, 'ps вернул состояние процесса');
+  const state = result.stdout.trim();
+  // Процесс уже завершился, даже если системный родитель ещё не забрал его код выхода.
+  return state !== '' && !state.startsWith('Z');
+}
+
+async function waitForExit(pid: number, message: string) {
+  const deadline = performance.now() + 3000;
+  while (await running(pid)) {
+    assert.ok(performance.now() < deadline, message);
+    await delay(25);
+  }
+}
+
+for (const output of ['inherited', 'redirected'] as const) {
+  test(`сервер в фоне завершается после выхода шелла (${output})`, { skip: process.platform === 'win32' }, async (t) => {
+    const group = `g-server-${output}`;
+    let recordPids!: (pids: number[]) => void;
+    const started = new Promise<number[]>((resolve) => {
+      recordPids = resolve;
+    });
+    let serverPid: number | undefined;
+    t.after(async () => {
+      await killGroup(group);
+      if (serverPid && (await running(serverPid))) process.kill(serverPid, 'SIGKILL');
+    });
+    const redirect = output === 'redirected' ? ' >/dev/null 2>&1' : '';
+    const p = run(`sleep 30${redirect} & echo "$$ $!"`, [], {
+      cwd: process.cwd(),
+      env: process.env,
+      group,
+      shell: true,
+      waitForOutput: true,
+      onStdoutLine: (line) => {
+        const pids = line.split(' ').map(Number);
+        serverPid = pids[1];
+        recordPids(pids);
+      },
+    });
+
+    const pids = await Promise.race([started, delay(2000, undefined, { ref: false })]);
+    assert.ok(pids?.length === 2 && pids.every((pid) => Number.isSafeInteger(pid) && pid > 1), 'шелл записал PID обоих процессов');
+    const [shell, server] = pids;
+    if (output === 'inherited') {
+      await waitForExit(shell, 'шелл уже завершился');
+      assert.equal(await running(server), true, 'сервер всё ещё работает');
+      assert.equal(liveCount(group), 1);
+      await killGroup(group);
+      assert.equal((await p).killed, true);
+    } else {
+      assert.equal((await p).code, 0);
+    }
+    await waitForExit(server, 'сервер завершился');
+    assert.equal(liveCount(group), 0);
+  });
+}
 
 test('таймаут срабатывает и когда вывод держит фоновый потомок', { skip: process.platform === 'win32' }, async () => {
-  const r = await run('sh', ['-c', 'sleep 30 & exit 0'], { cwd: process.cwd(), env: process.env, timeoutMs: 300, waitForOutput: true });
+  const r = await run('sleep 30 & exit 0', [], { cwd: process.cwd(), env: process.env, shell: true, timeoutMs: 300, waitForOutput: true });
   assert.equal(r.timedOut, true);
   assert.ok(r.durationMs < 5000, `ждали ${r.durationMs} мс`);
 });
