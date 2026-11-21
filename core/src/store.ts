@@ -171,6 +171,7 @@ export class RunStore {
       this.pidFile(id),
       this.pidFile(`${id}:server`),
       this.pidFile(`${id}:preview`),
+      this.pidFile(`${id}:visual-cleanup`),
     ])
       fs.rmSync(f, { force: true });
   }

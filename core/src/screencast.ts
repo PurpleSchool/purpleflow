@@ -19,11 +19,11 @@ export function findChrome(env: NodeJS.ProcessEnv = process.env): string | null 
 }
 
 /** Дождаться, пока Chrome откроет порт отладки. */
-export async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
+export async function waitForCdp(port: number, shouldStop: () => boolean, timeoutMs = 20_000): Promise<boolean> {
   const until = Date.now() + timeoutMs;
-  while (Date.now() < until) {
+  while (Date.now() < until && !shouldStop()) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/json/version`);
+      const r = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1000) });
       await discardBody(r);
       if (r.ok) return true;
     } catch {

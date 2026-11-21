@@ -36,7 +36,7 @@ import { DEFAULT_AGENTS, effortFor, enabledAgent } from './types.js';
 export async function recover(k: Kernel): Promise<void> {
   for (const s of k.store.list()) {
     // Агенты и тесты, пережившие аварийный выход приложения, не должны писать в worktree параллельно с повтором стадии.
-    for (const group of [s.id, `${s.id}:server`, `${s.id}:preview`]) {
+    for (const group of [s.id, `${s.id}:server`, `${s.id}:preview`, `${s.id}:visual-cleanup`]) {
       const pids = k.store.readPids(group);
       if (!pids.length) continue;
       const recordedAt = k.store.pidsTime(group);
@@ -412,14 +412,10 @@ export async function stop(k: Kernel, id: string) {
   }
   // Фоновые исходные проверки гибнут вместе с группой процессов — их итог больше не годится в эталон.
   k.basePrep.delete(id);
-  await killGroup(`${id}:server`);
-  await stopPreview(k, id);
-  if (k.driving.has(id) || k.preparing.has(id)) {
-    k.stopping.add(id);
-    await killGroup(id);
-    return; // цикл drive (или launchQueued) сам зафиксирует остановку
-  }
-  await killGroup(id);
+  const active = k.driving.has(id) || k.preparing.has(id);
+  if (active) k.stopping.add(id);
+  await Promise.all([killGroup(id), killGroup(`${id}:server`), stopPreview(k, id)]);
+  if (active) return; // цикл drive (или launchQueued) сам зафиксирует остановку
   if (r.status === 'running' || r.status === 'waiting') {
     for (const a of r.attempts)
       if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
@@ -575,6 +571,7 @@ export async function deleteRun(k: Kernel, id: string, deleteBranch: boolean) {
   k.deleted.add(id);
   await killGroup(id);
   await killGroup(`${id}:server`);
+  await killGroup(`${id}:visual-cleanup`);
   await killGroup(`${id}:manager`);
   await stopPreview(k, id);
   if (r) {

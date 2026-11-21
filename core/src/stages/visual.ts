@@ -99,6 +99,7 @@ export async function stageVisual(k: Kernel, run: RunFile) {
     // Свой Chrome с портом отладки: агент подключается к нему через pw, а окно получает живую трансляцию экрана.
     const live = await startLiveBrowser(k, run, dir, url, serverGroup, session);
     cast = live?.cast ?? null;
+    k.checkStop(run);
     const docs = await getChangeDocs(k, run.id);
     const tg = await k.tools(['git']);
     const changed = await repoChangedFiles(new Git(tg.git, k.opts.env), run);
@@ -132,6 +133,7 @@ export async function stageVisual(k: Kernel, run: RunFile) {
           : ''),
       model: model || undefined,
     };
+    k.checkStop(run);
     const res =
       agent === 'opencode'
         ? // Как у codex: браузеру и скриншотам нужны сеть и запись вне рабочей копии; код не меняет по требованию промпта.
@@ -240,6 +242,8 @@ export async function stageVisual(k: Kernel, run: RunFile) {
     await runProc('npx', ['-y', '@playwright/cli@latest', `-s=purpleflow-${run.id.slice(0, 8)}`, 'close'], {
       cwd: dir,
       env: k.opts.env,
+      // «Стоп» прерывает attach, но закрытию сессии даём завершиться.
+      group: `${run.id}:visual-cleanup`,
       timeoutMs: 20_000,
     }).catch(() => undefined);
     await killGroup(serverGroup);
@@ -263,6 +267,7 @@ export async function startLiveBrowser(
   const chrome = findChrome(k.opts.env);
   if (!chrome) return null;
   const port = await freePort();
+  k.checkStop(run);
   void runProc(
     chrome,
     [
@@ -279,15 +284,19 @@ export async function startLiveBrowser(
     ],
     { cwd: dir, env: k.opts.env, group },
   ).catch(() => undefined);
-  if (!(await waitForCdp(port))) {
+  const ready = await waitForCdp(port, () => k.stopping.has(run.id));
+  k.checkStop(run);
+  if (!ready) {
     k.log(run, c.dim('Chrome для трансляции не поднялся — агент откроет свой браузер.') + '\n');
     return null;
   }
   const att = await runProc('npx', ['-y', '@playwright/cli@latest', `-s=${session}`, 'attach', `--cdp=http://127.0.0.1:${port}`], {
     cwd: dir,
     env: k.opts.env,
+    group: run.id,
     timeoutMs: 120_000,
   });
+  k.checkStop(run);
   if (att.code !== 0) {
     k.log(run, c.dim('pw не подключился к Chrome — агент откроет свой браузер.') + '\n');
     return null;
