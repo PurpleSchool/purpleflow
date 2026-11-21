@@ -16,13 +16,11 @@ import type { AgentKind, RunFile } from '../types.js';
 import { captureBaseChecks, settleBaseChecks } from './checks.js';
 import { startFilesBlock } from './plan.js';
 export async function stageImplement(k: Kernel, run: RunFile) {
-  // Быстрая правка идёт без плана: исходные проверки снимаем перед первой реализацией —
-  // только пока агент ещё ничего не менял (у прогонов, начатых до этой версии, эталона нет).
-  if (!run.attempts.some((x) => x.stage === 'implement')) {
-    // Тесты задачи снимались в фоне, пока человек смотрел план, — дожидаемся; чего нет — снимаем здесь.
-    if (run.mode !== 'quick') await settleBaseChecks(k, run);
-    await captureBaseChecks(k, run);
-  }
+  const firstAttempt = !run.attempts.some((x) => x.stage === 'implement');
+  // Быстрая правка идёт без плана. Старые прогоны могли пропустить подготовку и прийти сюда повторно.
+  if (firstAttempt || (run.mode === 'quick' && !run.prepared && run.setupCommand)) await settleBaseChecks(k, run);
+  // Эталон снимаем только до первой реализации, пока агент ещё ничего не менял.
+  if (firstAttempt) await captureBaseChecks(k, run);
   run.implAttemptsUsed++;
   const attempt = k.begin(run, 'implement', run.models.executor);
   const prompt = k.prompts.render(tpl(k, 'implement', run), {

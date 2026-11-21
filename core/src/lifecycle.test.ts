@@ -595,6 +595,47 @@ test('восстановление отменённого: снова ждёт �
 
 // ——— Реализация, ревью, рабочая копия ———
 
+for (const retry of [false, true]) {
+  test(
+    `быстрая правка: подготовка выполняется один раз (${retry ? 'повтор старого прогона' : 'до исходных проверок'})`,
+    unix,
+    async (t) => {
+      const { k, repo, save } = setup(t);
+      const run = save({
+        prepared: false,
+        setupCommand: 'echo setup >> checks.log',
+        lintCommand: 'echo lint >> checks.log',
+        testCommand: 'echo test >> checks.log',
+        attempts: retry ? [{ stage: 'implement', attempt: 1, startedAt: '', status: 'done' }] : [],
+      });
+      await stageImplement(k, run);
+
+      const log = path.join(repo, 'checks.log');
+      const expected = retry ? 'setup\n' : 'setup\nlint\ntest\n';
+      assert.equal(fs.readFileSync(log, 'utf8'), expected);
+      assert.equal(k.mustLoad(run.id).prepared, true);
+
+      await stageImplement(k, k.mustLoad(run.id));
+      assert.equal(fs.readFileSync(log, 'utf8'), expected, 'повторная реализация не переустанавливает зависимости');
+    },
+  );
+}
+
+test('быстрая правка: сбой подготовки останавливает прогон до проверок и реализации', unix, async (t) => {
+  const { k, repo, save } = setup(t);
+  const run = save({
+    prepared: false,
+    setupCommand: 'exit 9',
+    lintCommand: 'echo lint > lint.log',
+    implAttemptsUsed: 0,
+  });
+
+  await assert.rejects(stageImplement(k, run), /Команда подготовки.*кодом 9/);
+  assert.equal(fs.existsSync(path.join(repo, 'lint.log')), false);
+  assert.equal(k.mustLoad(run.id).prepared, false);
+  assert.equal(run.implAttemptsUsed, 0);
+});
+
 test('реализация: сессия пропала — начинаем заново; сбой агента не тратит попытку; название быстрой правки', unix, async (t) => {
   const calls: AgentRunOptions[] = [];
   let mode: 'lost' | 'fail' | 'ok' = 'lost';
