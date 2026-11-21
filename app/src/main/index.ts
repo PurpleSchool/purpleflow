@@ -469,11 +469,12 @@ handle('preview:emulate', (e, id: number, mobile: boolean) => {
   // Только webview нашего окна.
   if (!wc || wc.getType() !== 'webview' || wc.hostWebContents !== e.sender) return;
   // Ширину 390 задаёт рамка во вкладке; enableDeviceEmulation в webview ломает отрисовку — меняем только user agent.
-  wc.setUserAgent(
-    mobile
-      ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
-      : app.userAgentFallback,
-  );
+  const userAgent = mobile
+    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+    : app.userAgentFallback;
+  // dom-ready fires after reload. Reapplying the same agent there would reload forever.
+  if (wc.getUserAgent() === userAgent) return;
+  wc.setUserAgent(userAgent);
   wc.reload();
 });
 
