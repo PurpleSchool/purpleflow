@@ -104,7 +104,7 @@ export function ProjectScreen({ path, initialTab }: { path: string; initialTab?:
               )}
               {repo && tab === 'knowledge' && (
                 <div className="project-tab step-enter">
-                  <KnowledgeView repo={p.info.path} name={p.info.name} />
+                  <KnowledgeView key={p.info.path} repo={p.info.path} name={p.info.name} />
                 </div>
               )}
             </>

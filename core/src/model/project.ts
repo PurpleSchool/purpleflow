@@ -191,3 +191,5 @@ export interface ProjectKnowledge {
   /** Уроки прошлых прогонов: короткие правила, которые пригодятся следующим. */
   lessons?: { text: string; at: string; runId?: string }[];
 }
+
+export type ProjectLesson = NonNullable<ProjectKnowledge['lessons']>[number];

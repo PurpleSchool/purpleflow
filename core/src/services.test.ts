@@ -15,7 +15,7 @@ import { applyPending } from './services/control.js';
 import { cleanStorage, getStorage } from './services/disk.js';
 import { attachmentsBlock, saveAttachments } from './services/attachments.js';
 import { testConnection } from './services/connection.js';
-import { detectCommandsAI } from './services/projects.js';
+import { detectCommandsAI, getKnowledge, removeKnowledgeLesson, saveKnowledgeProfile, updateKnowledge } from './services/projects.js';
 import { getPreview, startPreview, stopPreview } from './services/preview.js';
 import { RunStore } from './store.js';
 import type { CoreSettings, RunFile } from './types.js';
@@ -26,6 +26,40 @@ const kernel = (t: { after: (fn: () => void) => void }) => {
   const settings = { toolPaths: {} } as unknown as CoreSettings;
   return new Kernel({ dataDir, promptsDir: dataDir, env: process.env, getSettings: () => settings });
 };
+
+test('Knowledge: saving a profile preserves lessons learned after the tab loaded', (t) => {
+  const k = kernel(t);
+  const repo = '/tmp/pf-knowledge-profile';
+  const old = { text: 'Old', at: '2026-01-01' };
+  const learned = { text: 'New', at: '2026-01-02' };
+  updateKnowledge(k, repo, () => ({ profile: 'Old profile', profileAt: '2026-01-01', lessons: [old] }));
+  updateKnowledge(k, repo, (kn) => ({ ...kn, lessons: [...(kn.lessons ?? []), learned] }));
+
+  assert.deepEqual(saveKnowledgeProfile(k, repo, ' New profile ', 'Old profile'), {
+    profile: 'New profile',
+    profileAt: '2026-01-01',
+    lessons: [old, learned],
+  });
+  assert.throws(() => saveKnowledgeProfile(k, repo, 'Stale profile', 'Old profile'), /Профиль изменился/);
+  assert.equal(getKnowledge(k, repo).profile, 'New profile');
+});
+
+test('Knowledge: removing a selected lesson preserves a refreshed profile and reordered lessons', (t) => {
+  const k = kernel(t);
+  const repo = '/tmp/pf-knowledge-lessons';
+  const target = { text: 'Target', at: '2026-01-01', runId: 'r1' };
+  const other = { text: 'Other', at: '2026-01-02', runId: 'r2' };
+  const latest = { text: 'Latest', at: '2026-01-03', runId: 'r3' };
+  updateKnowledge(k, repo, () => ({ profile: 'Old profile', lessons: [target, other] }));
+  updateKnowledge(k, repo, () => ({ profile: 'Refreshed profile', profileAt: '2026-01-04', lessons: [latest, other, target] }));
+
+  assert.deepEqual(removeKnowledgeLesson(k, repo, target), {
+    profile: 'Refreshed profile',
+    profileAt: '2026-01-04',
+    lessons: [latest, other],
+  });
+  assert.deepEqual(removeKnowledgeLesson(k, repo, target).lessons, [latest, other]);
+});
 
 test('saveAttachments: выход из каталога и странные имена не проходят, порядок сохраняется', (t) => {
   const k = kernel(t);

@@ -26,6 +26,7 @@ import type {
   ProjectConfig,
   ProjectConfigInput,
   ProjectKnowledge,
+  ProjectLesson,
   ProjectListItem,
   ProjectOverview,
   ProjectStats,
@@ -129,15 +130,46 @@ export async function ensureProfile(k: Kernel, run: RunFile, attempt: StageAttem
     k.log(run, c.amber(`! профиль проекта не собран: ${res.error ?? 'пустой ответ'} — продолжаю без него`) + '\n');
     return;
   }
-  updateKnowledge(k, run.projectPath, (kn) => ({ ...kn, profile: res.text.trim(), profileAt: new Date().toISOString() }));
-  k.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Проекты → Знания о проекте»') + '\n');
+  let saved = false;
+  updateKnowledge(k, run.projectPath, (kn) => {
+    if (kn.profile) return kn;
+    saved = true;
+    return { ...kn, profile: res.text.trim(), profileAt: new Date().toISOString() };
+  });
+  if (saved) k.log(run, c.mint('✓ профиль проекта сохранён — его можно поправить в «Проекты → Знания о проекте»') + '\n');
 }
 
 /** Пересобрать профиль по кнопке в «Знаниях о проекте». */
 export async function refreshProfile(k: Kernel, repo: string): Promise<ProjectKnowledge> {
+  const previous = knowledgeOf(k, repo);
   const res = await profileFor(k, repo, repo, () => {}, `profile-${Date.now()}`);
   if (!res.ok || !res.text.trim()) throw new Error(res.error ?? 'Нейросеть вернула пустой профиль');
-  updateKnowledge(k, repo, (kn) => ({ ...kn, profile: res.text.trim(), profileAt: new Date().toISOString() }));
+  updateKnowledge(k, repo, (kn) =>
+    kn.profile === previous.profile && kn.profileAt === previous.profileAt
+      ? { ...kn, profile: res.text.trim(), profileAt: new Date().toISOString() }
+      : kn,
+  );
+  return knowledgeOf(k, repo);
+}
+
+/** Ручная правка профиля не переносит устаревший снимок уроков в хранилище. */
+export function saveKnowledgeProfile(k: Kernel, repo: string, profile: string, expectedProfile?: string): ProjectKnowledge {
+  updateKnowledge(k, repo, (kn) => {
+    if (expectedProfile !== undefined && kn.profile !== expectedProfile) {
+      throw new Error('Профиль изменился. Откройте вкладку заново перед сохранением.');
+    }
+    return { ...kn, profile: profile.trim() || undefined };
+  });
+  return knowledgeOf(k, repo);
+}
+
+/** Удаляем именно выбранный урок из актуального списка, даже если порядок изменился. */
+export function removeKnowledgeLesson(k: Kernel, repo: string, lesson: ProjectLesson): ProjectKnowledge {
+  updateKnowledge(k, repo, (kn) => {
+    const lessons = kn.lessons ?? [];
+    const i = lessons.findIndex((l) => l.text === lesson.text && l.at === lesson.at && l.runId === lesson.runId);
+    return i < 0 ? kn : { ...kn, lessons: lessons.filter((_, j) => j !== i) };
+  });
   return knowledgeOf(k, repo);
 }
 

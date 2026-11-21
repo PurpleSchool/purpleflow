@@ -1,5 +1,5 @@
 // Вкладка «Знания о проекте»: профиль и уроки прошлых прогонов.
-import type { ProjectKnowledge } from '@purpleflow/core';
+import type { ProjectKnowledge, ProjectLesson } from '@purpleflow/core';
 import { BookText, FileText, FlaskConical, FolderTree, Layers, Lightbulb, PencilLine, Play, Sparkles, Workflow, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Markdown } from '../../components/Markdown';
@@ -32,6 +32,7 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
   const [k, setK] = useState<ProjectKnowledge | null>(null);
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState('');
+  const [editingBase, setEditingBase] = useState('');
   const [busy, setBusy] = useState<'save' | 'refresh' | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -49,14 +50,16 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
       alive = false;
     };
   }, [repo]);
-  const run = async (kind: 'save' | 'refresh', fn: () => Promise<ProjectKnowledge>) => {
+  const run = async (kind: 'save' | 'refresh', fn: () => Promise<ProjectKnowledge>, closeEditor = false) => {
     setBusy(kind);
     setError(null);
     try {
       const x = await fn();
       setK(x);
-      setProfile(x.profile ?? '');
-      setEditing(false);
+      if (closeEditor) {
+        setProfile(x.profile ?? '');
+        setEditing(false);
+      }
     } catch (e) {
       setError(cleanErr(e));
     } finally {
@@ -71,8 +74,7 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
     );
   const docs = splitProfile(k.profile ?? '');
   const lessons = k.lessons ?? [];
-  const removeLesson = (i: number) =>
-    void run('save', () => bridge.core.saveKnowledge(repo, { ...k, lessons: lessons.filter((_, j) => j !== i) }));
+  const removeLesson = (lesson: ProjectLesson) => void run('save', () => bridge.core.removeKnowledgeLesson(repo, lesson));
   return (
     <div className="knowledge-view">
       <section className="panel knowledge-intro">
@@ -86,7 +88,16 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
           </div>
           <div className="knowledge-actions">
             {k.profile && !editing && (
-              <Button tone="quiet" icon={<PencilLine size={15} />} onClick={() => setEditing(true)}>
+              <Button
+                tone="quiet"
+                icon={<PencilLine size={15} />}
+                disabled={busy !== null}
+                onClick={() => {
+                  setProfile(k.profile ?? '');
+                  setEditingBase(k.profile ?? '');
+                  setEditing(true);
+                }}
+              >
                 Редактировать
               </Button>
             )}
@@ -94,7 +105,7 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
               tone="ghost"
               icon={<Sparkles size={15} />}
               busy={busy === 'refresh'}
-              disabled={busy !== null}
+              disabled={busy !== null || editing}
               onClick={() => void run('refresh', () => bridge.core.refreshProfile(repo))}
             >
               {busy === 'refresh' ? 'Изучаю проект…' : k.profile ? 'Пересобрать профиль' : 'Изучить проект'}
@@ -113,7 +124,13 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
 
       {editing ? (
         <section className="panel">
-          <TextArea rows={22} className="mono knowledge-profile" value={profile} onChange={(e) => setProfile(e.target.value)} />
+          <TextArea
+            rows={22}
+            className="mono knowledge-profile"
+            value={profile}
+            disabled={busy !== null}
+            onChange={(e) => setProfile(e.target.value)}
+          />
           <div className="cmd-actions">
             <p className="cmd-foot">Разделы — заголовками «## Стек», «## Структура»… — каждый станет отдельной карточкой.</p>
             <span className="grow" />
@@ -129,7 +146,8 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
             <Button
               tone="primary"
               busy={busy === 'save'}
-              onClick={() => void run('save', () => bridge.core.saveKnowledge(repo, { ...k, profile }))}
+              disabled={busy !== null}
+              onClick={() => void run('save', () => bridge.core.saveKnowledgeProfile(repo, profile, editingBase), true)}
             >
               Сохранить
             </Button>
@@ -168,12 +186,11 @@ export function KnowledgeView({ repo, name }: { repo: string; name: string }) {
         {lessons.length ? (
           <ul className="lessons">
             {[...lessons].reverse().map((l, ri) => {
-              const i = lessons.length - 1 - ri;
               return (
-                <li key={`${l.at}-${i}`}>
+                <li key={`${l.at}-${lessons.length - 1 - ri}`}>
                   <span>{l.text}</span>
                   <time className="muted">{new Date(l.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</time>
-                  <button className="lesson-del" title="Удалить урок" onClick={() => removeLesson(i)}>
+                  <button className="lesson-del" title="Удалить урок" disabled={busy !== null} onClick={() => removeLesson(l)}>
                     <X size={14} />
                   </button>
                 </li>

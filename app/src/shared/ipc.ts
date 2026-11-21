@@ -189,6 +189,8 @@ export const CORE_METHODS: Record<CoreMethod, true> = {
   checkCommands: true,
   getKnowledge: true,
   saveKnowledge: true,
+  saveKnowledgeProfile: true,
+  removeKnowledgeLesson: true,
   refreshProfile: true,
   prReady: true,
   getPrStatus: true,

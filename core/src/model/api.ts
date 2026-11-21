@@ -14,6 +14,7 @@ import type {
   ProjectConfigInput,
   DetectedProject,
   ProjectKnowledge,
+  ProjectLesson,
   ProjectListItem,
   ProjectOverview,
   ProjectStats,
@@ -71,6 +72,8 @@ export interface CoreApi {
   checkCommands(dir: string, cmds: Record<string, string>): Promise<Record<string, CommandIssue[]>>;
   getKnowledge(dir: string): Promise<ProjectKnowledge>;
   saveKnowledge(dir: string, k: ProjectKnowledge): Promise<ProjectKnowledge>;
+  saveKnowledgeProfile(dir: string, profile: string, expectedProfile?: string): Promise<ProjectKnowledge>;
+  removeKnowledgeLesson(dir: string, lesson: ProjectLesson): Promise<ProjectKnowledge>;
   refreshProfile(dir: string): Promise<ProjectKnowledge>;
   prReady(id: string): Promise<string | null>;
   getPrStatus(id: string): Promise<PrStatus | null>;

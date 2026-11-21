@@ -36,6 +36,7 @@ import type {
   ProjectConfigInput,
   DetectedProject,
   ProjectKnowledge,
+  ProjectLesson,
   StorageItem,
   ToolName,
 } from './types.js';
@@ -314,6 +315,12 @@ export class Orchestrator implements CoreApi {
   }
   async saveKnowledge(dir: string, k: ProjectKnowledge) {
     return projects.saveKnowledge(this.kernel, dir, k);
+  }
+  async saveKnowledgeProfile(dir: string, profile: string, expectedProfile?: string) {
+    return projects.saveKnowledgeProfile(this.kernel, dir, profile, expectedProfile);
+  }
+  async removeKnowledgeLesson(dir: string, lesson: ProjectLesson) {
+    return projects.removeKnowledgeLesson(this.kernel, dir, lesson);
   }
   refreshProfile(dir: string) {
     return projects.refreshProfile(this.kernel, dir);
