@@ -38,6 +38,8 @@ export class Kernel {
   readonly logHold = new AsyncLocalStorage<string[]>();
   /** Запущенные приложения ручной проверки по прогонам и чатам. */
   readonly previews = new Map<string, PreviewState>();
+  /** Владелец запуска и сервера, начиная с подготовки рабочей копии. */
+  readonly previewLaunches = new Map<string, Promise<PreviewState>>();
   /** Прогоны, по которым менеджер сейчас готовит ответ. */
   readonly managerBusy = new Set<string>();
   /** Чаты, в которых агент сейчас отвечает. */

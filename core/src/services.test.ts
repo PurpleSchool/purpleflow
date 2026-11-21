@@ -341,6 +341,34 @@ test('ручная проверка: вывод работающего серв�
   assert.equal(getPreview(k, 'r').status, 'ready');
 });
 
+test('ручная проверка: одновременные запросы запускают один сервер', { skip: process.platform === 'win32' }, async (t) => {
+  const k = previewRun(t, `node -e "require('http').createServer((q,s)=>s.end('ok')).listen(process.env.PORT,'127.0.0.1')"`);
+  t.after(() => stopPreview(k, 'r'));
+  const starts: (string | undefined)[] = [];
+  k.on((e) => {
+    if (e.type === 'preview.state' && e.state.status === 'starting') starts.push(e.state.url);
+  });
+  const [first, second] = await Promise.all([startPreview(k, 'r'), startPreview(k, 'r')]);
+  assert.equal(first.status, 'ready');
+  assert.equal(second, first);
+  assert.deepEqual(starts, [first.url]);
+});
+
+test(
+  'ручная проверка: Stop отменяет запуск до выбора порта и позволяет начать заново',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const k = previewRun(t, `node -e "require('http').createServer((q,s)=>s.end('ok')).listen(process.env.PORT,'127.0.0.1')"`);
+    t.after(() => stopPreview(k, 'r'));
+    const cancelled = startPreview(k, 'r');
+    await stopPreview(k, 'r');
+    assert.equal((await cancelled).status, 'idle');
+    const fresh = await startPreview(k, 'r');
+    assert.equal(fresh.status, 'ready');
+    assert.equal(await (await fetch(fresh.url!)).text(), 'ok');
+  },
+);
+
 test(
   'ручная проверка: приложение упало — причина и вывод видны; нет команд — ошибка',
   { skip: process.platform === 'win32' },

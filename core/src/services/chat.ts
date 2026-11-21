@@ -25,7 +25,7 @@ import { effortFor, enabledAgent } from '../types.js';
 import { PROXY_DEFAULT_MODEL } from '../agents/opencode.js';
 import { agentModel, service, serviceAgent } from './agents.js';
 import { findMentions, listSkills, mentionsBlock, walkFiles } from './mentions.js';
-import { getPreview, launchPreview, stopPreview } from './preview.js';
+import { launchPreview, stopPreview } from './preview.js';
 import { getProjectConfig, knowledgeOf } from './projects.js';
 
 /**
@@ -503,13 +503,13 @@ export async function chatChangedFiles(k: Kernel, id: string): Promise<string[]>
 /** Приложение проекта чата во вкладке «Браузер»: команды «Запуск приложения» и «Адрес» из настроек проекта. */
 export async function startChatPreview(k: Kernel, id: string): Promise<PreviewState> {
   const chat = must(k, id);
-  const cur = getPreview(k, id);
-  if (cur.status === 'starting' || cur.status === 'ready') return cur;
-  if (!chat.projectPath) throw new Error('У чата нет проекта — откройте адрес вручную.');
-  const cfg = getProjectConfig(k, chat.projectPath);
-  if (!cfg?.runCommand || !cfg.appUrl)
-    throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
-  return launchPreview(k, id, { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl });
+  return launchPreview(k, id, () => {
+    if (!chat.projectPath) throw new Error('У чата нет проекта — откройте адрес вручную.');
+    const cfg = getProjectConfig(k, chat.projectPath);
+    if (!cfg?.runCommand || !cfg.appUrl)
+      throw new Error('Задайте «Запуск приложения» и «Адрес» в настройках проекта (раздел «Проекты») или откройте адрес вручную.');
+    return { repo: chat.projectPath, cwd: chat.projectPath, runCommand: cfg.runCommand, appUrl: cfg.appUrl };
+  });
 }
 
 /** Файлы проекта для «@»: из git (без игнорируемых), без git — обходом папки. */
