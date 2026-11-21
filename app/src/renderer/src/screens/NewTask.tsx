@@ -71,6 +71,7 @@ export function NewTaskScreen({
   const [baseBranch, setBaseBranch] = useState('');
   const [fetching, setFetching] = useState(false);
   const [busy, setBusy] = useState(false);
+  const starting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   /** «Отменить изменения» — со второго нажатия: изменения пропадут безвозвратно. */
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -153,14 +154,23 @@ export function NewTaskScreen({
   };
   const isReview = mode === 'review';
 
-  const start = async () => {
-    if (!p) return;
+  const start = async (clean?: 'stash' | 'discard') => {
+    if (!p || starting.current) return;
     const target = isReview ? reviewTarget() : null;
     if (isReview && !target) return;
-    setBusy(true);
-    setError(null);
-    setConfirmDiscard(false);
+    starting.current = true;
     try {
+      if (clean) {
+        setCleaning(clean);
+        try {
+          await bridge.core.cleanWorkingCopy(p.info.path, clean);
+        } finally {
+          setCleaning(null);
+        }
+      }
+      setBusy(true);
+      setError(null);
+      setConfirmDiscard(false);
       // Команды, найденные по файлам проекта, запоминаются при первом запуске.
       if (!p.cfg) await saveLoaded({ ...p, path: p.info.path });
       const { runId } = await bridge.core.dispatch({
@@ -191,8 +201,8 @@ export function NewTaskScreen({
       setImages([]);
       go({ name: 'run', runId });
     } catch (e) {
+      starting.current = false;
       setError(cleanErr(e));
-    } finally {
       setBusy(false);
     }
   };
@@ -201,18 +211,9 @@ export function NewTaskScreen({
   const dirtyError = Boolean(error && workspace === 'branch' && /незакоммиченные изменения/.test(error));
 
   const cleanAndStart = async (how: 'stash' | 'discard') => {
-    if (!p) return;
+    if (!p || starting.current) return;
     if (how === 'discard' && !confirmDiscard) return setConfirmDiscard(true);
-    setCleaning(how);
-    try {
-      await bridge.core.cleanWorkingCopy(p.info.path, how);
-    } catch (e) {
-      setError(cleanErr(e));
-      setCleaning(null);
-      return;
-    }
-    setCleaning(null);
-    await start();
+    await start(how);
   };
 
   // Одновременно агенты ведут не больше maxParallel прогонов — остальные встают в очередь.
@@ -387,7 +388,9 @@ export function NewTaskScreen({
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canStart) void start();
+                  if (e.key !== 'Enter' || (!e.metaKey && !e.ctrlKey) || !canStart) return;
+                  e.preventDefault();
+                  if (!e.repeat) void start();
                 }}
                 autoFocus
               />

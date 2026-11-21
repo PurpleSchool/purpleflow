@@ -1,6 +1,6 @@
 // Уточнение до плана: вопросы планировщика и ответы человека.
 import type { RunFile } from '@purpleflow/core';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Input } from '../../../components/ui';
 import { bridge, cleanErr } from '../../../lib/api';
 
@@ -10,19 +10,23 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
   const given = run.clarify?.answers ?? [];
   const [answers, setAnswers] = useState<string[]>(() => qs.map((q) => given.find((a) => a.q === q.q)?.a ?? ''));
   const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const filled = answers.filter((a) => a.trim()).length;
   const send = async () => {
+    if (!waiting || !filled || sending.current) return;
+    sending.current = true;
     setBusy(true);
     setError(null);
     try {
       await bridge.core.dispatch({ type: 'gate.answer', runId, answers: qs.map((q, i) => ({ q: q.q, a: answers[i] ?? '' })) });
       onDone();
     } catch (e) {
+      sending.current = false;
       setError(cleanErr(e));
       setBusy(false);
     }
   };
-  const filled = answers.filter((a) => a.trim()).length;
   return (
     <div className="scroll">
       <div className="clarify">
@@ -63,7 +67,9 @@ export function ClarifyView({ run, runId, waiting, onDone }: { run: RunFile; run
               disabled={!waiting}
               onChange={(e) => setAnswers(answers.map((a, j) => (j === i ? e.target.value : a)))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && filled) void send();
+                if (e.key !== 'Enter' || (!e.metaKey && !e.ctrlKey) || !filled) return;
+                e.preventDefault();
+                if (!e.repeat) void send();
               }}
             />
           </section>

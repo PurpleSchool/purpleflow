@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { PurpleFlowBridge } from '../src/shared/ipc';
 import { launch, makeSandbox, quit, type Launched, type Sandbox } from './harness';
 
 let box: Sandbox;
@@ -19,12 +20,16 @@ test.afterEach(async () => {
   expect(errors, 'необработанные ошибки страницы').toEqual([]);
 });
 
-async function startRun(page: Page, mode: string, task: string) {
+async function fillRun(page: Page, mode: string, task: string) {
   await page.getByRole('button', { name: /Выберите проект/ }).click();
   await page.getByRole('menuitem', { name: /Новый проект/ }).click();
   await expect(page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
   await page.getByRole('radio', { name: mode, exact: true }).click();
   await page.locator('#task').fill(task);
+}
+
+async function startRun(page: Page, mode: string, task: string) {
+  await fillRun(page, mode, task);
   await page.getByRole('button', { name: 'Запустить прогон' }).click();
 }
 
@@ -45,6 +50,24 @@ test('быстрая правка: от задачи до коммита в ве
   expect(fs.readFileSync(path.join(box.repo, 'src/math.js'), 'utf8')).not.toContain('mul');
   expect(box.git('status', '--porcelain')).toBe('');
   expect(box.calls().some((c) => c.prompt.includes('Добавь функцию mul'))).toBe(true);
+});
+
+test('быстрые повторные сочетания запускают только один прогон', async () => {
+  const { page } = l;
+  const task = page.locator('#task');
+  await fillRun(page, 'Быстрая правка', 'Не запускай эту задачу');
+  await task.dispatchEvent('keydown', { key: 'Enter', ctrlKey: true, repeat: true });
+  const description = 'Добавь функцию mul в src/math.js';
+  await task.fill(description);
+  await expect(page.getByRole('button', { name: 'Запустить прогон' })).toBeEnabled();
+  await task.evaluate((element) => {
+    const shortcut = { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true };
+    element.dispatchEvent(new KeyboardEvent('keydown', shortcut));
+    element.dispatchEvent(new KeyboardEvent('keydown', shortcut));
+  });
+  await expect(accept(page).first()).toBeVisible();
+  const runs = await page.evaluate(() => (window as unknown as { purpleflow: PurpleFlowBridge }).purpleflow.core.listRuns());
+  expect(runs.map((run) => run.title)).toEqual([description]);
 });
 
 test('задача с планом: утверждение плана, реализация, ревью, приёмка', async () => {
