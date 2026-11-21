@@ -43,6 +43,7 @@ export async function stageClarify(k: Kernel, run: RunFile) {
 }
 
 export async function answer(k: Kernel, id: string, answers: { q: string; a: string }[]) {
+  if (k.decidingGates.has(id)) throw new Error('Решение на этом гейте уже обрабатывается');
   const r = k.mustLoad(id);
   if (r.next !== 'gate0' || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт ответов на вопросы');
   const clean = answers.map((x) => ({ q: x.q.trim(), a: x.a.trim() })).filter((x) => x.a);

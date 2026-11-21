@@ -480,6 +480,63 @@ test('гейт: решение только когда прогон ждёт', u
   await assert.rejects(decide(k, save({ status: 'waiting', next: 'implement' }).id, 'approve'), /не ждёт решения/);
 });
 
+for (const first of ['approve', 'cancel'] as const) {
+  test(`приёмка: только первое из одновременных решений применяется (${first})`, unix, async (t) => {
+    const { core, k, save, drives } = gates(t);
+    const run = save({ status: 'waiting', next: 'gate2' });
+    const second = first === 'approve' ? 'cancel' : 'approve';
+    const [winner, loser] = await Promise.allSettled([
+      core.dispatch({ type: `gate.${first}`, runId: run.id }),
+      core.dispatch({ type: `gate.${second}`, runId: run.id }),
+    ]);
+
+    assert.equal(winner.status, 'fulfilled');
+    assert.equal(loser.status, 'rejected');
+    const final = k.mustLoad(run.id);
+    assert.deepEqual(
+      final.gates.map((gate) => gate.decision),
+      [first],
+    );
+    assert.equal(final.status, first === 'approve' ? 'running' : 'cancelled');
+    assert.deepEqual(drives, first === 'approve' ? [run.id] : []);
+  });
+}
+
+test('приёмка: неверное решение не блокирует одновременное подтверждение', unix, async (t) => {
+  const { core, k, save, drives } = gates(t);
+  const run = save({ status: 'waiting', next: 'gate2' });
+  const [invalid, approve] = await Promise.allSettled([
+    core.dispatch({ type: 'gate.fix', runId: run.id, comment: '' }),
+    core.dispatch({ type: 'gate.approve', runId: run.id }),
+  ]);
+
+  assert.equal(invalid.status, 'rejected');
+  assert.equal(approve.status, 'fulfilled');
+  assert.deepEqual(
+    k.mustLoad(run.id).gates.map((gate) => gate.decision),
+    ['approve'],
+  );
+  assert.deepEqual(drives, [run.id]);
+});
+
+test('уточнение: ответы не перезаписывают начатую отмену', unix, async (t) => {
+  const { core, k, save, drives } = gates(t);
+  const run = save({ status: 'waiting', next: 'gate0' });
+  const [cancel, answer] = await Promise.allSettled([
+    core.dispatch({ type: 'gate.cancel', runId: run.id }),
+    core.dispatch({ type: 'gate.answer', runId: run.id, answers: [] }),
+  ]);
+
+  assert.equal(cancel.status, 'fulfilled');
+  assert.equal(answer.status, 'rejected');
+  assert.equal(k.mustLoad(run.id).status, 'cancelled');
+  assert.deepEqual(
+    k.mustLoad(run.id).gates.map((gate) => gate.decision),
+    ['cancel'],
+  );
+  assert.deepEqual(drives, []);
+});
+
 test('план: принять, вернуть, принять после возврата с реализации', unix, async (t) => {
   const { k, save, drives } = gates(t);
   const ok = save({ status: 'waiting', next: 'gate1', mode: 'epic', feedback: { source: 'human', text: 'старое' } });

@@ -11,6 +11,8 @@ import { mapFilesToPlan, summarizeChanges } from './stages/review.js';
 import { traced } from './trace.js';
 import type { Feedback, GateId, LineComment, RunFile } from './types.js';
 
+type GateDecision = 'approve' | 'reject' | 'cancel' | 'accept' | 'fix';
+
 /**
  * Решение автопилота с паузой, чтобы человек успел увидеть гейт. За паузу человек мог нажать «Стоп», принять сам или удалить прогон:
  * автопилот решает, только если прогон всё ещё ждёт на том же гейте.
@@ -18,34 +20,61 @@ import type { Feedback, GateId, LineComment, RunFile } from './types.js';
 async function autoDecide(k: Kernel, id: string, gate: GateId, failure: string, comment?: string) {
   await new Promise((res) => setTimeout(res, 800));
   const r = k.store.load(id);
-  if (!r || r.status !== 'waiting' || r.next !== gate) return;
+  if (!r || r.status !== 'waiting' || r.next !== gate || k.decidingGates.has(id)) return;
   await decide(k, id, 'approve', comment).catch((e) => {
     const now = k.store.load(id);
     if (now) k.warn(now, `${failure}: ${(e as Error).message}`);
   });
 }
 
-export async function decide(
-  k: Kernel,
-  id: string,
-  decision: 'approve' | 'reject' | 'cancel' | 'accept' | 'fix',
-  comment?: string,
-  lineComments?: LineComment[],
-) {
-  const r = k.mustLoad(id);
-  if (!isGate(r.next) || (r.status !== 'waiting' && r.status !== 'stopped')) throw new Error('Прогон не ждёт решения на гейте');
-  const gate = r.next as GateId;
+export async function decide(k: Kernel, id: string, decision: GateDecision, comment?: string, lineComments?: LineComment[]) {
+  if (k.decidingGates.has(id)) throw new Error('Решение на этом гейте уже обрабатывается');
+  const before = k.mustLoad(id);
+  if (!isGate(before.next) || (before.status !== 'waiting' && before.status !== 'stopped'))
+    throw new Error('Прогон не ждёт решения на гейте');
+  const gate = before.next as GateId;
   // Проверки — до любых действий: отклонённое решение не должно гасить сервер, с которым человек работает.
   if (decision === 'fix') {
     if (gate !== 'gate2') throw new Error('Быстрая правка — только на приёмке');
     if (!comment?.trim() && !lineComments?.length) throw new Error('Опишите, что поправить');
   }
   // Ревью кода ничего не правит: разбор только завершается, исправления — отдельной задачей или в чате.
-  if (r.mode === 'review' && decision !== 'approve' && decision !== 'cancel')
+  if (before.mode === 'review' && decision !== 'approve' && decision !== 'cancel')
     throw new Error('В ревью кода правок нет — исправления запускаются отдельной задачей');
   if (decision === 'accept' && gate !== 'limit') throw new Error('Принять как есть можно только после исчерпания попыток');
-  // Решение принято — сервер ручной проверки гасим: дальше коммит или новая попытка в той же рабочей копии.
+  k.decidingGates.add(id);
+  try {
+    await applyDecision(k, before, gate, decision, comment, lineComments);
+  } finally {
+    k.decidingGates.delete(id);
+  }
+}
+
+async function applyDecision(
+  k: Kernel,
+  before: RunFile,
+  gate: GateId,
+  decision: GateDecision,
+  comment?: string,
+  lineComments?: LineComment[],
+) {
+  const { id } = before;
+  const loadWaitingGate = () => {
+    const r = k.mustLoad(id);
+    if (r.next !== gate || r.status !== before.status || r.gates.length !== before.gates.length)
+      throw new Error('Гейт изменился до завершения решения');
+    return r;
+  };
+
+  // Сервер ручной проверки гасим до коммита или новой попытки в той же рабочей копии.
   await stopPreview(k, id);
+  let r = loadWaitingGate();
+  if (decision === 'cancel' && r.mode !== 'review') {
+    // Фоновые проверки эталона больше не нужны.
+    k.basePrep.delete(id);
+    await killGroup(id);
+    r = loadWaitingGate();
+  }
   r.gates.push({
     gate,
     at: new Date().toISOString(),
@@ -108,9 +137,6 @@ export async function decide(
   }
 
   if (decision === 'cancel') {
-    // Фоновые проверки эталона (идут, пока человек смотрит план) больше никому не нужны.
-    k.basePrep.delete(id);
-    await killGroup(id);
     if (gate === 'limit') {
       r.status = 'stopped';
       r.message = 'Остановлено после исчерпания попыток';
