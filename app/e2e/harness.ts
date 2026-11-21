@@ -90,9 +90,9 @@ export interface Launched {
   errors: string[];
 }
 
-export async function launch(box: Sandbox, env: Record<string, string> = {}): Promise<Launched> {
+export async function launch(box: Sandbox, env: Record<string, string> = {}, appDir = APP_DIR): Promise<Launched> {
   const app = await electron.launch({
-    cwd: APP_DIR,
+    cwd: appDir,
     // В контейнере CI нет прав на песочницу Chromium.
     // «.», а не путь к файлу: от каталога приложения окно ищет промпты ядра, как и при обычном запуске.
     args: [...(process.platform === 'linux' ? ['--no-sandbox'] : []), '.'],

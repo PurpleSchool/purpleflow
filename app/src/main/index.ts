@@ -59,11 +59,18 @@ const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
 app.on('second-instance', () => focusWindow());
 
+type PendingCall = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+
+interface CoreHost {
+  process: UtilityProcess;
+  ready: Promise<void>;
+  pending: Map<number, PendingCall>;
+  stopping?: Promise<void>;
+}
+
 let win: BrowserWindow | null = null;
-let host: UtilityProcess | null = null;
-let ready: Promise<void> | null = null;
+let host: CoreHost | null = null;
 let seq = 0;
-const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
 /** Сквозные тесты: окно не показывается, не берёт фокус, без значка в доке и системных уведомлений. */
 const HIDDEN = Boolean(process.env.PURPLEFLOW_HIDDEN);
@@ -139,45 +146,52 @@ function attention(e: CoreEvent) {
 let restartDelay = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
-function startHost(): Promise<void> {
+function startHost(): CoreHost {
+  if (host) return host;
   const startedAt = Date.now();
-  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), errorReportingActive() ? ['--report-errors'] : [], {
+  const proc = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), errorReportingActive() ? ['--report-errors'] : [], {
     serviceName: 'PurpleFlow Core',
     stdio: 'inherit',
   });
-  let failStart: (e: Error) => void = () => {};
-  ready = new Promise((resolve, reject) => {
+  let markReady!: () => void;
+  let failStart!: (e: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    markReady = resolve;
     failStart = reject;
-    host!.on('message', (m: HostMessage) => {
-      if (m.kind === 'ready') {
-        restartDelay = 0;
-        resolve();
-        void loadBadge();
-      } else if (m.kind === 'event') {
-        win?.webContents.send('core:event', m.event);
-        attention(m.event);
-        recordUsageEvent(m.event);
-      } else if (m.kind === 'reply') {
-        const p = pending.get(m.id);
-        if (!p) return;
-        pending.delete(m.id);
-        if (m.ok) p.resolve(m.result);
-        else p.reject(new Error(m.error));
-      }
-    });
   });
-  host.on('exit', (code) => {
-    for (const p of pending.values()) p.reject(new Error(`Процесс ядра завершился (код ${code})`));
-    pending.clear();
-    host = null;
-    // Вызовы, ждущие запуска этого процесса, иначе не завершились бы никогда.
-    failStart(new Error(`Процесс ядра завершился при запуске (код ${code})`));
-    if (quitting) return;
+  const current: CoreHost = { process: proc, ready, pending: new Map() };
+  host = current;
+  proc.on('message', (m: HostMessage) => {
+    if (host !== current) return;
+    if (m.kind === 'ready') {
+      restartDelay = 0;
+      markReady();
+      void loadBadge();
+    } else if (m.kind === 'event') {
+      win?.webContents.send('core:event', m.event);
+      attention(m.event);
+      recordUsageEvent(m.event);
+    } else if (m.kind === 'reply') {
+      const p = current.pending.get(m.id);
+      if (!p) return;
+      current.pending.delete(m.id);
+      if (m.ok) p.resolve(m.result);
+      else p.reject(new Error(m.error));
+    }
+  });
+  proc.once('exit', (code) => {
+    const wasCurrent = host === current;
+    if (wasCurrent) host = null;
+    const error = new Error(`Процесс ядра завершился (код ${code})`);
+    for (const p of current.pending.values()) p.reject(error);
+    current.pending.clear();
+    failStart(error);
+    if (!wasCurrent || quitting) return;
     // Ядро упало — поднимаем заново; прогоны восстановятся из run.json. Падает сразу — не крутимся в холостую.
     restartDelay = Date.now() - startedAt < 10_000 ? Math.min(30_000, restartDelay * 2 || 1000) : 0;
     restartTimer = setTimeout(() => {
       restartTimer = null;
-      if (!quitting && !host) void startHost().catch(() => {});
+      if (!quitting && !host) startHost();
     }, restartDelay);
   });
   const init: HostRequest = {
@@ -186,22 +200,30 @@ function startHost(): Promise<void> {
     promptsDir: promptsDir(),
     settings: coreSettings(),
   };
-  host.postMessage(init);
+  proc.postMessage(init);
   ready.catch(() => {});
-  return ready;
+  return current;
 }
 
 async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
+  if (quitting || host?.stopping) throw new Error('Ядро останавливается');
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  if (!host) await startHost();
-  await ready;
+  const current = host ?? startHost();
+  await current.ready;
+  if (host !== current) throw new Error('Процесс ядра завершился');
+  if (quitting || current.stopping) throw new Error('Ядро останавливается');
   const id = ++seq;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    host!.postMessage({ kind: 'call', id, method, args } satisfies HostRequest);
+    current.pending.set(id, { resolve, reject });
+    try {
+      current.process.postMessage({ kind: 'call', id, method, args } satisfies HostRequest);
+    } catch (error) {
+      current.pending.delete(id);
+      reject(error);
+    }
   });
 }
 
@@ -365,11 +387,11 @@ handle('settings:set', (_e, patch: SettingsPatch) => {
   syncUsageEvents();
   if (firstSetup) recordUsage('setup_completed');
   if (patch.windowGlass !== undefined && win) applyMaterial(win, materialFor(s.windowGlass));
-  host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
+  host?.process.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
   return s;
 });
 // Аккаунт PurpleSchool. После смены ключа прокси ядро получает новые настройки.
-const pushSettings = () => host?.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
+const pushSettings = () => host?.process.postMessage({ kind: 'settings', settings: coreSettings() } satisfies HostRequest);
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 handle('account:login', async (_e, email: unknown, password: unknown) => {
   const r = await account.login(str(email), str(password));
@@ -503,26 +525,39 @@ handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined))
 let quitting = false;
 /** «Стоп» для всего: убиваем деревья процессов агентов и тестов и само ядро. Зависшее ядро не держит выход дольше 5 секунд. */
 function stopHost(): Promise<void> {
-  return new Promise((finish) => {
-    if (!host) return finish();
+  const current = host;
+  if (!current) return Promise.resolve();
+  current.stopping ??= new Promise((resolve) => {
+    const { process: proc, pending } = current;
     const id = ++seq;
-    const done = () => {
-      host?.kill();
-      finish();
+    const finish = () => {
+      clearTimeout(timer);
+      pending.delete(id);
+      proc.off('exit', finish);
+      resolve();
     };
-    const t = setTimeout(done, 5000);
-    pending.set(id, {
-      resolve: () => {
-        clearTimeout(t);
-        done();
-      },
-      reject: () => {
-        clearTimeout(t);
-        done();
-      },
-    });
-    host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
+    const requestExit = () => {
+      try {
+        proc.kill();
+      } catch (error) {
+        console.error('[core-host] shutdown', error);
+      }
+    };
+    const timer = setTimeout(() => {
+      requestExit();
+      finish();
+    }, 5000);
+    // kill() только запрашивает завершение. Пока не пришёл exit, этот процесс остаётся текущим.
+    proc.once('exit', finish);
+    pending.set(id, { resolve: requestExit, reject: () => {} });
+    try {
+      proc.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
+    } catch {
+      pending.delete(id);
+      requestExit();
+    }
   });
+  return current.stopping;
 }
 
 app.on('before-quit', (e) => {
@@ -539,7 +574,7 @@ const onUpdateState = (u: UpdateState) => {
   if (installing && u.kind === 'failed') {
     installing = false;
     quitting = false;
-    void startHost().catch(() => {});
+    if (!host) startHost();
   }
 };
 /** Ручная проверка возвращает и скрытое кнопкой «Позже»: пользователь сам спросил про обновление. */
@@ -588,7 +623,7 @@ app.whenReady().then(() => {
   // Сайт проекта во вкладке «Браузер» не получает разрешений (камера, геолокация, уведомления…).
   session.fromPartition(PREVIEW_PARTITION).setPermissionRequestHandler((_wc, _p, cb) => cb(false));
   if ((process.env.PURPLEFLOW_CAPTURE || HIDDEN) && process.platform === 'darwin') app.dock?.hide();
-  void startHost();
+  startHost();
   setupMenu();
   createWindow();
   startUpdater(onUpdateState);
