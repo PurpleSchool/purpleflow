@@ -137,7 +137,7 @@ function attention(e: CoreEvent) {
 }
 
 let restartDelay = 0;
-let restartTimer: ReturnType<typeof setTimeout> | null = null;
+let restartWait: Promise<void> | null = null;
 
 function startHost(): Promise<void> {
   const startedAt = Date.now();
@@ -175,10 +175,13 @@ function startHost(): Promise<void> {
     if (quitting) return;
     // Ядро упало — поднимаем заново; прогоны восстановятся из run.json. Падает сразу — не крутимся в холостую.
     restartDelay = Date.now() - startedAt < 10_000 ? Math.min(30_000, restartDelay * 2 || 1000) : 0;
-    restartTimer = setTimeout(() => {
-      restartTimer = null;
-      if (!quitting && !host) void startHost().catch(() => {});
-    }, restartDelay);
+    restartWait = new Promise((resolve) => {
+      setTimeout(() => {
+        restartWait = null;
+        if (!quitting && !host) void startHost().catch(() => {});
+        resolve();
+      }, restartDelay);
+    });
   });
   const init: HostRequest = {
     kind: 'init',
@@ -192,12 +195,13 @@ function startHost(): Promise<void> {
 }
 
 async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
-  if (restartTimer) {
-    clearTimeout(restartTimer);
-    restartTimer = null;
-  }
+  if (quitting) throw new Error('Приложение завершает работу');
+  if (!host && restartWait) await restartWait;
+  if (quitting) throw new Error('Приложение завершает работу');
   if (!host) await startHost();
   await ready;
+  if (quitting) throw new Error('Приложение завершает работу');
+  if (!host) throw new Error('Процесс ядра недоступен');
   const id = ++seq;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
@@ -526,10 +530,10 @@ function stopHost(): Promise<void> {
 }
 
 app.on('before-quit', (e) => {
-  if (quitting || !host) return;
+  if (quitting) return;
   e.preventDefault();
   quitting = true;
-  void Promise.all([stopHost(), flushUsageEvents()]).then(() => app.quit());
+  void Promise.allSettled([stopHost(), flushUsageEvents()]).then(() => app.quit());
 });
 
 // Установка началась: ядро уже остановлено. Если установщик откажет, приложение остаётся открытым, и ядро нужно вернуть.

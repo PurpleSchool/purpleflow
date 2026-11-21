@@ -60,7 +60,22 @@ export function syncUsageEvents() {
   if (!usageEventsAllowed()) queue.clear();
 }
 
-export const flushUsageEvents = () => (usageEventsActive() ? queue.flush() : Promise.resolve());
+export async function flushUsageEvents() {
+  if (!usageEventsActive()) return;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      queue.flush(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, SEND_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error) {
+    console.error('[usage-events] flush', error);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export function startUsageEvents() {
   if (!usageEventsActive()) return;
