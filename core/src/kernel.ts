@@ -40,6 +40,10 @@ export class Kernel {
   readonly previews = new Map<string, PreviewState>();
   /** Прогоны, по которым менеджер сейчас готовит ответ. */
   readonly managerBusy = new Set<string>();
+  /** Invalidates service calls started before Stop or Delete, even if the run resumes. */
+  private backgroundEpoch = new Map<string, number>();
+  /** New requests wait until Stop finishes killing the previous generation. */
+  readonly backgroundTeardown = new Map<string, number>();
   /** Чаты, в которых агент сейчас отвечает. */
   readonly chatBusy = new Set<string>();
   private detected: { key: string; at: number; result: ReturnType<typeof detectTools> } | null = null;
@@ -85,6 +89,30 @@ export class Kernel {
     }
   }
 
+  backgroundToken(id: string): number {
+    return this.backgroundEpoch.get(id) ?? 0;
+  }
+
+  backgroundCurrent(id: string, token: number): boolean {
+    return !this.deleted.has(id) && !this.backgroundTeardown.has(id) && this.backgroundToken(id) === token && !!this.store.load(id);
+  }
+
+  cancelBackground(id: string) {
+    this.backgroundEpoch.set(id, this.backgroundToken(id) + 1);
+    if (this.managerBusy.delete(id) && !this.deleted.has(id))
+      this.emit({ type: 'manager.updated', runId: id, messages: this.store.readChat(id), thinking: false });
+  }
+
+  beginBackgroundTeardown(id: string) {
+    this.backgroundTeardown.set(id, (this.backgroundTeardown.get(id) ?? 0) + 1);
+  }
+
+  endBackgroundTeardown(id: string) {
+    const remaining = (this.backgroundTeardown.get(id) ?? 1) - 1;
+    if (remaining > 0) this.backgroundTeardown.set(id, remaining);
+    else this.backgroundTeardown.delete(id);
+  }
+
   save(run: RunFile) {
     if (this.deleted.has(run.id)) return;
     this.store.save(run);
@@ -98,6 +126,7 @@ export class Kernel {
   }
 
   log(run: RunFile, text: string, convert = true) {
+    if (this.deleted.has(run.id)) return;
     const t = convert ? crlf(text) : text;
     const hold = this.logHold.getStore();
     if (hold) {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { migrateRun } from './migrate.js';
 import { trace } from './trace.js';
 import type { ManagerMessage, ProjectConfig, RunFile, RunSummary } from './types.js';
+import { runProcessGroups } from './run-processes.js';
 
 interface IndexEntry {
   id: string;
@@ -164,14 +165,7 @@ export class RunStore {
   /** Всё, что прогон хранит в данных приложения: индекс, копия run.json, лог, PID-файлы. */
   forget(id: string): void {
     this.remove(id);
-    for (const f of [
-      this.backupPath(id),
-      this.logFile(id),
-      this.chatFile(id),
-      this.pidFile(id),
-      this.pidFile(`${id}:server`),
-      this.pidFile(`${id}:preview`),
-    ])
+    for (const f of [this.backupPath(id), this.logFile(id), this.chatFile(id), ...runProcessGroups(id).map((group) => this.pidFile(group))])
       fs.rmSync(f, { force: true });
   }
 

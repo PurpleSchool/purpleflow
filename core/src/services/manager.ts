@@ -46,6 +46,7 @@ export function getManagerChat(k: Kernel, id: string): ManagerMessage[] {
 }
 
 function publish(k: Kernel, id: string, messages: ManagerMessage[]) {
+  if (k.deleted.has(id) || !k.store.load(id)) return;
   k.store.writeChat(id, messages);
   k.emit({ type: 'manager.updated', runId: id, messages, thinking: k.managerBusy.has(id) });
 }
@@ -60,11 +61,13 @@ export async function askManager(
   text: string,
   files: { name: string; data: Uint8Array }[] = [],
 ): Promise<ManagerMessage[]> {
+  if (k.backgroundTeardown.has(id) || k.deleted.has(id)) throw new Error('Прогон сейчас останавливается');
   const run = k.mustLoad(id);
   const pictures = files.filter((f) => isImageFile(f.name));
   if (pictures.length < files.length) throw new Error('Менеджеру можно приложить только изображения');
   if (!text.trim() && !pictures.length) throw new Error('Пустое сообщение');
   if (k.managerBusy.has(id)) throw new Error('Менеджер ещё отвечает на прошлое сообщение');
+  const token = k.backgroundToken(id);
   const images = writeFiles(imagesDir(k, id), pictures, (i) => `${Date.now().toString(36)}-${i}`);
   const msg = (role: ManagerMessage['role'], t: string, extra: Partial<ManagerMessage> = {}): ManagerMessage => ({
     id: crypto.randomUUID(),
@@ -99,6 +102,7 @@ export async function askManager(
     const res = await service(k, {
       prompt,
       group: `${id}:manager`,
+      owner: { id, token },
       timeoutMs: 5 * 60_000,
       model: s.models.manager || undefined,
       agent: s.agents?.manager,
@@ -112,6 +116,7 @@ export async function askManager(
       tools: ['Read', 'Grep', 'Glob'],
       images,
     });
+    if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
     if (!res.ok) throw new Error(res.error ?? 'Менеджер не ответил');
     const parsed = parseReply(res.text);
     // Ход прогона мог уйти вперёд, пока менеджер думал: предлагаем только то, что доступно сейчас.
@@ -123,10 +128,12 @@ export async function askManager(
       msg('manager', parsed.reply || 'Не понял вопрос — переформулируйте, пожалуйста.', action ? { action, actionState: 'proposed' } : {}),
     );
   } catch (e) {
+    if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
     messages.push(msg('manager', `Не получилось ответить: ${(e as Error).message}`, { error: true }));
   } finally {
-    k.managerBusy.delete(id);
+    if (k.backgroundCurrent(id, token)) k.managerBusy.delete(id);
   }
+  if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
   publish(k, id, messages);
   return messages;
 }
@@ -162,8 +169,10 @@ async function runCommand(
   m: ManagerMessage,
   a: CommandAction,
 ): Promise<ManagerMessage[]> {
+  if (k.backgroundTeardown.has(id) || k.deleted.has(id)) throw new Error('Прогон сейчас останавливается');
   if (k.managerBusy.has(id)) throw new Error('Менеджер ещё занят — дождитесь ответа');
   const run = k.mustLoad(id);
+  const token = k.backgroundToken(id);
   const cwd = a.cwd === 'worktree' && hasWorktree(run) ? workDir(run) : (run.root?.path ?? run.projectPath);
   m.actionState = 'applied';
   k.managerBusy.add(id);
@@ -173,6 +182,7 @@ async function runCommand(
     output = (output + t).slice(-20_000);
   };
   try {
+    if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
     const r = await runProc(a.command, [], {
       cwd,
       env: k.opts.env,
@@ -182,6 +192,7 @@ async function runCommand(
       onStdout: take,
       onStderr: take,
     });
+    if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
     const clean = output.replace(/\x1b\[[0-9;]*m/g, '').trim();
     const why = r.spawnError ?? (r.timedOut ? 'не уложилась в 5 минут' : '');
     messages.push({
@@ -193,8 +204,9 @@ async function runCommand(
       result: { code: r.code, output: tail(clean, 6000) },
     });
   } finally {
-    k.managerBusy.delete(id);
+    if (k.backgroundCurrent(id, token)) k.managerBusy.delete(id);
   }
+  if (!k.backgroundCurrent(id, token)) return k.store.readChat(id);
   publish(k, id, messages);
   return messages;
 }

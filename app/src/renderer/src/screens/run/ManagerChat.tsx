@@ -172,13 +172,12 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
       const files = await Promise.all(
         sent.map(async (i) => ({ name: i.file.name || 'screenshot.png', data: new Uint8Array(await i.file.arrayBuffer()) })),
       );
-      setMessages(await bridge.core.askManager(runId, q, files));
+      await bridge.core.askManager(runId, q, files);
       sent.forEach((i) => URL.revokeObjectURL(i.url));
     } catch (e) {
       setText(q);
       setImages(sent);
       setError(cleanErr(e));
-    } finally {
       setThinking(false);
     }
   };
@@ -187,7 +186,7 @@ export function ManagerChat({ run, runId, layout }: { run: RunFile; runId: strin
     setBusy(`${m.id}:${apply}`);
     setError(null);
     try {
-      setMessages(await bridge.core.resolveManagerAction(runId, m.id, apply));
+      await bridge.core.resolveManagerAction(runId, m.id, apply);
     } catch (e) {
       setError(cleanErr(e));
     } finally {

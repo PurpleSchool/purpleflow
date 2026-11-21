@@ -1,4 +1,5 @@
 import { run } from '../proc.js';
+import { StopSignal } from '../runtime.js';
 import { codexProxyBase } from './codex.js';
 import {
   addUsage,
@@ -17,6 +18,8 @@ import {
 import { todosOf, toolName, toolView } from './tools.js';
 
 export interface OpencodeOptions extends AgentRunOptions {
+  /** Service ownership can expire while the CLI version is being detected. */
+  shouldStop?: () => boolean;
   /** Стадия не меняет файлы (уточнение, ревью, служебное): правка файлов запрещена правами opencode. */
   readOnly?: boolean;
   /** Продолжить сохранённую сессию: opencode run -s <id>. */
@@ -208,6 +211,7 @@ export async function runOpencode(o: OpencodeOptions): Promise<AgentResult> {
   const prompt = o.systemPrompt ? `${o.systemPrompt}\n\n---\n\n${o.prompt}` : o.prompt;
   const model = opencodeModel(o.model, o.proxy);
   const major = await opencodeMajor(o.bin, env);
+  if (o.shouldStop?.()) throw new StopSignal();
   // opencode 2 берёт папку из PWD раньше, чем из рабочей папки процесса, — а PWD унаследован от приложения.
   env.PWD = o.cwd;
 

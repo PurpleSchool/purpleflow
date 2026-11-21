@@ -11,6 +11,7 @@ import { emptyUsage, type AgentResult, type AgentRunOptions } from './agents/com
 import { restore } from './engine.js';
 import { decide, waitGate } from './gates.js';
 import { Orchestrator } from './orchestrator.js';
+import { liveCount, run as runProc } from './proc.js';
 import { copyEnvFiles, cloneDeps } from './services/workspace.js';
 import { stageFinish } from './stages/finish.js';
 import { stageImplement } from './stages/implement.js';
@@ -309,6 +310,78 @@ test('восстановление: прогон продолжается сам
 });
 
 // ——— Очередь, остановка, удаление ———
+
+test('Stop kills detached run services and clears their process groups', unix, async (t) => {
+  const { core, save } = setup(t);
+  for (const status of ['waiting', 'queued'] as const) {
+    const run = save({ status, next: 'gate2' });
+    const groups = ['manager', 'summary', 'map', 'learn'].map((suffix) => `${run.id}:${suffix}`);
+    const children = groups.map((group) => runProc('sleep', ['30'], { cwd: process.cwd(), env: process.env, group }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(
+      groups.map((group) => liveCount(group)),
+      [1, 1, 1, 1],
+    );
+    await core.dispatch({ type: 'run.stop', runId: run.id });
+    assert.equal(core.kernel.mustLoad(run.id).status, 'stopped');
+    assert.ok((await Promise.all(children)).every((result) => result.killed));
+    assert.deepEqual(
+      groups.map((group) => liveCount(group)),
+      [0, 0, 0, 0],
+    );
+  }
+});
+
+test('Stop discards an old manager reply while a new request remains usable', unix, async (t) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = 0;
+  const { core, k, save } = setup(t, async (opts) => {
+    if (!/Ты — менеджер прогона/.test(opts.prompt)) return okReply();
+    const call = ++started;
+    if (call === 1) await held;
+    return okReply(JSON.stringify({ reply: call === 1 ? 'old reply' : 'new reply' }));
+  });
+  const run = save({ status: 'waiting', next: 'gate2' });
+  const old = core.askManager(run.id, 'old question');
+  for (let i = 0; i < 200 && !started; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(started, 1);
+  await core.dispatch({ type: 'run.stop', runId: run.id });
+  assert.equal(k.managerBusy.has(run.id), false);
+  const fresh = await core.askManager(run.id, 'new question');
+  assert.equal(fresh.at(-1)?.text, 'new reply');
+  release();
+  await old;
+  assert.equal(k.store.readChat(run.id).at(-1)?.text, 'new reply');
+  assert.equal(k.managerBusy.has(run.id), false);
+});
+
+test('Delete discards a pending manager reply without recreating its chat', unix, async (t) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = false;
+  const { core, k, save } = setup(t, async (opts) => {
+    if (/Ты — менеджер прогона/.test(opts.prompt)) {
+      started = true;
+      await held;
+      return okReply('{"reply":"late reply"}');
+    }
+    return okReply();
+  });
+  const run = save({ status: 'waiting', next: 'gate2', workspace: 'branch' });
+  const pending = core.askManager(run.id, 'question');
+  for (let i = 0; i < 200 && !started; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(started, true);
+  await core.dispatch({ type: 'run.delete', runId: run.id, deleteBranch: false });
+  release();
+  await pending;
+  assert.equal(fs.existsSync(k.store.chatFile(run.id)), false);
+  assert.equal(k.store.load(run.id), null);
+});
 
 test('очередь: лимит соблюдается, снятие и запуск вручную, место освободилось — следующий', unix, async (t) => {
   let release = () => {};

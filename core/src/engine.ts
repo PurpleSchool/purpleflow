@@ -10,6 +10,7 @@ import type { Kernel } from './kernel.js';
 import { RUN_VERSION } from './migrate.js';
 import { MODE_FIRST, MODE_LIMIT } from './modes.js';
 import { killGroup, killPid } from './proc.js';
+import { runProcessGroups } from './run-processes.js';
 import { isInside } from './files.js';
 import { afterChecks } from './route.js';
 import { IMPL_LIMIT, StopSignal } from './runtime.js';
@@ -36,7 +37,7 @@ import { DEFAULT_AGENTS, effortFor, enabledAgent } from './types.js';
 export async function recover(k: Kernel): Promise<void> {
   for (const s of k.store.list()) {
     // Агенты и тесты, пережившие аварийный выход приложения, не должны писать в worktree параллельно с повтором стадии.
-    for (const group of [s.id, `${s.id}:server`, `${s.id}:preview`]) {
+    for (const group of runProcessGroups(s.id)) {
       const pids = k.store.readPids(group);
       if (!pids.length) continue;
       const recordedAt = k.store.pidsTime(group);
@@ -334,8 +335,10 @@ export async function launchQueued(k: Kernel, run: RunFile) {
     if (run.workspacePending) await prepareWorkspace(k, run);
     // Продолжение после перезапуска приложения: в режиме «ветка» проект могли переключить на другую ветку.
     else await ensureOnBranch(k, run);
+    if (k.deleted.has(run.id)) return;
     if (k.stopping.delete(run.id)) return k.markStopped(run, 'Остановлено пользователем');
   } catch (e) {
+    if (k.deleted.has(run.id)) return;
     if (k.stopping.delete(run.id)) return k.markStopped(run, 'Остановлено пользователем');
     run.status = 'stopped';
     run.message = `Не удалось начать прогон: ${(e as Error).message}`;
@@ -403,30 +406,40 @@ export async function restore(k: Kernel, id: string) {
 export async function stop(k: Kernel, id: string) {
   const r = k.store.load(id);
   if (!r) return;
-  if (r.status === 'queued') {
+  k.beginBackgroundTeardown(id);
+  k.cancelBackground(id);
+  const active = k.driving.has(id) || k.preparing.has(id);
+  const queued = r.status === 'queued';
+  if (active) k.stopping.add(id);
+  // Фоновые исходные проверки гибнут вместе с группой процессов — их итог больше не годится в эталон.
+  k.basePrep.delete(id);
+  if (queued) {
     r.status = 'stopped';
     r.message = 'Снят с очереди. «Продолжить» запустит его сразу.';
     k.save(r);
-    k.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message, reason: 'unqueued' });
-    return;
   }
-  // Фоновые исходные проверки гибнут вместе с группой процессов — их итог больше не годится в эталон.
-  k.basePrep.delete(id);
-  await killGroup(`${id}:server`);
-  await stopPreview(k, id);
-  if (k.driving.has(id) || k.preparing.has(id)) {
-    k.stopping.add(id);
-    await killGroup(id);
-    return; // цикл drive (или launchQueued) сам зафиксирует остановку
-  }
-  await killGroup(id);
-  if (r.status === 'running' || r.status === 'waiting') {
-    for (const a of r.attempts)
-      if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
-    r.status = 'stopped';
-    r.message = 'Остановлено пользователем';
-    k.save(r);
-    k.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message, reason: 'user_stop' });
+  try {
+    // Start every kill before awaiting any of them. The teardown guard prevents a new manager from joining these groups.
+    const kills = runProcessGroups(id)
+      .filter((group) => group !== `${id}:preview`)
+      .map(killGroup);
+    await Promise.all([...kills, stopPreview(k, id)]);
+    if (k.deleted.has(id)) return;
+    if (queued) {
+      k.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message, reason: 'unqueued' });
+      return;
+    }
+    if (active) return; // цикл drive (или launchQueued) сам зафиксирует остановку
+    if (r.status === 'running' || r.status === 'waiting') {
+      for (const a of r.attempts)
+        if (a.stage === 'baseline' && a.status === 'running') Object.assign(a, { status: 'stopped', endedAt: new Date().toISOString() });
+      r.status = 'stopped';
+      r.message = 'Остановлено пользователем';
+      k.save(r);
+      k.emit({ type: 'run.finished', runId: id, status: 'stopped', message: r.message, reason: 'user_stop' });
+    }
+  } finally {
+    k.endBackgroundTeardown(id);
   }
 }
 
@@ -535,7 +548,9 @@ export async function drive(k: Kernel, run: RunFile) {
       }
     }
   } catch (e) {
-    if (e instanceof StopSignal || k.stopping.has(run.id)) {
+    if (k.deleted.has(run.id)) {
+      // Delete owns the final event and data removal.
+    } else if (e instanceof StopSignal || k.stopping.has(run.id)) {
       k.markStopped(run, 'Остановлено пользователем');
     } else {
       k.fail(run, (e as Error).message || String(e));
@@ -565,17 +580,24 @@ export async function deleteRun(k: Kernel, id: string, deleteBranch: boolean) {
         `Проект сейчас на ветке ${r.branch} — переключитесь на другую (git checkout ${r.originalBranch ?? 'main'}), чтобы удалить её, или удалите прогон без ветки.`,
       );
   }
+  k.deleted.add(id);
+  k.cancelBackground(id);
+  if (k.driving.has(id) || k.preparing.has(id)) k.stopping.add(id);
   if (k.driving.has(id) || k.preparing.has(id)) {
-    k.stopping.add(id);
-    await killGroup(id);
+    await Promise.all(
+      runProcessGroups(id)
+        .filter((group) => group !== `${id}:preview`)
+        .map(killGroup),
+    );
     // drive сам выйдет из цикла; ждём, пока отпустит прогон.
     for (let i = 0; i < 100 && (k.driving.has(id) || k.preparing.has(id)); i++) await new Promise((res) => setTimeout(res, 100));
   }
   // Стадия могла не успеть выйти (её finally бывает долгим): её запоздалое сохранение не должно вернуть прогон в список.
-  k.deleted.add(id);
-  await killGroup(id);
-  await killGroup(`${id}:server`);
-  await killGroup(`${id}:manager`);
+  await Promise.all(
+    runProcessGroups(id)
+      .filter((group) => group !== `${id}:preview`)
+      .map(killGroup),
+  );
   await stopPreview(k, id);
   if (r) {
     if (r.workspace !== 'branch' && isInside(k.store.worktreesDir(), r.worktreePath) && fs.existsSync(r.worktreePath))

@@ -155,6 +155,7 @@ export function getKnowledge(k: Kernel, repo: string): ProjectKnowledge {
 }
 
 export async function learn(k: Kernel, run: RunFile) {
+  const token = k.backgroundToken(run.id);
   // Круг по PR: уроки только из его замечаний — прошлые круги уже разобраны.
   const since = run.prRound ? (run.prRounds?.at(-1)?.at ?? '') : '';
   const prItems = run.prRound
@@ -193,9 +194,10 @@ export async function learn(k: Kernel, run: RunFile) {
   const res = await service(k, {
     prompt: k.prompts.render('lessons.md', { known: known.map((l) => `- ${l.text}`).join('\n') || '(пока нет)', digest }),
     group: `${run.id}:learn`,
+    owner: { id: run.id, token },
     timeoutMs: 3 * 60_000,
   }).catch(() => null);
-  if (!res?.ok) return;
+  if (!res?.ok || !k.backgroundCurrent(run.id, token)) return;
   const j = parseJsonReply<{ lessons?: unknown }>(res.text) ?? {};
   const lessons: string[] = Array.isArray(j.lessons)
     ? j.lessons.filter((x): x is string => typeof x === 'string' && x.trim().length > 3).slice(0, 5)

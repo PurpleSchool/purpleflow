@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { addUsage, type AgentResult } from '../agents/common.js';
 import { prependPath } from '../env.js';
+import { StopSignal } from '../runtime.js';
 import type { Kernel } from '../kernel.js';
 import type { AgentKind, Role, RunFile } from '../types.js';
 import { AGENT_KINDS, DEFAULT_AGENTS, effortFor, enabledAgents } from '../types.js';
@@ -13,6 +14,8 @@ import { workDir } from './repos.js';
 type ServiceOptions = {
   prompt: string;
   group: string;
+  /** Run-owned background work: prevents a spawn after Stop/Delete invalidated this call. */
+  owner?: { id: string; token: number };
   timeoutMs: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -41,12 +44,15 @@ type ServiceOptions = {
  * прокси, вход и модель из настроек в одном месте. По умолчанию без инструментов и во временной папке.
  */
 export async function service(k: Kernel, o: ServiceOptions): Promise<AgentResult> {
+  checkOwner(k, o);
   const agent = o.agent && (await k.hasTool(o.agent)) ? o.agent : await serviceAgent(k);
+  checkOwner(k, o);
   // Имя модели одного CLI другому не подходит: своя модель — только тому агенту, для которого её выбрали.
   const ownModel = !o.agent || o.agent === agent ? o.model : undefined;
   const res = await serviceOn(k, agent, ownModel, o);
   if (res.ok || res.stopped || res.timedOut || !o.fallback) return res;
   const other = await otherAgent(k, agent);
+  checkOwner(k, o);
   if (!other) return res;
   o.onOutput?.(`\n${agent} не справился (${res.error ?? 'без ответа'}) — пробую ${other}…\n`);
   const second = await serviceOn(k, other, undefined, o);
@@ -56,8 +62,10 @@ export async function service(k: Kernel, o: ServiceOptions): Promise<AgentResult
 }
 
 async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined, o: ServiceOptions): Promise<AgentResult> {
+  checkOwner(k, o);
   const s = k.opts.getSettings();
   const tools = await k.tools([agent]);
+  checkOwner(k, o);
   const common = {
     bin: tools[agent],
     cwd: o.cwd ?? os.tmpdir(),
@@ -75,6 +83,7 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
     // Служебное на opencode — без правки файлов; читать соседние каталоги ему можно и так.
     return k.opencode({
       ...common,
+      shouldStop: o.owner ? () => !k.backgroundCurrent(o.owner!.id, o.owner!.token) : undefined,
       images: images.length ? images : undefined,
       model: model || agentModel(k, 'opencode', s.agents, s.models) || undefined,
       readOnly: !o.fullAccess,
@@ -102,6 +111,10 @@ async function serviceOn(k: Kernel, agent: AgentKind, model: string | undefined,
     addDirs: dirs.length ? dirs : undefined,
     tools: images.length && !allowed.includes('Read') ? [...allowed, 'Read'] : allowed,
   });
+}
+
+function checkOwner(k: Kernel, o: ServiceOptions) {
+  if (o.owner && !k.backgroundCurrent(o.owner.id, o.owner.token)) throw new StopSignal();
 }
 
 /** Кто выполняет служебные вызовы (сводка, профиль, уроки, менеджер): claude, за ним codex, затем opencode — первый включённый и найденный. */

@@ -33,8 +33,9 @@ export function summaryContext(k: Kernel, run: RunFile): string {
 
 /** «Что изменилось»: короткая сводка диффа для приёмки — в фоне, приёмку не задерживает. */
 export async function summarizeChanges(k: Kernel, id: string) {
+  const token = k.backgroundToken(id);
   const run = k.store.load(id);
-  if (!run || run.next !== 'gate2') return;
+  if (!run || run.status !== 'waiting' || run.next !== 'gate2') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
   if (run.changeSummary?.attempt === attempt) return;
   const tools = await k.tools(['git']).catch(() => null);
@@ -53,12 +54,20 @@ export async function summarizeChanges(k: Kernel, id: string) {
   const res = await service(k, {
     prompt: k.prompts.render('summary.md', { task: taskText(k, run), context: summaryContext(k, run), diff }),
     group: `${run.id}:summary`,
+    owner: { id, token },
     timeoutMs: 3 * 60_000,
   }).catch(() => null);
   if (!res?.ok || !res.text.trim()) return;
   // Пока сводка писалась, человек мог уже принять решение — пишем только в ту же приёмку.
   const fresh = k.store.load(id);
-  if (!fresh || fresh.next !== 'gate2' || fresh.attempts.filter((a) => a.stage === 'gate2').length !== attempt) return;
+  if (
+    !k.backgroundCurrent(id, token) ||
+    !fresh ||
+    fresh.status !== 'waiting' ||
+    fresh.next !== 'gate2' ||
+    fresh.attempts.filter((a) => a.stage === 'gate2').length !== attempt
+  )
+    return;
   fresh.changeSummary = { at: new Date().toISOString(), text: res.text.trim(), attempt };
   k.save(fresh);
   k.emit({ type: 'run.updated', run: fresh });
@@ -66,8 +75,9 @@ export async function summarizeChanges(k: Kernel, id: string) {
 
 /** Группы файлов диффа по пунктам плана — считаются к каждой приёмке, если есть tasks.md. */
 export async function mapFilesToPlan(k: Kernel, id: string) {
+  const token = k.backgroundToken(id);
   const run = k.store.load(id);
-  if (!run || run.mode === 'quick') return;
+  if (!run || run.status !== 'waiting' || run.next !== 'gate2' || run.mode === 'quick') return;
   const attempt = run.attempts.filter((a) => a.stage === 'gate2').length;
   if (run.taskMap?.attempt === attempt) return;
   const docs = await getChangeDocs(k, id).catch(() => null);
@@ -85,6 +95,7 @@ export async function mapFilesToPlan(k: Kernel, id: string) {
       files: files.map((f) => `- ${f.path} (+${f.add} −${f.del})`).join('\n'),
     }),
     group: `${run.id}:map`,
+    owner: { id, token },
     timeoutMs: 3 * 60_000,
   }).catch(() => null);
   if (!res?.ok) return;
@@ -107,7 +118,15 @@ export async function mapFilesToPlan(k: Kernel, id: string) {
   }
   // Прогон мог уйти дальше, пока считали: сохраняем только к той же приёмке.
   const fresh = k.store.load(id);
-  if (!fresh || fresh.attempts.filter((x) => x.stage === 'gate2').length !== attempt || !groups.length) return;
+  if (
+    !k.backgroundCurrent(id, token) ||
+    !fresh ||
+    fresh.status !== 'waiting' ||
+    fresh.next !== 'gate2' ||
+    fresh.attempts.filter((x) => x.stage === 'gate2').length !== attempt ||
+    !groups.length
+  )
+    return;
   fresh.taskMap = { attempt, groups };
   k.save(fresh);
 }
