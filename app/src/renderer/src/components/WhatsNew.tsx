@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CircleCheck, Download, LoaderCircle, RotateCw, Sparkles, TriangleAlert, X } from 'lucide-react';
 import { RELEASES_URL, type UpdateState } from '../../../shared/update';
 import { releasesBetween, shouldShowWhatsNew, type Release } from '../../../shared/releases';
-import { bridge } from '../lib/api';
+import { bridge, cleanErr } from '../lib/api';
 import { closeWhatsNew, openWhatsNew, restartForUpdate, useUpdateState, useWhatsNewOpen } from '../lib/update';
 import { Markdown } from './Markdown';
 import { Button } from './ui';
@@ -14,6 +14,7 @@ export const updatePending = (s: UpdateState) => s.kind === 'available' || s.kin
 /** Кнопка шага обновления: скачать, ход загрузки, перезапуск. Решает пользователь — сами ничего не ставим. */
 export function UpdateButton({ s, compact }: { s: UpdateState; compact?: boolean }) {
   const [running, setRunning] = useState<number | null>(null);
+  const [error, setError] = useState('');
   if (s.kind === 'available' || s.kind === 'failed')
     return (
       <Button tone="primary" icon={<Download size={14} />} onClick={() => void bridge.update.download()}>
@@ -32,11 +33,21 @@ export function UpdateButton({ s, compact }: { s: UpdateState; compact?: boolean
       {running !== null && !compact && (
         <span className="wn-note">Идёт прогонов: {running}. Они остановятся, после запуска их можно продолжить.</span>
       )}
+      {error && (
+        <span role="alert" className="wn-note">
+          {error}
+        </span>
+      )}
       <Button
         tone="primary"
         icon={<RotateCw size={14} />}
         title={running !== null ? `Идёт прогонов: ${running} — они остановятся` : undefined}
-        onClick={() => void restartForUpdate(running !== null).then((r) => r && setRunning(r.running))}
+        onClick={() => {
+          setError('');
+          void restartForUpdate(running !== null)
+            .then((r) => r && setRunning(r.running))
+            .catch((error: unknown) => setError(cleanErr(error)));
+        }}
       >
         {running === null ? 'Перезапустить' : 'Всё равно перезапустить'}
       </Button>

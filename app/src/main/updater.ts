@@ -60,3 +60,8 @@ export function downloadUpdate() {
 }
 
 export const installUpdate = () => autoUpdater.quitAndInstall();
+
+export function reportInstallFailure(version: string, message: string) {
+  state = { kind: 'failed', version, message };
+  emit(state);
+}

@@ -40,7 +40,7 @@ import {
   syncUsageEvents,
   usageRecording,
 } from './usage-events';
-import { checkForUpdatesNow, downloadUpdate, installUpdate, startUpdater, updateState } from './updater';
+import { checkForUpdatesNow, downloadUpdate, installUpdate, reportInstallFailure, startUpdater, updateState } from './updater';
 
 // Отдельный профиль для тестов и разработки.
 if (process.env.PURPLEFLOW_USER_DATA) app.setPath('userData', path.resolve(process.env.PURPLEFLOW_USER_DATA));
@@ -192,12 +192,14 @@ function startHost(): Promise<void> {
 }
 
 async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
+  if (installAttempt) throw new Error('Приложение готовится к установке обновления');
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
   if (!host) await startHost();
   await ready;
+  if (installAttempt) throw new Error('Приложение готовится к установке обновления');
   const id = ++seq;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
@@ -532,15 +534,24 @@ app.on('before-quit', (e) => {
   void Promise.all([stopHost(), flushUsageEvents()]).then(() => app.quit());
 });
 
-// Установка началась: ядро уже остановлено. Если установщик откажет, приложение остаётся открытым, и ядро нужно вернуть.
-let installing = false;
+// Некоторые установщики запрашивают выход асинхронно.
+const INSTALL_QUIT_TIMEOUT_MS = 30_000;
+type InstallAttempt = { timer?: ReturnType<typeof setTimeout> };
+let installAttempt: InstallAttempt | undefined;
+
+function resumeAfterInstallFailure() {
+  clearTimeout(installAttempt?.timer);
+  installAttempt = undefined;
+  quitting = false;
+  // Пока старый процесс завершает работу, перезапуск выполнит его обработчик exit.
+  if (!host && !restartTimer) void startHost().catch(() => {});
+}
+
+app.on('will-quit', () => clearTimeout(installAttempt?.timer));
+
 const onUpdateState = (u: UpdateState) => {
+  if (installAttempt?.timer && u.kind === 'failed') resumeAfterInstallFailure();
   win?.webContents.send('update:state', u);
-  if (installing && u.kind === 'failed') {
-    installing = false;
-    quitting = false;
-    void startHost().catch(() => {});
-  }
 };
 /** Ручная проверка возвращает и скрытое кнопкой «Позже»: пользователь сам спросил про обновление. */
 const checkForUpdates = () => {
@@ -566,10 +577,31 @@ handle('whatsNew:releases', () => releases());
 handle('whatsNew:versions', () => ({ current: app.getVersion(), seen: seenVersion(app.getVersion()) }));
 handle('whatsNew:seen', () => setSeenVersion(app.getVersion()));
 handle('update:install', async () => {
-  installing = true;
+  if (installAttempt) return;
+  if (quitting) throw new Error('Приложение завершает работу');
+  const update = updateState();
+  if (update.kind !== 'ready') throw new Error('Обновление ещё не готово к установке');
+
+  const attempt: InstallAttempt = {};
+  installAttempt = attempt;
   quitting = true;
-  await stopHost();
-  installUpdate();
+  const fail = (message: string) => {
+    if (installAttempt !== attempt) return;
+    resumeAfterInstallFailure();
+    reportInstallFailure(update.version, message);
+  };
+  try {
+    await Promise.all([stopHost(), flushUsageEvents()]);
+    const current = updateState();
+    if (current.kind !== 'ready' || current.version !== update.version) {
+      resumeAfterInstallFailure();
+      return;
+    }
+    attempt.timer = setTimeout(() => fail('Установщик не запросил перезапуск приложения'), INSTALL_QUIT_TIMEOUT_MS);
+    installUpdate();
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
 });
 
 handle('notify:test', () => {
