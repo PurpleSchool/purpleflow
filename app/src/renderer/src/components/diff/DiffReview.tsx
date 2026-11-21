@@ -4,6 +4,7 @@ import type { DiffFile, LineComment, PlanCoverage, ReviewItem, ReviewResult } fr
 import { Check, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import * as monaco from 'monaco-editor';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { isShortcutInput } from '../../lib/keyboard';
 import { Markdown } from '../Markdown';
 import { PillTabs } from '../PillTabs';
 import { Button, TextArea } from '../ui';
@@ -194,9 +195,7 @@ export function DiffReview({
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'v' && e.key.toLowerCase() !== 'м') return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
-      const el = e.target as HTMLElement;
-      // Редактор диффа только для чтения — в нём V работает; в настоящих полях ввода — нет.
-      if (!el.closest('.monaco-editor') && el.closest('input, textarea, [contenteditable]')) return;
+      if (isShortcutInput(e.target)) return;
       // Панель со скрытым диффом остаётся смонтированной — клавиша не должна отмечать то, чего человек не видит.
       if (!current || !root.current?.checkVisibility()) return;
       e.preventDefault();

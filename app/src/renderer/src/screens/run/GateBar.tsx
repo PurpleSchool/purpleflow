@@ -3,6 +3,7 @@ import { Globe, Wrench, CircleCheck, ClipboardCheck, RotateCcw, UserRoundCheck, 
 import type { ReviewItem, StageId } from '@purpleflow/core';
 import { Button, TextArea } from '../../components/ui';
 import { bridge } from '../../lib/api';
+import { isShortcutInput } from '../../lib/keyboard';
 
 export function GateBar(props: {
   gate: StageId;
@@ -38,11 +39,10 @@ export function GateBar(props: {
       if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.repeat) return;
       const p = keys.current;
       if (p.busy) return;
-      const el = document.activeElement as HTMLElement | null;
+      const el = document.activeElement;
       const inGateComment = Boolean(el?.closest('.gate-comment'));
-      // Свои ⌘↵ у полей замечаний к строкам и пунктам плана — не перехватываем. Monaco с диффом — не поле ввода.
-      const inField = !inGateComment && el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && !el.closest('.monaco-editor');
-      if (inField) return;
+      // Свои ⌘↵ у полей замечаний к строкам и пунктам плана — не перехватываем.
+      if (!inGateComment && isShortcutInput(el)) return;
       const hasText = Boolean(p.comment.trim()) || p.lineCount > 0;
       const back = () => (hasText ? p.onReject() : setOpen(true));
       const fix = () => (hasText || (p.pickedCount ?? 0) > 0 ? p.onFix?.() : setOpen(true));

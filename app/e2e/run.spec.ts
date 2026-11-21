@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { PurpleFlowBridge } from '../src/shared/ipc';
 import { launch, makeSandbox, quit, type Launched, type Sandbox } from './harness';
 
 let box: Sandbox;
@@ -80,6 +81,38 @@ test('приёмка: дифф показывает изменение, возв
   await expect(l.page.locator('.monaco-diff-editor')).toHaveCount(0);
   await l.page.getByRole('tab', { name: /^Код/ }).first().click();
   await expect(l.page.locator('.monaco-diff-editor').getByText('mul', { exact: false }).first()).toBeVisible();
+});
+
+test('приёмка: клавиши ревью не срабатывают при поиске в диффе', async () => {
+  const { page } = l;
+  await startRun(page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
+  await expect(accept(page).first()).toBeEnabled();
+  const viewed = page.getByRole('button', { name: 'Просмотрено', exact: true });
+  await expect(viewed).toHaveAttribute('title', /Отметить просмотренным/);
+
+  const editor = page.locator('.monaco-diff-editor .modified .view-lines');
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await editor.click();
+  await page.keyboard.press(`${mod}+f`);
+  const find = page.getByRole('textbox', { name: 'Find', exact: true });
+  await expect(find).toBeFocused();
+  await find.fill('');
+  await page.keyboard.press('v');
+  await expect(find).toHaveValue('v');
+  await expect(viewed).toHaveAttribute('title', /Отметить просмотренным/);
+
+  const status = () =>
+    page.evaluate(async () => (await (window as unknown as { purpleflow: PurpleFlowBridge }).purpleflow.core.listRuns())[0]?.status);
+  await page.keyboard.press(`${mod}+Enter`);
+  expect(await status()).toBe('waiting');
+  await expect(accept(page).first()).toBeEnabled();
+
+  await page.keyboard.press('Escape');
+  await editor.click();
+  await page.keyboard.press('v');
+  await expect(viewed).toHaveAttribute('title', 'Снять отметку');
+  await page.keyboard.press(`${mod}+Enter`);
+  await expect.poll(status).toBe('finished');
 });
 
 test('прогон: «Файлы» — рабочая копия агента, «Git» — ветка прогона с названием задачи', async () => {
