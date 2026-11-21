@@ -62,6 +62,7 @@ app.on('second-instance', () => focusWindow());
 let win: BrowserWindow | null = null;
 let host: UtilityProcess | null = null;
 let ready: Promise<void> | null = null;
+let startupError: Error | null = null;
 let seq = 0;
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
@@ -136,24 +137,53 @@ function attention(e: CoreEvent) {
     notify(e.runId, 'Прогон остановлен', `${title()}: ${e.message.slice(0, 160)}`);
 }
 
+// Восстановление может выполнять git-команды до 60 секунд каждая.
+const STARTUP_TIMEOUT_MS = 120_000;
 let restartDelay = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 
 function startHost(): Promise<void> {
   const startedAt = Date.now();
-  host = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), errorReportingActive() ? ['--report-errors'] : [], {
+  const proc = utilityProcess.fork(path.join(__dirname, 'coreHost.js'), errorReportingActive() ? ['--report-errors'] : [], {
     serviceName: 'PurpleFlow Core',
     stdio: 'inherit',
   });
-  let failStart: (e: Error) => void = () => {};
+  host = proc;
+  startupError = null;
+  let failStart!: (error: Error) => void;
+  let startupFailed = false;
+  const finishStartup = () => {
+    if (!startupTimer) return false;
+    clearTimeout(startupTimer);
+    startupTimer = null;
+    return true;
+  };
+  const failInit = (message: string) => {
+    if (!finishStartup()) return;
+    startupFailed = true;
+    const error = new Error(message);
+    failStart(error);
+    if (host === proc) {
+      startupError = error;
+      void stopHost(proc).catch((err) => console.error('[core-host] shutdown', err));
+    }
+  };
+  let startupTimer: ReturnType<typeof setTimeout> | null = setTimeout(
+    () => failInit(`Ядро не запустилось за ${STARTUP_TIMEOUT_MS / 1000} секунд. Перезапустите приложение.`),
+    STARTUP_TIMEOUT_MS,
+  );
   ready = new Promise((resolve, reject) => {
     failStart = reject;
-    host!.on('message', (m: HostMessage) => {
+    proc.on('message', (m: HostMessage) => {
       if (m.kind === 'ready') {
+        if (!finishStartup()) return;
         restartDelay = 0;
         resolve();
         void loadBadge();
+      } else if (m.kind === 'init-failed') {
+        failInit(`Не удалось запустить ядро: ${m.error}`);
       } else if (m.kind === 'event') {
+        if (host !== proc || startupFailed) return;
         win?.webContents.send('core:event', m.event);
         attention(m.event);
         recordUsageEvent(m.event);
@@ -166,13 +196,18 @@ function startHost(): Promise<void> {
       }
     });
   });
-  host.on('exit', (code) => {
+  proc.on('exit', (code) => {
+    if (finishStartup()) {
+      const error = new Error(`Процесс ядра завершился при запуске (код ${code})`);
+      startupFailed = true;
+      failStart(error);
+      if (host === proc) startupError = error;
+    }
+    if (host !== proc) return;
     for (const p of pending.values()) p.reject(new Error(`Процесс ядра завершился (код ${code})`));
     pending.clear();
     host = null;
-    // Вызовы, ждущие запуска этого процесса, иначе не завершились бы никогда.
-    failStart(new Error(`Процесс ядра завершился при запуске (код ${code})`));
-    if (quitting) return;
+    if (quitting || startupFailed) return;
     // Ядро упало — поднимаем заново; прогоны восстановятся из run.json. Падает сразу — не крутимся в холостую.
     restartDelay = Date.now() - startedAt < 10_000 ? Math.min(30_000, restartDelay * 2 || 1000) : 0;
     restartTimer = setTimeout(() => {
@@ -180,18 +215,22 @@ function startHost(): Promise<void> {
       if (!quitting && !host) void startHost().catch(() => {});
     }, restartDelay);
   });
-  const init: HostRequest = {
-    kind: 'init',
-    dataDir: path.join(app.getPath('userData'), 'data'),
-    promptsDir: promptsDir(),
-    settings: coreSettings(),
-  };
-  host.postMessage(init);
   ready.catch(() => {});
+  try {
+    proc.postMessage({
+      kind: 'init',
+      dataDir: path.join(app.getPath('userData'), 'data'),
+      promptsDir: promptsDir(),
+      settings: coreSettings(),
+    } satisfies HostRequest);
+  } catch (error) {
+    failInit(`Не удалось запустить ядро: ${error instanceof Error ? error.message : String(error)}`);
+  }
   return ready;
 }
 
 async function callHost(method: CoreMethod, args: unknown[]): Promise<unknown> {
+  if (startupError) throw startupError;
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
@@ -502,12 +541,17 @@ handle('shell:open', (_e, p: string) => shell.openPath(p).then(() => undefined))
 
 let quitting = false;
 /** «Стоп» для всего: убиваем деревья процессов агентов и тестов и само ядро. Зависшее ядро не держит выход дольше 5 секунд. */
-function stopHost(): Promise<void> {
+function stopHost(proc = host): Promise<void> {
   return new Promise((finish) => {
-    if (!host) return finish();
+    if (!proc) return finish();
     const id = ++seq;
     const done = () => {
-      host?.kill();
+      pending.delete(id);
+      try {
+        proc.kill();
+      } catch (error) {
+        console.error('[core-host] shutdown', error);
+      }
       finish();
     };
     const t = setTimeout(done, 5000);
@@ -521,7 +565,7 @@ function stopHost(): Promise<void> {
         done();
       },
     });
-    host.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
+    proc.postMessage({ kind: 'shutdown', id } satisfies HostRequest);
   });
 }
 

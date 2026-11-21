@@ -24,12 +24,18 @@ let methods: CoreApi | null = null;
 port.on('message', async (e: { data: HostRequest }) => {
   const msg = e.data;
   if (msg.kind === 'init') {
-    settings = msg.settings as CoreSettings;
-    const env = loadLoginShellEnv(process.env);
-    core = new Orchestrator({ dataDir: msg.dataDir, promptsDir: msg.promptsDir, env, getSettings: () => settings });
-    // Подписка до восстановления: события recover не должны теряться.
-    core.on((event) => send({ kind: 'event', event }));
-    methods = api(core);
+    try {
+      settings = msg.settings as CoreSettings;
+      const env = loadLoginShellEnv(process.env);
+      core = new Orchestrator({ dataDir: msg.dataDir, promptsDir: msg.promptsDir, env, getSettings: () => settings });
+      // Подписка до восстановления: события recover не должны теряться.
+      core.on((event) => send({ kind: 'event', event }));
+      methods = api(core);
+    } catch (error) {
+      console.error('[core-host] init', error);
+      send({ kind: 'init-failed', error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
     try {
       await core.recover();
     } catch (err) {
