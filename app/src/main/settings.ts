@@ -74,39 +74,60 @@ const file = () => path.join(app.getPath('userData'), 'settings.json');
 
 let cache: StoredSettings | null = null;
 
+type SettingsOnDisk = Partial<StoredSettings> & {
+  /** Раньше — два выключателя; выключенный любой из них выключает общий. */
+  errorReports?: boolean;
+  usageEvents?: boolean;
+};
+
 function load(): StoredSettings {
   if (cache) return cache;
+  const settingsFile = file();
+  let text: string;
   try {
-    const raw = JSON.parse(fs.readFileSync(file(), 'utf8')) as Partial<StoredSettings> & {
-      /** Раньше — два выключателя; выключенный любой из них выключает общий. */
-      errorReports?: boolean;
-      usageEvents?: boolean;
-    };
-    const { errorReports, usageEvents, ...rest } = raw;
-    cache = {
-      ...DEFAULTS,
-      ...rest,
-      proxy: { ...DEFAULTS.proxy, ...raw.proxy },
-      account: { ...DEFAULTS.account, ...raw.account },
-      models: { ...DEFAULTS.models, ...raw.models },
-      efforts: { ...raw.efforts },
-      agents: { ...DEFAULTS.agents, ...raw.agents },
-      toolPaths: { ...raw.toolPaths },
-      enabledAgents: enabledAgents({ enabledAgents: raw.enabledAgents }),
-      diagnostics: diagnosticsFrom({ ...raw, errorReports, usageEvents }),
-    };
-  } catch (e) {
-    // Нет файла — первый запуск. Битый файл откладываем: следующая запись иначе сотрёт токен и ключи насовсем.
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-      try {
-        fs.copyFileSync(file(), `${file()}.broken-${Date.now()}`);
-      } catch {
-        /* не вышло — остаёмся на настройках по умолчанию */
-      }
-    }
+    text = fs.readFileSync(settingsFile, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     cache = structuredClone(DEFAULTS);
+    return cache;
   }
+
+  let raw: SettingsOnDisk;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new SyntaxError('Настройки должны быть объектом JSON');
+    raw = parsed as SettingsOnDisk;
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    // Разрешаем сброс только после сохранения копии повреждённого файла.
+    fs.copyFileSync(settingsFile, `${settingsFile}.broken-${Date.now()}`, fs.constants.COPYFILE_EXCL);
+    cache = structuredClone(DEFAULTS);
+    return cache;
+  }
+
+  const { errorReports, usageEvents, ...rest } = raw;
+  cache = {
+    ...DEFAULTS,
+    ...rest,
+    proxy: { ...DEFAULTS.proxy, ...raw.proxy },
+    account: { ...DEFAULTS.account, ...raw.account },
+    models: { ...DEFAULTS.models, ...raw.models },
+    efforts: { ...raw.efforts },
+    agents: { ...DEFAULTS.agents, ...raw.agents },
+    toolPaths: { ...raw.toolPaths },
+    enabledAgents: enabledAgents({ enabledAgents: raw.enabledAgents }),
+    diagnostics: diagnosticsFrom({ ...raw, errorReports, usageEvents }),
+  };
   return cache;
+}
+
+/** Чтение для интерфейса и запуска может повториться, когда файл снова станет доступен. */
+function loadIfReadable(): StoredSettings | undefined {
+  try {
+    return load();
+  } catch {
+    return undefined;
+  }
 }
 
 function persist(s: StoredSettings) {
@@ -136,7 +157,8 @@ function encryptKey(value: string): string {
 
 /** Версия, чьё «Что нового» уже показано. Первый запуск запоминает текущую: новичку показывать «новое» нечего. */
 export function seenVersion(current: string): string {
-  const s = load();
+  const s = loadIfReadable();
+  if (!s) return current;
   if (!s.seenVersion) persist({ ...structuredClone(s), seenVersion: current });
   return s.seenVersion || current;
 }
@@ -147,7 +169,7 @@ export function setSeenVersion(v: string) {
 
 /** Токен аккаунта PurpleSchool — только для main: в окно он не уходит. */
 export function accountToken(): string {
-  return decryptKey(load().account.tokenEnc);
+  return decryptKey(loadIfReadable()?.account.tokenEnc ?? '');
 }
 
 export function setAccount(a: { token: string; email: string; name?: string } | null) {
@@ -168,7 +190,7 @@ export function setAccountProfile(p: { name?: string; photo?: string }) {
 
 /** Текущий ключ прокси — чтобы отметить его в списке ключей аккаунта. */
 export function proxyKey(): string {
-  return decryptKey(load().proxy.apiKeyEnc);
+  return decryptKey(loadIfReadable()?.proxy.apiKeyEnc ?? '');
 }
 
 export function setProxyKey(key: string) {
@@ -180,8 +202,8 @@ export function setProxyKey(key: string) {
 
 /** До конца первой настройки пользователь ещё не видел предупреждения — ничего не отправляем. */
 export function errorReportsAllowed(): boolean {
-  const s = load();
-  return s.onboarded && s.diagnostics;
+  const s = loadIfReadable();
+  return Boolean(s?.onboarded && s.diagnostics);
 }
 
 /**
@@ -189,13 +211,13 @@ export function errorReportsAllowed(): boolean {
  * где люди бросают настройку. Только installId, версия, ОС и имя шага; выключатель — на вкладке «Приложение».
  */
 export function usageEventsAllowed(): boolean {
-  return load().diagnostics;
+  return loadIfReadable()?.diagnostics ?? false;
 }
 
 /** Первый запуск на этой машине: настройка не пройдена и статистика ещё не заводила installId. */
 export function usageFirstLaunch(): boolean {
-  const s = load();
-  return !s.onboarded && !s.usageInstallId;
+  const s = loadIfReadable();
+  return Boolean(s && !s.onboarded && !s.usageInstallId);
 }
 
 export function usageInstallId(): string {
@@ -207,7 +229,8 @@ export function usageInstallId(): string {
 }
 
 export function publicSettings(): PublicSettings {
-  const s = load();
+  const stored = loadIfReadable();
+  const s = stored ?? DEFAULTS;
   return {
     toolPaths: s.toolPaths,
     proxy: { baseUrl: s.proxy.baseUrl, codexBaseUrl: s.proxy.codexBaseUrl, hasKey: Boolean(s.proxy.apiKeyEnc), enabled: s.proxy.enabled },
@@ -227,12 +250,12 @@ export function publicSettings(): PublicSettings {
     accountEnabled: ACCOUNT_ENABLED,
     account: ACCOUNT_ENABLED && s.account.tokenEnc ? { email: s.account.email, name: s.account.name, photo: s.account.photo } : null,
     authPrompted: s.authPrompted,
-    diagnostics: s.diagnostics,
+    diagnostics: stored?.diagnostics ?? false,
   };
 }
 
 export function coreSettings(): CoreSettings {
-  const s = load();
+  const s = loadIfReadable() ?? DEFAULTS;
   const apiKey = s.proxy.enabled ? decryptKey(s.proxy.apiKeyEnc) : '';
   return {
     toolPaths: s.toolPaths,
