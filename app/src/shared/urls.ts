@@ -19,11 +19,8 @@ export function isWebUrl(u: string): boolean {
   }
 }
 
-/**
- * Переход главного окна допустим только внутри уже открытой страницы (перезагрузка, якорь):
- * у чужой страницы в этом окне был бы весь window.purpleflow.
- */
-export function isSameDocument(target: string, current: string): boolean {
+/** Тот же путь приложения без учёта параметров и якоря: такой адрес не открываем в системном браузере. */
+export function isSamePage(target: string, current: string): boolean {
   try {
     const a = new URL(target);
     const b = new URL(current);

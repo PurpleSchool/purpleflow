@@ -6,6 +6,39 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launch, makeSandbox, quit } from './harness';
 
+test('чат: ссылка с параметром сохраняет черновик, ссылка на якорь работает', async () => {
+  const box = makeSandbox();
+  const l = await launch(box);
+  const { page } = l;
+  try {
+    await page.getByRole('button', { name: /Создать/ }).click();
+    await page.getByRole('menuitem', { name: /Чат/ }).click();
+    const input = page.locator('.chat-compose textarea');
+    await input.fill('Покажи ссылки Markdown');
+    await input.press('Enter');
+
+    const answer = page.locator('.chat-msg.is-assistant');
+    const queryLink = answer.getByRole('link', { name: 'Параметр' });
+    await expect(queryLink).toBeVisible();
+    await input.fill('Несохранённый черновик');
+    const url = new URL('#example', page.url()).href;
+    await answer.getByRole('link', { name: 'Якорь' }).click();
+    await expect(page).toHaveURL(url);
+    await expect(input).toHaveValue('Несохранённый черновик');
+
+    // Playwright waits for a navigation that Electron cancels in the main process.
+    await queryLink.click({ noWaitAfter: true });
+    const afterClick = await l.app.evaluate(async ({ BrowserWindow }) => {
+      const { webContents } = BrowserWindow.getAllWindows()[0];
+      return webContents.executeJavaScript(`({ url: location.href, draft: document.querySelector('.chat-compose textarea')?.value })`);
+    });
+    expect(afterClick).toEqual({ url, draft: 'Несохранённый черновик' });
+  } finally {
+    await quit(l);
+    box.cleanup();
+  }
+});
+
 test('чат: панель под полем ввода, таблица и блок кода в ответе', async () => {
   const box = makeSandbox();
   const l = await launch(box);

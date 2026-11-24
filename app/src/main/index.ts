@@ -25,7 +25,7 @@ import { releases } from './releases';
 import { bugReportUrl } from '../shared/bugReport';
 import * as account from './account';
 import { proxyModels } from './models';
-import { isLocalUrl, isSameDocument, isWebUrl } from '../shared/urls';
+import { isLocalUrl, isSamePage, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
 import { errorReportingActive, initErrorReporting } from './error-reporting';
 import { ignoreClosedOutput } from './stdio';
@@ -371,16 +371,17 @@ function createWindow() {
     if (process.env.PURPLEFLOW_CAPTURE) win?.showInactive();
     else win?.show();
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  const { webContents } = win;
+  webContents.setWindowOpenHandler(({ url }) => {
     if (isWebUrl(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
   // Ссылка из Markdown (комментарий PR, ответ агента) или брошенный на окно файл не должны заменять приложение:
   // чужая страница получила бы window.purpleflow со всеми правами окна.
-  win.webContents.on('will-navigate', (ev, url) => {
-    if (isSameDocument(url, win?.webContents.getURL() ?? '')) return;
+  // Переходы по якорям не вызывают will-navigate и продолжают работать.
+  webContents.on('will-navigate', (ev) => {
     ev.preventDefault();
-    if (isWebUrl(url)) void shell.openExternal(url);
+    if (isWebUrl(ev.url) && !isSamePage(ev.url, webContents.getURL())) void shell.openExternal(ev.url);
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
