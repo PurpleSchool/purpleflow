@@ -380,6 +380,8 @@ function createWindow() {
   // чужая страница получила бы window.purpleflow со всеми правами окна.
   // Переходы по якорям не вызывают will-navigate и продолжают работать.
   webContents.on('will-navigate', (ev) => {
+    // location.reload() тоже идёт через will-navigate: кнопка «Перезагрузить окно» и полная перезагрузка Vite.
+    if (ev.url === webContents.getURL()) return;
     ev.preventDefault();
     if (isWebUrl(ev.url) && !isSamePage(ev.url, webContents.getURL())) void shell.openExternal(ev.url);
   });

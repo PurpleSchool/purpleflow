@@ -33,6 +33,11 @@ test('чат: ссылка с параметром сохраняет черно
       return webContents.executeJavaScript(`({ url: location.href, draft: document.querySelector('.chat-compose textarea')?.value })`);
     });
     expect(afterClick).toEqual({ url, draft: 'Несохранённый черновик' });
+
+    // Перезагрузка окна (кнопка в ErrorBoundary) по-прежнему работает.
+    await page.evaluate(() => Object.assign(window, { beforeReload: true }));
+    await Promise.all([page.waitForEvent('load'), page.evaluate(() => setTimeout(() => location.reload()))]);
+    expect(await page.evaluate(() => 'beforeReload' in window)).toBe(false);
   } finally {
     await quit(l);
     box.cleanup();
