@@ -53,9 +53,14 @@ test('чат: панель под полем ввода, таблица и бл�
     await page.getByRole('menuitem', { name: /Чат/ }).click();
 
     const bar = page.locator('.chat-compose-bar');
-    await expect(bar.getByRole('radio', { name: 'Правки' })).toHaveAttribute('aria-checked', 'true');
-    await bar.getByRole('radio', { name: 'Вопросы' }).click();
-    await expect(bar.getByRole('radio', { name: 'Вопросы' })).toHaveAttribute('aria-checked', 'true');
+    // Режим — выпадающий список из трёх: по умолчанию правки.
+    const mode = bar.getByRole('button', { name: 'Режим' });
+    await expect(mode).toContainText('Правки');
+    await mode.click();
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveText([/Вопросы/, /Правки/, /Полный доступ/]);
+    if (process.env.PURPLEFLOW_SHOTS) await page.screenshot({ path: path.join(box.root, '..', 'pf-chat-mode.png') });
+    await page.getByRole('option', { name: /Вопросы/ }).click();
+    await expect(mode).toContainText('Вопросы');
     // Агент и модель — одна кнопка; своей модели у чата нет — на ней модель по умолчанию из настроек, а не пустота.
     const picker = bar.getByRole('button', { name: 'Агент и модель' });
     await expect(picker).toHaveText(/claude\s*·\s*sonnet/);

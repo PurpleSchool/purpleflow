@@ -352,7 +352,7 @@ export class Orchestrator implements CoreApi {
   createChat(o: Parameters<typeof chat.createChat>[1]) {
     return chat.createChat(this.kernel, o);
   }
-  async updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits'>>) {
+  async updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits' | 'fullAccess'>>) {
     return chat.updateChat(this.kernel, id, patch);
   }
   deleteChat(id: string) {

@@ -123,6 +123,15 @@ test('opencodeArgs для opencode 2: без --dir и --pure, свой серв�
   assert.equal(parseMajor('что-то непонятное'), 1);
 });
 
+test('opencodeConfig: правки без полного доступа — shell без коммитов и kill, правки файлов разрешены', () => {
+  const cfg = JSON.parse(opencodeConfig({ limited: true })!);
+  assert.equal(cfg.permission.edit, undefined);
+  assert.equal(cfg.permission.bash['*'], 'allow');
+  for (const p of ['git commit*', 'git push*', 'kill *']) assert.equal(cfg.permission.bash[p], 'deny', p);
+  // Только чтение строже и важнее.
+  assert.equal(JSON.parse(opencodeConfig({ readOnly: true, limited: true })!).permission.edit, 'deny');
+});
+
 test('opencodeConfig: только чтение запрещает правки, прокси — провайдер с ключом из окружения', () => {
   assert.equal(opencodeConfig({}), undefined);
   const ro = JSON.parse(opencodeConfig({ readOnly: true })!);

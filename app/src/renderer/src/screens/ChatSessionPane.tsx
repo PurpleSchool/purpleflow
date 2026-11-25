@@ -8,6 +8,7 @@ import { chatSession, mcpStatus, type ChatSessionSummary } from '../lib/chatSess
 import { shortPath, tokens, when } from '../lib/format';
 import { SkillList, useSkills } from '../components/SkillList';
 import { EFFORT_LEVELS, effortOf } from '../lib/effort';
+import { accessOf } from '../lib/chatAccess';
 
 /** Кольцо заполнения контекста: свёрнутая панель и заголовок карточки. */
 export function ContextRing({ pct, size = 22 }: { pct?: number; size?: number }) {
@@ -188,7 +189,13 @@ export function ChatSessionPane({ chat, model, busy }: { chat: ChatFile; model: 
           )}
         </Row>
         {EFFORT_LEVELS[chat.agent].length > 0 && <Row label="Рассуждения">{effortOf(chat.agent, chat.effort) || 'как в CLI'}</Row>}
-        <Row label="Режим">{chat.edits ? 'Правки — может менять файлы' : 'Вопросы — только чтение'}</Row>
+        <Row label="Режим">
+          {
+            { read: 'Вопросы — только чтение', edits: 'Правки — файлы проекта, в песочнице', full: 'Полный доступ — без песочницы' }[
+              accessOf(chat)
+            ]
+          }
+        </Row>
         {s.version && <Row label="Версия CLI">{s.version}</Row>}
         <Row label="Сессия CLI">
           {chat.session ? <CopyValue value={chat.session.id} /> : <span className="ses-hint">начнётся с первым сообщением</span>}

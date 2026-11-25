@@ -189,6 +189,19 @@ test('аргументы CLI для чата: частичные сообщен�
   assert.ok(ephemeral.includes('--ephemeral'));
 });
 
+test('claude в правках чата: песочница bash с закрытым .git — одним --settings вместе с настройками пользователя', () => {
+  const settingsOf = (a: string[]) => a.filter((_, i) => a[i - 1] === '--settings').map((x) => JSON.parse(x));
+  assert.deepEqual(settingsOf(claudeArgs({})), []);
+  const [own] = settingsOf(claudeArgs({ sandbox: '/p' }));
+  assert.equal(own.sandbox.enabled, true);
+  assert.equal(own.sandbox.allowUnsandboxedCommands, false);
+  assert.deepEqual(own.sandbox.filesystem.denyWrite, [path.join('/p', '.git')]);
+  const both = settingsOf(claudeArgs({ sandbox: '/p', userConfig: true }));
+  assert.equal(both.length, 1);
+  assert.equal(both[0].disableAllHooks, true);
+  assert.equal(both[0].sandbox.enabled, true);
+});
+
 test('чат: сообщение во время ответа встаёт в очередь и уходит следующим ходом; прерванный ответ, удаление из очереди', async () => {
   const calls: AgentRunOptions[] = [];
   const gates: ((r: { stopped?: boolean }) => void)[] = [];
@@ -280,6 +293,53 @@ test('чат: смена правок и упавшее продолжение �
   await untilIdle(core, chat.id);
   assert.equal(calls[4].resume, undefined);
   assert.match(calls[4].prompt, /Предыдущая переписка/);
+});
+
+test('чат: три режима — песочница codex и claude, полный доступ без неё; смена режима начинает новую сессию', async () => {
+  const claudeCalls: AgentRunOptions[] = [];
+  const codexCalls: (AgentRunOptions & { sandbox: string; resumeThread?: string })[] = [];
+  const claude = async (o: AgentRunOptions) => {
+    claudeCalls.push(o);
+    return { ok: true, text: 'Да', usage: emptyUsage() };
+  };
+  const codex = async (o: AgentRunOptions & { sandbox: string }) => {
+    codexCalls.push(o);
+    o.onSession?.('thread-1');
+    return { ok: true, text: 'Да', usage: emptyUsage() };
+  };
+  const core = makeCore({ claude, codex });
+  const chat = await core.createChat({ agent: 'codex' });
+  assert.equal(chat.fullAccess, undefined);
+  const turn = async (t: string) => {
+    await core.sendChat(chat.id, t);
+    await untilIdle(core, chat.id);
+  };
+
+  await turn('Правки');
+  assert.equal(codexCalls[0].sandbox, 'workspace-write');
+  assert.match(codexCalls[0].systemPrompt ?? '', /Полный доступ/);
+
+  // Полный доступ: без песочницы, свои правила — значит, новая сессия.
+  await core.updateChat(chat.id, { fullAccess: true });
+  await turn('Закоммить');
+  assert.equal(codexCalls[1].sandbox, 'danger-full-access');
+  assert.equal(codexCalls[1].resumeThread, undefined);
+  assert.match(codexCalls[1].systemPrompt ?? '', /полного доступа/);
+
+  // Вопросы снимают и полный доступ.
+  const ro = await core.updateChat(chat.id, { edits: false });
+  assert.equal(ro.fullAccess, undefined);
+  await turn('Вопрос');
+  assert.equal(codexCalls[2].sandbox, 'read-only');
+
+  // claude: в правках bash в песочнице папки чата, в полном доступе — без неё.
+  await core.updateChat(chat.id, { agent: 'claude', edits: true });
+  await turn('Правка');
+  assert.ok(claudeCalls[0].sandbox);
+  await core.updateChat(chat.id, { fullAccess: true });
+  await turn('Ещё');
+  assert.equal(claudeCalls[1].sandbox, undefined);
+  assert.equal(claudeCalls[1].resume, undefined);
 });
 
 test('чат: два вложения с одним именем не затирают друг друга', async () => {

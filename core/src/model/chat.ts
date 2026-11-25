@@ -130,6 +130,11 @@ export interface ChatFile {
   effort?: string;
   /** Разрешить агенту менять файлы проекта; выключено — только чтение. */
   edits: boolean;
+  /**
+   * Полный доступ (только вместе с правками): без песочницы — git, процессы, файлы вне проекта.
+   * Без него правки ограничены папкой проекта: codex workspace-write, claude — песочница bash, opencode — запрет коммитов и kill.
+   */
+  fullAccess?: boolean;
   /** Сессия CLI, которую продолжает следующий ход: claude --resume или codex exec resume. */
   session?: { agent: AgentKind; id: string };
   /** MCP-инструменты, разрешённые codex в этом чате без подтверждения. */

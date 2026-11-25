@@ -1,5 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, Brain, Clock, FileText, FolderOpen, FolderPlus, ListTodo, Paperclip, Square, Trash2, X } from 'lucide-react';
+import {
+  ArrowUp,
+  Brain,
+  Clock,
+  Eye,
+  FileText,
+  FolderOpen,
+  FolderPlus,
+  ListTodo,
+  Paperclip,
+  Pencil,
+  ShieldOff,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { AgentKind, ChatFile, ChatMessage, ProjectListItem } from '@purpleflow/core';
 import { AssistantMessage } from './ChatAnswer';
 import { useMentions } from './ChatMentions';
@@ -12,6 +27,7 @@ import { onCoreEvent, useStore } from '../lib/store';
 import { shortPath } from '../lib/format';
 import { enabledList } from '../lib/tools';
 import { EFFORT_LEVELS, effortOf, effortOptions } from '../lib/effort';
+import { ACCESS_OPTIONS, accessOf, accessPatch, type ChatAccess } from '../lib/chatAccess';
 import { formatPick, insertPick, type PickedElement } from '../lib/pickElement';
 import { PATH_DRAG, insertMention } from '../lib/mentions';
 import { ChatSide, ChatSideRail, useChatChanged, useSideWidth, type ChatPane } from './ChatSide';
@@ -40,7 +56,14 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(Boolean(chatId));
   // Черновик нового чата: проект, агент, модель и правки до первого сообщения.
-  const [draft, setDraft] = useState<{ projectPath?: string; agent: AgentKind; model: string; effort?: string; edits: boolean }>(() => ({
+  const [draft, setDraft] = useState<{
+    projectPath?: string;
+    agent: AgentKind;
+    model: string;
+    effort?: string;
+    edits: boolean;
+    fullAccess?: boolean;
+  }>(() => ({
     projectPath: initialProject,
     agent: settings?.agents.executor ?? 'claude',
     model: '',
@@ -154,7 +177,8 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
   const enabled = enabledList(settings?.enabledAgents);
   const raw = chat ?? draft;
   const conf = enabled.includes(raw.agent) ? raw : { ...raw, agent: enabled[0], model: '' };
-  const setConf = async (patch: Partial<Pick<ChatFile, 'agent' | 'model' | 'effort' | 'edits'>>) => {
+  const access = accessOf(conf);
+  const setConf = async (patch: Partial<Pick<ChatFile, 'agent' | 'model' | 'effort' | 'edits' | 'fullAccess'>>) => {
     setError(null);
     if (!chat) return setDraft((d) => ({ ...d, ...patch, ...(patch.agent && patch.model === undefined ? { model: '' } : {}) }));
     try {
@@ -386,9 +410,11 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                   <h2>{projectPath ? `Спросите о ${baseName(projectPath)}` : 'О чём поговорим?'}</h2>
                   <p>
                     {projectPath
-                      ? conf.edits
-                        ? 'Агент видит проект и может вносить небольшие правки по вашей просьбе — без плана, ревью и приёмки. Для заметных изменений заведите задачу.'
-                        : 'Агент видит проект, но только читает файлы.'
+                      ? access === 'full'
+                        ? 'Агент видит проект и работает без песочницы: правки, коммиты, процессы — по вашей просьбе, без плана, ревью и приёмки.'
+                        : access === 'edits'
+                          ? 'Агент видит проект и может вносить небольшие правки по вашей просьбе — без плана, ревью и приёмки. Для заметных изменений заведите задачу.'
+                          : 'Агент видит проект, но только читает файлы.'
                       : 'Обычный чат с моделью. Выберите проект сверху, чтобы агент видел код.'}
                   </p>
                   <div className="chat-suggest">
@@ -490,30 +516,17 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                     e.target.value = '';
                   }}
                 />
-                <div className="segmented chat-mode" role="radiogroup" aria-label="Режим">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={!conf.edits}
-                    className={!conf.edits ? 'is-on' : ''}
-                    disabled={busy}
-                    title="Агент только читает файлы и отвечает"
-                    onClick={() => conf.edits && void setConf({ edits: false })}
-                  >
-                    Вопросы
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={conf.edits}
-                    className={conf.edits ? 'is-on' : ''}
-                    disabled={busy}
-                    title="Агент может менять файлы, когда вы просите"
-                    onClick={() => !conf.edits && void setConf({ edits: true })}
-                  >
-                    Правки
-                  </button>
-                </div>
+                <Select<ChatAccess>
+                  className={`chat-mode is-${access}`}
+                  ariaLabel="Режим"
+                  title="Что агенту можно в этом чате"
+                  icon={access === 'read' ? <Eye size={14} /> : access === 'edits' ? <Pencil size={14} /> : <ShieldOff size={14} />}
+                  value={access}
+                  minWidth={300}
+                  disabled={busy}
+                  onChange={(a) => a !== access && void setConf(accessPatch(a))}
+                  options={ACCESS_OPTIONS}
+                />
                 <AgentModelPicker
                   agents={enabled}
                   agent={conf.agent}

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { run } from '../proc.js';
 import {
   addUsage,
@@ -20,17 +21,34 @@ import { questionsOf, todosOf, toolName, toolView } from './tools.js';
  * Флаги сверены с claude 2.1.x, см. README.
  */
 export function claudeArgs(
-  o: Pick<AgentRunOptions, 'model' | 'effort' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig' | 'partial'>,
+  o: Pick<
+    AgentRunOptions,
+    'model' | 'effort' | 'systemPrompt' | 'addDirs' | 'tools' | 'sessionId' | 'resume' | 'userConfig' | 'partial' | 'sandbox'
+  >,
 ): string[] {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions'];
+  const settings: Record<string, unknown> = {};
   if (o.userConfig) {
     // Настройки пользователя (MCP, скиллы, плагины) — как в его обычном claude; только хуки выключены,
     // чтобы уведомления, логгеры и проверки из ~/.claude не срабатывали на каждом шаге прогона.
-    args.push('--settings', JSON.stringify({ disableAllHooks: true }));
+    settings.disableAllHooks = true;
   } else {
     // Только настройки проекта: пользовательские хуки, плагины, MCP и env из ~/.claude не вмешиваются в прогон.
     args.push('--setting-sources', 'project,local', '--strict-mcp-config');
   }
+  if (o.sandbox) {
+    // Песочница bash Claude Code (macOS, Linux): запись — только в проект, сигналы чужим процессам запрещены.
+    // .git закрыт явно — как у codex в workspace-write; путь абсолютный, относительные denyWrite не понимает.
+    // Обойти песочницу командой нельзя (allowUnsandboxedCommands). Где её нет (Windows), claude работает без неё.
+    settings.sandbox = {
+      enabled: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+      filesystem: { denyWrite: [path.join(o.sandbox, '.git')] },
+    };
+    settings.permissions = { deny: [`Edit(/${path.join(o.sandbox, '.git').replaceAll('\\', '/')}/**)`] };
+  }
+  if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
   // Сессию сохраняем только исполнителю — чтобы следующая попытка продолжила её, а не читала проект заново.
   if (o.resume) args.push('--resume', o.resume);
   else if (o.sessionId) args.push('--session-id', o.sessionId);

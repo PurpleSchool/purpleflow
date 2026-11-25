@@ -109,7 +109,7 @@ export function getChat(k: Kernel, id: string): { chat: ChatFile; busy: boolean 
 
 export async function createChat(
   k: Kernel,
-  o: { projectPath?: string; agent?: AgentKind; model?: string; effort?: string; edits?: boolean },
+  o: { projectPath?: string; agent?: AgentKind; model?: string; effort?: string; edits?: boolean; fullAccess?: boolean },
 ): Promise<ChatFile> {
   const now = new Date().toISOString();
   const agent = o.agent ?? (await serviceAgent(k));
@@ -123,6 +123,7 @@ export async function createChat(
     model: o.model ?? '',
     effort: effortFor(agent, o.effort),
     edits: o.edits ?? true,
+    ...((o.edits ?? true) && o.fullAccess ? { fullAccess: true } : {}),
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -136,7 +137,7 @@ export async function createChat(
 export function updateChat(
   k: Kernel,
   id: string,
-  patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits'>>,
+  patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits' | 'fullAccess'>>,
 ): ChatFile {
   const chat = must(k, id);
   if (patch.title !== undefined) chat.title = patch.title.trim().slice(0, 120) || chat.title;
@@ -146,8 +147,13 @@ export function updateChat(
   if (patch.effort !== undefined) chat.effort = patch.effort || undefined;
   chat.effort = effortFor(chat.agent, chat.effort);
   // Правила чата уходят в начале сессии: «только чтение» в ней осталось бы и после включения правок — и наоборот.
-  if (patch.edits !== undefined && patch.edits !== chat.edits) chat.session = undefined;
+  const access = (c: Pick<ChatFile, 'edits' | 'fullAccess'>) => (c.edits ? (c.fullAccess ? 'full' : 'edits') : 'read');
+  const was = access(chat);
   if (patch.edits !== undefined) chat.edits = patch.edits;
+  if (patch.fullAccess !== undefined) chat.fullAccess = patch.fullAccess || undefined;
+  // Полный доступ — только поверх правок.
+  if (!chat.edits) chat.fullAccess = undefined;
+  if (access(chat) !== was) chat.session = undefined;
   save(k, chat);
   return chat;
 }
@@ -188,9 +194,11 @@ function systemPrompt(k: Kernel, chat: ChatFile, cwd: string): string {
   const where = chat.projectPath
     ? `Ты работаешь в проекте ${chat.projectPath} — это рабочая папка.`
     : `Проекта нет: рабочая папка ${cwd} — временная папка этого чата.`;
-  const rules = chat.edits
-    ? 'Тебе можно менять файлы, но только когда человек об этом просит. Это небольшие задачи без плана и ревью: делай ровно то, что попросили, не трогай лишнего и не делай коммитов. В конце коротко перечисли, что изменил.'
-    : 'Режим только чтения: файлы не меняй, команды, которые что-то меняют, не запускай. Если нужна правка — предложи её текстом или посоветуй завести задачу в PurpleFlow.';
+  const rules = !chat.edits
+    ? 'Режим только чтения: файлы не меняй, команды, которые что-то меняют, не запускай. Если нужна правка — предложи её текстом или посоветуй завести задачу в PurpleFlow.'
+    : chat.fullAccess
+      ? 'Режим полного доступа: можно менять файлы, работать с git (коммиты, ветки), управлять процессами и запускать любые команды — но только когда человек об этом просит. Делай ровно то, что попросили, не трогай лишнего; коммиты, пуш и остановку процессов — только по прямой просьбе. В конце коротко перечисли, что сделал.'
+      : 'Тебе можно менять файлы проекта, но только когда человек об этом просит. Это небольшие задачи без плана и ревью: делай ровно то, что попросили, не трогай лишнего и не делай коммитов. Git на запись, остановка процессов и файлы вне проекта в этом режиме закрыты песочницей — если без них не обойтись, скажи, что нужен режим «Полный доступ». В конце коротко перечисли, что изменил.';
   let s = `Ты — ассистент в чате PurpleFlow. ${where} ${rules} Отвечай по-русски, по делу, в Markdown.`;
   if (chat.projectPath) {
     const kn = knowledgeOf(k, chat.projectPath);
@@ -392,6 +400,7 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
         systemPrompt: session ? undefined : sys,
         images,
         readOnly: !chat.edits,
+        limited: chat.edits && !chat.fullAccess,
         resumeSession: session,
         onSession: (id) => {
           sid = id;
@@ -405,7 +414,7 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
         prompt,
         systemPrompt: session ? undefined : sys,
         images,
-        sandbox: chat.edits ? 'workspace-write' : 'read-only',
+        sandbox: !chat.edits ? 'read-only' : chat.fullAccess ? 'danger-full-access' : 'workspace-write',
         persist: true,
         resumeThread: session,
         mcpApprove: [...(chat.mcpAllow ?? []), ...(chat.mcpOnce ?? [])],
@@ -428,6 +437,8 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
         resume: session,
         sessionId: session ? undefined : sessionId,
         tools: chat.edits ? undefined : ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch'],
+        // Правки без полного доступа: bash в песочнице Claude Code — запись только в проект, .git закрыт.
+        sandbox: chat.edits && !chat.fullAccess ? cwd : undefined,
       });
       // Сессия сохраняется, только если claude успел её начать.
       if (res.ok || parts.length) chat.session = { agent, id: sessionId };

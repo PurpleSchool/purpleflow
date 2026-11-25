@@ -22,6 +22,8 @@ export interface OpencodeOptions extends AgentRunOptions {
   shouldStop?: () => boolean;
   /** Стадия не меняет файлы (уточнение, ревью, служебное): правка файлов запрещена правами opencode. */
   readOnly?: boolean;
+  /** Правки без полного доступа: shell без коммитов, пуша, переписывания истории и остановки процессов. */
+  limited?: boolean;
   /** Продолжить сохранённую сессию: opencode run -s <id>. */
   resumeSession?: string;
 }
@@ -69,12 +71,39 @@ export const READ_ONLY_BASH: Record<string, 'allow' | 'deny'> = {
 };
 
 /**
+ * Shell в правках чата без полного доступа. Песочницы у opencode нет — запрещаем по шаблонам то,
+ * что у codex и claude закрывает песочница: запись в git и остановку процессов.
+ */
+export const LIMITED_BASH: Record<string, 'allow' | 'deny'> = {
+  '*': 'allow',
+  ...Object.fromEntries(
+    [
+      'git commit*',
+      'git push*',
+      'git reset*',
+      'git checkout*',
+      'git switch*',
+      'git rebase*',
+      'git merge*',
+      'git tag*',
+      'git branch -d*',
+      'git branch -D*',
+      'git stash*',
+      'kill *',
+      'pkill *',
+      'killall *',
+    ].map((p) => [p, 'deny']),
+  ),
+};
+
+/**
  * Конфиг поверх настроек пользователя (OPENCODE_CONFIG_CONTENT): права только для чтения
  * и провайдер AI-прокси. Файлы конфигурации opencode PurpleFlow не меняет.
  */
-export function opencodeConfig(o: Pick<OpencodeOptions, 'readOnly' | 'proxy' | 'model'>): string | undefined {
+export function opencodeConfig(o: Pick<OpencodeOptions, 'readOnly' | 'limited' | 'proxy' | 'model'>): string | undefined {
   const cfg: Record<string, unknown> = {};
   if (o.readOnly) cfg.permission = { edit: 'deny', bash: READ_ONLY_BASH };
+  else if (o.limited) cfg.permission = { bash: LIMITED_BASH };
   if (o.proxy?.baseUrl) {
     const m = proxyModelName(o.model);
     cfg.provider = {

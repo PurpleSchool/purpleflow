@@ -104,8 +104,18 @@ export interface CoreApi {
   /** Чаты: разговор с агентом вне конвейера. Ответ приходит событиями chat.updated. */
   listChats(): Promise<ChatSummary[]>;
   getChat(id: string): Promise<{ chat: ChatFile; busy: boolean } | null>;
-  createChat(o: { projectPath?: string; agent?: AgentKind; model?: string; effort?: string; edits?: boolean }): Promise<ChatFile>;
-  updateChat(id: string, patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits'>>): Promise<ChatFile>;
+  createChat(o: {
+    projectPath?: string;
+    agent?: AgentKind;
+    model?: string;
+    effort?: string;
+    edits?: boolean;
+    fullAccess?: boolean;
+  }): Promise<ChatFile>;
+  updateChat(
+    id: string,
+    patch: Partial<Pick<ChatFile, 'title' | 'agent' | 'model' | 'effort' | 'edits' | 'fullAccess'>>,
+  ): Promise<ChatFile>;
   deleteChat(id: string): Promise<void>;
   sendChat(id: string, text: string, files?: { name: string; data: Uint8Array }[]): Promise<void>;
   /** Разрешить codex отклонённый инструмент MCP и попросить повторить вызов. */

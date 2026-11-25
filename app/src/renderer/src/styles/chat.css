@@ -701,6 +701,14 @@ input.chat-title:focus {
 .amp-agent {
   color: var(--text-2);
 }
+/* Режим чата: полный доступ выделен — агент работает без песочницы. */
+.chat-compose-bar .chat-mode {
+  height: 32px;
+  font-size: var(--fs-12);
+}
+.chat-compose-bar .chat-mode.is-full {
+  color: var(--wait);
+}
 /* Уровень рассуждений — рядом с моделью; «как в CLI» приглушён: флаг не передаётся. */
 .chat-compose-bar .chat-effort {
   height: 32px;

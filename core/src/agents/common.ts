@@ -38,6 +38,8 @@ export interface AgentRunOptions {
   onStep?: (step: AgentStep) => void;
   /** claude: присылать текст кусками по мере генерации (--include-partial-messages). */
   partial?: boolean;
+  /** claude: папка проекта — bash в песочнице Claude Code, запись только в неё, .git закрыт (правки в чате без полного доступа). */
+  sandbox?: string;
   /** codex: ID сессии (thread), чтобы продолжить её в следующем ходе чата. */
   onSession?: (id: string) => void;
 }
