@@ -61,9 +61,28 @@ export async function testConnection(k: Kernel): Promise<ConnectionCheck[]> {
   try {
     return await Promise.all(present.map(one));
   } finally {
-    // На Windows процесс агента может ещё держать файлы папки — несколько повторов вместо ошибки проверки.
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    removeLater(dir);
   }
+}
+
+/**
+ * Убрать временную папку проверки, не роняя саму проверку. На Windows папку держит процесс, для которого она текущая:
+ * агент, его фоновый сервер (opencode 2) — и rmdir отвечает EPERM, пока он не выйдет. Пробуем сразу, потом ещё раз позже;
+ * не вышло — папка остаётся во временном каталоге системы, это не ошибка подключения.
+ */
+export function removeLater(dir: string, delaysMs = [5_000, 30_000]): void {
+  const attempt = () => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (attempt()) return;
+  const [next, ...rest] = delaysMs;
+  if (next === undefined) return;
+  setTimeout(() => removeLater(dir, rest), next).unref();
 }
 
 const modelsCache = new Map<string, { at: number; list: Promise<string[]> }>();
