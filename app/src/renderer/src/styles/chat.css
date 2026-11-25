@@ -2198,7 +2198,13 @@ body.is-side-resizing webview {
   border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  font: 600 10px/15px var(--font-sans, inherit);
+  /* Отдельными свойствами: var() с запасным inherit в сокращении font делает всё объявление недействительным —
+     бейдж наследовал шрифт кнопки и разъезжался. */
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 

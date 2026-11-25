@@ -73,7 +73,7 @@
   border-radius: 8px;
   background: var(--wait);
   color: #1a1405;
-  font: 600 10px/15px var(--font-sans, inherit);
+  font: 600 10px/15px var(--font-ui);
   text-align: center;
 }
 .side-new {

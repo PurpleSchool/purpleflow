@@ -332,7 +332,7 @@
   padding: 1px 5px;
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.08);
-  font: 500 10.5px/1.4 var(--font-sans, inherit);
+  font: 500 10.5px/1.4 var(--font-ui);
   color: inherit;
   opacity: 0.6;
 }
