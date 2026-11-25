@@ -27,7 +27,8 @@ type Claude = (o: AgentRunOptions) => Promise<AgentResult> | AgentResult;
 
 function setup(t: { after: (fn: () => void) => void }, claude: Claude = () => okReply(), maxParallel = 2) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pf-life-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Фоновый git прогона может ещё дописывать в .git, когда тест уже дождался статуса: без повторов — ENOTEMPTY.
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const repo = path.join(root, 'repo');
   fs.mkdirSync(repo);
   const at =
