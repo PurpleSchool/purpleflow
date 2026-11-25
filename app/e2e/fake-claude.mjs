@@ -135,6 +135,32 @@ if (/исполнитель/.test(sys) || /Реализуй изменение|�
 
 // Служебное: профиль проекта, сводка, уроки, карта плана, подсказка режима.
 // Чат: ответ с таблицей и блоком кода — проверить разметку ответа.
+// Чат: коммит в песочнице правок — git падает, как в настоящей песочнице; с полным доступом — получается.
+if (/чате PurpleFlow/.test(sys) && /Включил полный доступ/.test(prompt)) reply('Закоммитил.', true);
+if (/чате PurpleFlow/.test(sys) && /Закоммить правки/.test(prompt)) {
+  const sandboxed = /"sandbox"/.test(opt('--settings'));
+  say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });
+  say({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id: 'git-1', name: 'Bash', input: { command: 'git commit -am wip' } }] },
+  });
+  say({
+    type: 'user',
+    message: {
+      content: [
+        sandboxed
+          ? {
+              type: 'tool_result',
+              tool_use_id: 'git-1',
+              is_error: true,
+              content: "fatal: Unable to create '.git/index.lock': Operation not permitted",
+            }
+          : { type: 'tool_result', tool_use_id: 'git-1', is_error: false, content: '[main 1a2b3c4] wip' },
+      ],
+    },
+  });
+  reply(sandboxed ? 'Песочница не пустила запись в .git.' : 'Закоммитил.', true);
+}
 if (/чате PurpleFlow/.test(sys) && /Покажи ссылки Markdown/.test(prompt)) reply('[Параметр](?view=example)\n\n[Якорь](#example)', true);
 if (/чате PurpleFlow/.test(sys))
   reply('Пример:\n\n| Механизм | Зачем |\n| --- | --- |\n| cgroups | ресурсы |\n\n```ts\nconst a: number = 1;\n```', true);

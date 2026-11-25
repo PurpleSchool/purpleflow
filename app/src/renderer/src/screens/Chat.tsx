@@ -438,6 +438,11 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                     onAllowMcp={(t, always) =>
                       chat && void bridge.core.allowChatMcp(chat.id, { ...t, always }).catch((e) => setError(cleanErr(e)))
                     }
+                    onGrantFull={
+                      access === 'edits' && chat
+                        ? () => void bridge.core.grantChatFullAccess(chat.id).catch((e) => setError(cleanErr(e)))
+                        : undefined
+                    }
                   />
                 ),
               )}

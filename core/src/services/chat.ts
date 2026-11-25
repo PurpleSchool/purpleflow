@@ -259,6 +259,16 @@ export async function allowChatMcp(k: Kernel, id: string, t: { server: string; t
 }
 
 /**
+ * Песочница правок не пустила команду: включить чату полный доступ и попросить повторить.
+ * Смена режима начинает новую сессию — переписка уйдёт агенту пересказом.
+ */
+export async function grantChatFullAccess(k: Kernel, id: string): Promise<void> {
+  if (k.chatBusy.has(id)) throw new Error('Агент отвечает — дайте доступ после ответа');
+  updateChat(k, id, { edits: true, fullAccess: true });
+  await sendChat(k, id, 'Включил полный доступ — повтори то, что не пустила песочница.');
+}
+
+/**
  * Сжать контекст сессии claude (/compact): переписка остаётся, агент помнит её в пересказе, окно освобождается.
  * Ответом — уведомление о сжатии; сообщения, присланные во время сжатия, уходят следующим ходом.
  */

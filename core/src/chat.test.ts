@@ -342,6 +342,35 @@ test('чат: три режима — песочница codex и claude, пол
   assert.equal(claudeCalls[1].resume, undefined);
 });
 
+test('чат: отказ песочницы помечается в вызове; полный доступ по запросу — новая сессия и просьба повторить', async () => {
+  const calls: (AgentRunOptions & { sandbox: string; resumeThread?: string })[] = [];
+  const codex = async (o: AgentRunOptions & { sandbox: string }) => {
+    calls.push(o);
+    o.onSession?.('thread-1');
+    o.onStep?.({ kind: 'tool', id: 'c1', text: 'shell git commit' });
+    o.onStep?.({ kind: 'tool_result', id: 'c1', ok: false, output: "fatal: Unable to create '.git/index.lock': Operation not permitted" });
+    o.onStep?.({ kind: 'tool', id: 'c2', text: 'shell ls' });
+    o.onStep?.({ kind: 'tool_result', id: 'c2', ok: true, output: 'a.txt' });
+    return { ok: true, text: 'Не получилось', usage: emptyUsage() };
+  };
+  const core = makeCore({ codex });
+  const chat = await core.createChat({ agent: 'codex' });
+  await core.sendChat(chat.id, 'Закоммить');
+  const first = await untilIdle(core, chat.id);
+  const tools = first.messages.at(-1)!.parts!.filter((p) => p.kind === 'tool');
+  assert.deepEqual(
+    tools.map((t) => t.sandboxDenied),
+    [true, undefined],
+  );
+
+  await core.grantChatFullAccess(chat.id);
+  const after = await untilIdle(core, chat.id);
+  assert.equal(after.fullAccess, true);
+  assert.equal(calls[1].sandbox, 'danger-full-access');
+  assert.equal(calls[1].resumeThread, undefined);
+  assert.match(calls[1].prompt, /Включил полный доступ/);
+});
+
 test('чат: два вложения с одним именем не затирают друг друга', async () => {
   const seen: AgentRunOptions[] = [];
   const core = makeCore({

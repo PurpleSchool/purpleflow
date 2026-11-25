@@ -44,6 +44,32 @@ test('чат: ссылка с параметром сохраняет черно
   }
 });
 
+test('чат: песочница правок не пустила команду — запрос полного доступа, после него повтор без песочницы', async () => {
+  const box = makeSandbox();
+  const l = await launch(box);
+  const { page } = l;
+  try {
+    await page.getByRole('button', { name: /Создать/ }).click();
+    await page.getByRole('menuitem', { name: /Чат/ }).click();
+    const input = page.locator('.chat-compose textarea');
+    await input.fill('Закоммить правки');
+    await input.press('Enter');
+
+    const grant = page.getByRole('button', { name: 'Дать полный доступ и повторить' });
+    await expect(grant).toBeVisible();
+    await grant.click();
+    await expect(page.getByRole('button', { name: 'Режим' })).toContainText('Полный доступ');
+    await expect(page.locator('.chat-msg.is-assistant').last()).toContainText('Закоммитил.');
+    // Карточка только у ответа, который ещё можно продолжить, и только в режиме правок.
+    await expect(grant).toHaveCount(0);
+    const chats = box.calls().filter((c) => /Закоммить правки|Включил полный доступ/.test(c.prompt));
+    expect(chats.at(-1)!.args.join(' ')).not.toContain('"sandbox"');
+  } finally {
+    await quit(l);
+    box.cleanup();
+  }
+});
+
 test('чат: панель под полем ввода, таблица и блок кода в ответе', async () => {
   const box = makeSandbox();
   const l = await launch(box);

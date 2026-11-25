@@ -398,6 +398,11 @@ export class Orchestrator implements CoreApi {
     await Promise.race([turn, new Promise((r) => setTimeout(r, 50))]);
     turn.catch(() => {});
   }
+  async grantChatFullAccess(id: string): Promise<void> {
+    const turn = chat.grantChatFullAccess(this.kernel, id);
+    await Promise.race([turn, new Promise((r) => setTimeout(r, 50))]);
+    turn.catch(() => {});
+  }
   stopChat(id: string) {
     return chat.stopChat(this.kernel, id);
   }

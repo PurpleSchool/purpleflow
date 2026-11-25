@@ -39,6 +39,8 @@ export interface ChatToolPart {
   output?: string;
   /** codex отказал в вызове MCP без подтверждения — человек может разрешить его и попросить повторить. */
   approval?: { server: string; tool: string };
+  /** Команду не пустила песочница («Operation not permitted»): в режиме правок человек может дать полный доступ. */
+  sandboxDenied?: boolean;
   /** Шаги субагента, запущенного этим вызовом. */
   sub?: ChatSubStep[];
 }

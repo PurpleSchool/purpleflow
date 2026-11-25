@@ -4,6 +4,9 @@ import type { ChatMessage, ChatPart, ChatToolPart } from './types.js';
 
 export type ChatAnswer = Pick<ChatMessage, 'model' | 'turns' | 'durationMs' | 'info'> & { parts: ChatPart[] };
 
+/** Так отвечает песочница codex и Claude Code (seatbelt, bubblewrap): запись в .git, сигнал чужому процессу, файл вне проекта. */
+const SANDBOX_DENIED = /operation not permitted/i;
+
 function findTool(parts: ChatPart[], id: string): ChatToolPart | undefined {
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i];
@@ -57,6 +60,7 @@ export function applyStep(a: ChatAnswer, st: AgentStep): void {
       t.status = status;
       if (st.output) t.output = st.output;
       if (st.approval) t.approval = st.approval;
+      if (!st.ok && st.output && SANDBOX_DENIED.test(st.output)) t.sandboxDenied = true;
       return;
     }
     case 'todos': {

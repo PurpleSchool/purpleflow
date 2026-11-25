@@ -31,14 +31,18 @@ export function AssistantMessage({
   answerable,
   onAnswer,
   onAllowMcp,
+  onGrantFull,
 }: {
   m: ChatMessage;
   answerable: boolean;
   onAnswer: (text: string) => void;
   onAllowMcp?: (t: McpApproval, always: boolean) => void;
+  /** Чат в режиме правок: отказ песочницы можно снять полным доступом. */
+  onGrantFull?: () => void;
 }) {
   const blocks = chatBlocks(m);
   const refused = m.pending ? [] : refusedMcp(blocks);
+  const sandboxed = !m.pending && Boolean(onGrantFull) && blocks.some((b) => b.kind === 'tools' && b.items.some((t) => t.sandboxDenied));
   const live = Boolean(m.pending);
   const tail = blocks[blocks.length - 1];
   const footer = live ? [] : answerFooter(m);
@@ -69,6 +73,24 @@ export function AssistantMessage({
           onAllow={(a) => onAllowMcp?.(t, a)}
         />
       ))}
+      {sandboxed && (
+        <div className="chat-question chat-mcp-approval">
+          <p className="chat-question-text">
+            <LockOpen size={14} />
+            <span>
+              Песочница режима «Правки» не пустила команду: запись в <code>.git</code>, остановка процессов и файлы вне проекта в нём
+              закрыты.
+            </span>
+          </p>
+          {answerable && (
+            <div className="chat-question-options">
+              <button type="button" className="chat-question-send" onClick={onGrantFull}>
+                Дать полный доступ и повторить
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {live && (!tail || (tail.kind !== 'text' && tail.kind !== 'thinking')) && (
         <div className="chat-typing" aria-label="Агент отвечает">
           <i />
