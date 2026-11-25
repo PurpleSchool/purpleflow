@@ -1,8 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { services } from '../../../src/main/connect/services/registry.js';
-import { setDryRun } from '../../../src/main/connect/core/runtime.js';
+import { createRequire } from 'node:module';
+import type * as Registry from '../../../src/main/connect/services/registry.js';
+import type * as Runtime from '../../../src/main/connect/core/runtime.js';
 import type { SetupContext } from '../../../src/main/connect/core/types.js';
+
+// Исходники установщика — CommonJS. На Node 22 import из .mts и require внутри них дают два экземпляра
+// runtime.ts: флаг dry-run, выставленный здесь, модули записи не видели и меняли файлы. Грузим всё через require.
+const require = createRequire(import.meta.url);
+const { services } = require('../../../src/main/connect/services/registry.js') as typeof Registry;
+const { setDryRun } = require('../../../src/main/connect/core/runtime.js') as typeof Runtime;
 
 const [family, id, operation] = process.argv.slice(2);
 const service = services.find((item) => (item.authScheme ?? 'anthropic') === family)!;
