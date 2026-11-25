@@ -349,6 +349,15 @@ test('чат: отказ песочницы помечается в вызове
     o.onSession?.('thread-1');
     o.onStep?.({ kind: 'tool', id: 'c1', text: 'shell git commit' });
     o.onStep?.({ kind: 'tool_result', id: 'c1', ok: false, output: "fatal: Unable to create '.git/index.lock': Operation not permitted" });
+    // opencode: команду запретило правило permission.bash.
+    o.onStep?.({ kind: 'tool', id: 'c3', text: 'bash kill 42' });
+    o.onStep?.({
+      kind: 'tool_result',
+      id: 'c3',
+      ok: false,
+      output:
+        'The user has specified a rule which prevents you from using this specific tool call. Here are some of the relevant rules […]',
+    });
     o.onStep?.({ kind: 'tool', id: 'c2', text: 'shell ls' });
     o.onStep?.({ kind: 'tool_result', id: 'c2', ok: true, output: 'a.txt' });
     return { ok: true, text: 'Не получилось', usage: emptyUsage() };
@@ -360,7 +369,7 @@ test('чат: отказ песочницы помечается в вызове
   const tools = first.messages.at(-1)!.parts!.filter((p) => p.kind === 'tool');
   assert.deepEqual(
     tools.map((t) => t.sandboxDenied),
-    [true, undefined],
+    [true, true, undefined],
   );
 
   await core.grantChatFullAccess(chat.id);

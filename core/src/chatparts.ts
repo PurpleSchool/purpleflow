@@ -4,8 +4,11 @@ import type { ChatMessage, ChatPart, ChatToolPart } from './types.js';
 
 export type ChatAnswer = Pick<ChatMessage, 'model' | 'turns' | 'durationMs' | 'info'> & { parts: ChatPart[] };
 
-/** Так отвечает песочница codex и Claude Code (seatbelt, bubblewrap): запись в .git, сигнал чужому процессу, файл вне проекта. */
-const SANDBOX_DENIED = /operation not permitted/i;
+/**
+ * Отказ ограничений режима правок: так отвечает песочница codex и Claude Code (seatbelt, bubblewrap) на запись в .git,
+ * сигнал чужому процессу, файл вне проекта, — и opencode, когда команду запретило правило permission.bash (сверено с opencode 1.19).
+ */
+const SANDBOX_DENIED = /operation not permitted|rule which prevents you from using this specific tool call/i;
 
 function findTool(parts: ChatPart[], id: string): ChatToolPart | undefined {
   for (let i = parts.length - 1; i >= 0; i--) {
