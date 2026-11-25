@@ -94,6 +94,17 @@ test('перезапуск на приёмке: прогон на месте, п
   await expect.poll(() => resultOnBranch().math).toContain('mul');
 });
 
+test('приёмка: набранное замечание переживает уход в настройки и возврат к прогону', async () => {
+  await startRun(l.page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
+  await expect(accept(l.page)).toBeVisible({ timeout: 60_000 });
+  await l.page.getByRole('button', { name: 'Есть замечания' }).click();
+  await l.page.locator('.gate-comment').fill('Назови функцию multiply');
+  await l.page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await expect(l.page.getByRole('heading', { name: 'Настройки', level: 1 })).toBeVisible();
+  await l.page.getByText('Добавь функцию mul', { exact: false }).first().click();
+  await expect(l.page.locator('.gate-comment')).toHaveValue('Назови функцию multiply');
+});
+
 test('приёмка: дифф показывает изменение, возврат с него не роняет страницу', async () => {
   await startRun(l.page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
   // На приёмке дифф открывается сам.

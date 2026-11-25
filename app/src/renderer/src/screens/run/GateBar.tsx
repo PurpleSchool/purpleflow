@@ -30,7 +30,8 @@ export function GateBar(props: {
   codeReview?: { fixTo: 'task' | 'chat'; findings: number };
 }) {
   const { gate, comment, setComment, lineCount, busy, error } = props;
-  const [open, setOpen] = useState(false);
+  // Черновик комментария сохраняется между заходами на экран — тогда поле сразу открыто.
+  const [open, setOpen] = useState(() => comment !== '');
   // Горячие клавиши: ⌘↵ — принять, ⌘⇧↵ — вернуть, ⌘⌥↵ — поправить (приёмка). В поле комментария к гейту ⌘↵ отправляет его.
   const keys = useRef(props);
   keys.current = props;
@@ -224,7 +225,8 @@ export function GateBar(props: {
 function CodeReviewBar(props: Parameters<typeof GateBar>[0] & { fixTo: 'task' | 'chat'; findings: number; mod: string }) {
   const { comment, setComment, lineCount, busy, error, mod } = props;
   const picked = (props.pickedCount ?? 0) + lineCount;
-  const [open, setOpen] = useState(false);
+  // Черновик комментария сохраняется между заходами на экран — тогда поле сразу открыто.
+  const [open, setOpen] = useState(() => comment !== '');
   const canFix = picked > 0 || Boolean(comment.trim());
   // Замечаний нет — исправлять нечего, пока человек сам не оставит замечание на строке или комментарий.
   const clean = props.findings === 0;

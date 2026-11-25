@@ -43,7 +43,7 @@ export function RunScreen({ runId }: { runId: string }) {
   const run = state.details[runId];
   const [view, setView] = useState<View>('timeline');
   const d = useStageDrawer(run, () => setView('code'));
-  const { comment, setComment, lineComments, setLineComments, picked, setPicked } = useRunGate();
+  const { comment, setComment, lineComments, setLineComments, picked, setPicked } = useRunGate(runId);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const gateKey = useRef('');
