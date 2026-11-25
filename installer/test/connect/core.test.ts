@@ -13,6 +13,9 @@ import {
 } from '../../src/main/connect/core/claudeSettingsDoctor.js';
 import { setDryRun } from '../../src/main/connect/core/runtime.js';
 
+/** Заглушки программ — сценарии /bin/sh: на Windows их не запустить. */
+const unix = { skip: process.platform === 'win32' };
+
 function isolated(action: (dir: string) => void) {
   const previous = { ...process.env };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-core-test-'));
@@ -34,7 +37,7 @@ function isolated(action: (dir: string) => void) {
   }
 }
 
-test('shell exports preserve literal credentials through repeat setup and removal of another key', () =>
+test('shell exports preserve literal credentials through repeat setup and removal of another key', unix, () =>
   isolated((dir) => {
     const credential = "test-$HOME-$(printf changed)-`printf changed`-\\-\"-'-$&-$`-$'";
     // macOS Terminal запускает login-шелл, поэтому bash там читает .bash_profile.
@@ -50,7 +53,8 @@ test('shell exports preserve literal credentials through repeat setup and remova
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, credential);
     assert.match(fs.readFileSync(file, 'utf8'), /export USER_SETTING=keep/);
-  }));
+  }),
+);
 
 test('Claude uses the explicitly selected configuration directory', () =>
   isolated((dir) => {
@@ -136,12 +140,13 @@ for (const value of [
   '$(touch should-never-execute)',
   '"0"; export CLAUDE_CODE_USE_VERTEX=1',
 ]) {
-  test(`active or ambiguous shell switch stays a conflict: ${value}`, () =>
+  test(`active or ambiguous shell switch stays a conflict: ${value}`, unix, () =>
     isolated((dir) => {
       fs.writeFileSync(path.join(dir, '.bashrc'), `export CLAUDE_CODE_USE_VERTEX=${value}\n`);
       assert.ok(detectClaudeConflicts().some((conflict) => conflict.description.includes('CLAUDE_CODE_USE_VERTEX')));
       assert.equal(fs.existsSync(path.join(dir, 'should-never-execute')), false);
-    }));
+    }),
+  );
 }
 
 test('registry parser distinguishes absent and empty values and retains token semantics', () => {

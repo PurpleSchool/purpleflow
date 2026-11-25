@@ -10,6 +10,9 @@ import { extensionInstalled } from '../../src/main/connect/core/editors.js';
 import { parseModelsResponse, proxyClaudeModels, suggestedModel } from '../../src/main/connect/core/models.js';
 import { ANTHROPIC_BASE_URL } from '../../src/main/connect/constants.js';
 
+/** Заглушки программ — сценарии /bin/sh: на Windows их не запустить. */
+const unix = { skip: process.platform === 'win32' };
+
 const root = process.cwd();
 /** Куда мастер пишет переменные для bash: macOS Terminal запускает login-шелл и читает .bash_profile. */
 /** Настройки VS Code в домашнем каталоге песочницы. */
@@ -88,66 +91,70 @@ const cases = [
   ['openai', 'openai-neovim-avante'],
 ];
 for (const [family, id] of cases) {
-  test(`${family}/${id}: selects model, preserves unrelated settings, repeatable and removable`, () => {
-    const s = sandbox();
-    try {
-      write(s.dir, '.codex/config.toml', 'unrelated = "keep"\n[model_providers.other]\nname = "Other"\n');
-      write(s.dir, '.claude/settings.json', { unrelated: 'keep' });
-      write(s.dir, '.claude.json', { unrelated: 'keep' });
-      for (const editor of ['Code', 'Cursor', 'windsurf']) write(s.dir, `.config/${editor}/User/settings.json`, { unrelated: 'keep' });
-      write(s.dir, '.config/opencode/opencode.json', { unrelated: 'keep', provider: { other: { name: 'Other' } } });
-      write(s.dir, '.pi/agent/models.json', { unrelated: 'keep', providers: { other: { apiKey: '$OTHER' } } });
-      write(s.dir, '.pi/agent/settings.json', { unrelated: 'keep' });
-      write(s.dir, '.qwen/settings.json', {
-        unrelated: 'keep',
-        modelProviders: {
-          openai: [{ id: 'other-gpt', baseUrl: 'https://other.invalid/v1' }],
-          anthropic: [{ id: 'other-claude', baseUrl: 'https://other.invalid' }],
-        },
-      });
-      for (let i = 0; i < 2; i++) {
-        const result = invoke(s, family!, id!);
-        assert.equal(result.status, 0, result.stderr);
-      }
-      const model = family === 'anthropic' ? 'claude-test-selected' : 'gpt-test-selected';
-      if (id!.includes('codex')) {
-        const config = TOML.parse(fs.readFileSync(path.join(s.dir, '.codex/config.toml'), 'utf8'));
-        assert.equal(config.model, model);
-        assert.equal(config.unrelated, 'keep');
-        assert.equal((config.model_providers as Record<string, Record<string, unknown>>).purpleschool.supports_websockets, false);
-      } else if (['claude-code-cli', 'vscode', 'cursor', 'windsurf'].includes(id!)) {
-        assert.equal(read(s.dir, '.claude/settings.json').model, model);
+  test(
+    `${family}/${id}: selects model, preserves unrelated settings, repeatable and removable`,
+    { skip: process.platform === 'win32' && id!.includes('neovim') },
+    () => {
+      const s = sandbox();
+      try {
+        write(s.dir, '.codex/config.toml', 'unrelated = "keep"\n[model_providers.other]\nname = "Other"\n');
+        write(s.dir, '.claude/settings.json', { unrelated: 'keep' });
+        write(s.dir, '.claude.json', { unrelated: 'keep' });
+        for (const editor of ['Code', 'Cursor', 'windsurf']) write(s.dir, `.config/${editor}/User/settings.json`, { unrelated: 'keep' });
+        write(s.dir, '.config/opencode/opencode.json', { unrelated: 'keep', provider: { other: { name: 'Other' } } });
+        write(s.dir, '.pi/agent/models.json', { unrelated: 'keep', providers: { other: { apiKey: '$OTHER' } } });
+        write(s.dir, '.pi/agent/settings.json', { unrelated: 'keep' });
+        write(s.dir, '.qwen/settings.json', {
+          unrelated: 'keep',
+          modelProviders: {
+            openai: [{ id: 'other-gpt', baseUrl: 'https://other.invalid/v1' }],
+            anthropic: [{ id: 'other-claude', baseUrl: 'https://other.invalid' }],
+          },
+        });
+        for (let i = 0; i < 2; i++) {
+          const result = invoke(s, family!, id!);
+          assert.equal(result.status, 0, result.stderr);
+        }
+        const model = family === 'anthropic' ? 'claude-test-selected' : 'gpt-test-selected';
+        if (id!.includes('codex')) {
+          const config = TOML.parse(fs.readFileSync(path.join(s.dir, '.codex/config.toml'), 'utf8'));
+          assert.equal(config.model, model);
+          assert.equal(config.unrelated, 'keep');
+          assert.equal((config.model_providers as Record<string, Record<string, unknown>>).purpleschool.supports_websockets, false);
+        } else if (['claude-code-cli', 'vscode', 'cursor', 'windsurf'].includes(id!)) {
+          assert.equal(read(s.dir, '.claude/settings.json').model, model);
+          assert.equal(read(s.dir, '.claude/settings.json').unrelated, 'keep');
+          assert.equal(read(s.dir, '.claude.json').model, model);
+        } else if (id!.includes('opencode')) {
+          const config = read(s.dir, '.config/opencode/opencode.json');
+          assert.equal(config.model, `purpleschool-${family}/${model}`);
+          assert.equal(config.provider.other.name, 'Other');
+        } else if (id!.includes('pi-cli')) {
+          assert.equal(read(s.dir, '.pi/agent/settings.json').defaultModel, model);
+          assert.equal(read(s.dir, '.pi/agent/models.json').providers.other.apiKey, '$OTHER');
+        } else if (id!.includes('qwen')) {
+          const config = read(s.dir, '.qwen/settings.json');
+          assert.equal(config.model.name, model);
+          assert.equal(config.modelProviders[family!].length, 2);
+          assert.equal(config.modelProviders[family!][1].baseUrl.startsWith('https://other.invalid'), true);
+        } else {
+          const lua = fs.readFileSync(path.join(s.dir, '.config/nvim/lua/plugins/purpleschool-avante.lua'), 'utf8');
+          assert.ok(lua.includes(model));
+          assert.ok(!lua.includes('<ВСТАВЬ_МОДЕЛЬ>'));
+        }
+        const removed = invoke(s, family!, id!, 'remove');
+        assert.equal(removed.status, 0, removed.stderr);
         assert.equal(read(s.dir, '.claude/settings.json').unrelated, 'keep');
-        assert.equal(read(s.dir, '.claude.json').model, model);
-      } else if (id!.includes('opencode')) {
-        const config = read(s.dir, '.config/opencode/opencode.json');
-        assert.equal(config.model, `purpleschool-${family}/${model}`);
-        assert.equal(config.provider.other.name, 'Other');
-      } else if (id!.includes('pi-cli')) {
-        assert.equal(read(s.dir, '.pi/agent/settings.json').defaultModel, model);
-        assert.equal(read(s.dir, '.pi/agent/models.json').providers.other.apiKey, '$OTHER');
-      } else if (id!.includes('qwen')) {
-        const config = read(s.dir, '.qwen/settings.json');
-        assert.equal(config.model.name, model);
-        assert.equal(config.modelProviders[family!].length, 2);
-        assert.equal(config.modelProviders[family!][1].baseUrl.startsWith('https://other.invalid'), true);
-      } else {
-        const lua = fs.readFileSync(path.join(s.dir, '.config/nvim/lua/plugins/purpleschool-avante.lua'), 'utf8');
-        assert.ok(lua.includes(model));
-        assert.ok(!lua.includes('<ВСТАВЬ_МОДЕЛЬ>'));
+        assert.equal(read(s.dir, '.qwen/settings.json').unrelated, 'keep');
+        assert.equal(read(s.dir, '.pi/agent/models.json').unrelated, 'keep');
+      } finally {
+        fs.rmSync(s.dir, { recursive: true, force: true });
       }
-      const removed = invoke(s, family!, id!, 'remove');
-      assert.equal(removed.status, 0, removed.stderr);
-      assert.equal(read(s.dir, '.claude/settings.json').unrelated, 'keep');
-      assert.equal(read(s.dir, '.qwen/settings.json').unrelated, 'keep');
-      assert.equal(read(s.dir, '.pi/agent/models.json').unrelated, 'keep');
-    } finally {
-      fs.rmSync(s.dir, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 }
 
-test('a missing terminal agent is installed from npm; editors are never installed', () => {
+test('a missing terminal agent is installed from npm; editors are never installed', unix, () => {
   const s = sandbox();
   try {
     // npm кладёт «установленный» opencode в каталог PATH песочницы ($HOME/bin).
@@ -170,7 +177,7 @@ test('a missing terminal agent is installed from npm; editors are never installe
   }
 });
 
-test('Pi and Qwen Code check the system Node.js before installing', () => {
+test('Pi and Qwen Code check the system Node.js before installing', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'npm', 'printf called > "$HOME/npm-called"');
@@ -189,7 +196,7 @@ test('Pi and Qwen Code check the system Node.js before installing', () => {
   }
 });
 
-test('missing assistant CLI is automatically installed and then verified; dry-run never installs', () => {
+test('missing assistant CLI is automatically installed and then verified; dry-run never installs', unix, () => {
   const s = sandbox();
   try {
     stub(
@@ -215,7 +222,7 @@ test('missing assistant CLI is automatically installed and then verified; dry-ru
   }
 });
 
-test('matching extension is required; Codex editor also requires standalone CLI', () => {
+test('matching extension is required; Codex editor also requires standalone CLI', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'code', 'case "$1" in --version) printf "1.100.0\\n";; *) printf "anthropic.claude-code@2.1.300\\n";; esac');
@@ -258,7 +265,7 @@ test('extension ids and minimum versions are matched exactly', () => {
 });
 
 // Без --uninstall мастер первым вопросом спрашивает «Что делаем?» — по умолчанию отвечаем «Установить».
-test('removing Claude CLI preserves the common configuration used by an editor', () => {
+test('removing Claude CLI preserves the common configuration used by an editor', unix, () => {
   const s = sandbox();
   try {
     s.env.TEST_BASE_URL = ANTHROPIC_BASE_URL;
@@ -441,7 +448,7 @@ test('Pi does not remove another Anthropic gateway or an unrelated credential', 
   }
 });
 
-test('Windsurf identity comes from product metadata, even with devin in the parent path', () => {
+test('Windsurf identity comes from product metadata, even with devin in the parent path', unix, () => {
   const s = sandbox();
   try {
     const real = path.join(s.dir, 'devin', 'bin', 'windsurf');
@@ -560,7 +567,7 @@ const requests = (s: ReturnType<typeof sandbox>) =>
         .map((line) => JSON.parse(line))
     : [];
 
-test('connect: Claude Code gets the default model, checked by a real request before writing', () => {
+test('connect: Claude Code gets the default model, checked by a real request before writing', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -575,7 +582,7 @@ test('connect: Claude Code gets the default model, checked by a real request bef
   }
 });
 
-test('connect: trial balance — a model rejected with 400 is replaced by the one the proxy names', () => {
+test('connect: trial balance — a model rejected with 400 is replaced by the one the proxy names', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -597,7 +604,7 @@ test('connect: trial balance — a model rejected with 400 is replaced by the on
   }
 });
 
-test('connect: when the proxy rejects every model, nothing is written', () => {
+test('connect: when the proxy rejects every model, nothing is written', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "1.0.0\\n"');
@@ -613,7 +620,7 @@ test('connect: when the proxy rejects every model, nothing is written', () => {
   }
 });
 
-test('connect: Codex prefers the PurpleFlow default model when the proxy serves it', () => {
+test('connect: Codex prefers the PurpleFlow default model when the proxy serves it', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "1.0.0\\n"');
@@ -628,7 +635,7 @@ test('connect: Codex prefers the PurpleFlow default model when the proxy serves 
   }
 });
 
-test('connect: without a key nothing is requested or written, and login is asked for', () => {
+test('connect: without a key nothing is requested or written, and login is asked for', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "1.0.0\\n"');
@@ -641,7 +648,7 @@ test('connect: without a key nothing is requested or written, and login is asked
   }
 });
 
-test('connect: a key rejected by the proxy asks for login and writes nothing', () => {
+test('connect: a key rejected by the proxy asks for login and writes nothing', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "1.0.0\\n"');
@@ -653,7 +660,7 @@ test('connect: a key rejected by the proxy asks for login and writes nothing', (
   }
 });
 
-test('connect: an existing PurpleSchool key is reused, so another app connects without login', () => {
+test('connect: an existing PurpleSchool key is reused, so another app connects without login', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -673,7 +680,7 @@ test('connect: an existing PurpleSchool key is reused, so another app connects w
   }
 });
 
-test('connect: Codex login restriction is lifted automatically, unrelated settings kept', () => {
+test('connect: Codex login restriction is lifted automatically, unrelated settings kept', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "0.156.1\\n"');
@@ -690,7 +697,7 @@ test('connect: Codex login restriction is lifted automatically, unrelated settin
   }
 });
 
-test("connect: Codex also fixes an editor's executable override", () => {
+test("connect: Codex also fixes an editor's executable override", unix, () => {
   const s = sandbox();
   try {
     stub(s, 'codex', 'printf "1.0.0\\n"');
@@ -704,7 +711,7 @@ test("connect: Codex also fixes an editor's executable override", () => {
   }
 });
 
-test('connect: Claude conflicts in settings are removed automatically, other settings kept', () => {
+test('connect: Claude conflicts in settings are removed automatically, other settings kept', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -719,7 +726,7 @@ test('connect: Claude conflicts in settings are removed automatically, other set
   }
 });
 
-test('connect: an inherited Claude token stops setup before writing and is never shown', () => {
+test('connect: an inherited Claude token stops setup before writing and is never shown', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -737,7 +744,7 @@ test('connect: an inherited Claude token stops setup before writing and is never
   }
 });
 
-test('connect: VS Code extension conflicts are removed, other extension env kept', () => {
+test('connect: VS Code extension conflicts are removed, other extension env kept', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'code', 'case "$1" in --version) printf "1.100.0\\n";; *) printf "anthropic.claude-code@2.1.300\\n";; esac');
@@ -786,7 +793,7 @@ test('connect: disconnecting needs no key and keeps the Claude key other apps us
 });
 
 for (const keepQwen of [false, true]) {
-  test(`connect: disconnecting Claude and Pi together considers remaining clients (Qwen=${keepQwen})`, () => {
+  test(`connect: disconnecting Claude and Pi together considers remaining clients (Qwen=${keepQwen})`, unix, () => {
     const s = sandbox();
     try {
       s.env.TEST_BASE_URL = ANTHROPIC_BASE_URL;
@@ -826,7 +833,7 @@ test('connect: a failed removal of a key consumer preserves its credential', () 
   }
 });
 
-test('connect: Claude uses CLAUDE_CONFIG_DIR without touching the default profile', () => {
+test('connect: Claude uses CLAUDE_CONFIG_DIR without touching the default profile', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'claude', 'printf "2.1.300\\n"');
@@ -845,7 +852,7 @@ test('connect: Claude uses CLAUDE_CONFIG_DIR without touching the default profil
   }
 });
 
-test('connect: portable VS Code is set up and cleaned in its portable profile', () => {
+test('connect: portable VS Code is set up and cleaned in its portable profile', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'code', 'case "$1" in --version) printf "1.100.0\\n";; *) printf "anthropic.claude-code@2.1.300\\n";; esac');
@@ -863,7 +870,7 @@ test('connect: portable VS Code is set up and cleaned in its portable profile', 
   }
 });
 
-test('connect: an invalid portable profile stops before any request', () => {
+test('connect: an invalid portable profile stops before any request', unix, () => {
   const s = sandbox();
   try {
     stub(s, 'code', 'printf "1.100.0\\n"');
@@ -934,7 +941,7 @@ test('connect: removal finds the same custom sandbox config that setup used', { 
 });
 
 for (const scenario of ['active Code', 'invalid metadata', 'another product', 'broken version command'] as const) {
-  test(`connect: versioned Windows-style installation is resolved before checking extensions: ${scenario}`, () => {
+  test(`connect: versioned Windows-style installation is resolved before checking extensions: ${scenario}`, unix, () => {
     const s = sandbox();
     try {
       const commit = '1234567890abcdef1234567890abcdef12345678';
@@ -1056,7 +1063,7 @@ test('Crush: both families live in their own crushrc blocks, repeatable and remo
   }
 });
 
-test('Crush: a model name with quotes cannot break out of the bash string', async () => {
+test('Crush: a model name with quotes cannot break out of the bash string', unix, async () => {
   const { buildCrush } = await import('../../src/main/connect/services/shared/proxyClients.js');
   const s = sandbox();
   const previous = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME, SHELL: process.env.SHELL };
