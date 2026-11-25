@@ -92,6 +92,8 @@ export interface ChatMessage {
   stopped?: boolean;
   /** Файлы проекта, изменённые за этот ход (только для чата с правками в git-репозитории). */
   changedFiles?: string[];
+  /** Ход в режиме правок упёрся в его ограничения: под ответом — «Дать полный доступ и повторить». */
+  needsFullAccess?: boolean;
   usage?: TokenUsage;
   /** Модель, которая ответила (из события запуска CLI). */
   model?: string;

@@ -42,7 +42,10 @@ export function AssistantMessage({
 }) {
   const blocks = chatBlocks(m);
   const refused = m.pending ? [] : refusedMcp(blocks);
-  const sandboxed = !m.pending && Boolean(onGrantFull) && blocks.some((b) => b.kind === 'tools' && b.items.some((t) => t.sandboxDenied));
+  const sandboxed =
+    !m.pending &&
+    Boolean(onGrantFull) &&
+    (m.needsFullAccess || blocks.some((b) => b.kind === 'tools' && b.items.some((t) => t.sandboxDenied)));
   const live = Boolean(m.pending);
   const tail = blocks[blocks.length - 1];
   const footer = live ? [] : answerFooter(m);
@@ -78,8 +81,7 @@ export function AssistantMessage({
           <p className="chat-question-text">
             <LockOpen size={14} />
             <span>
-              Песочница режима «Правки» не пустила команду: запись в <code>.git</code>, остановка процессов и файлы вне проекта в нём
-              закрыты.
+              Режим «Правки» не пустил команду: запись в <code>.git</code>, остановка процессов и файлы вне проекта в нём закрыты.
             </span>
           </p>
           {answerable && (

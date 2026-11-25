@@ -137,6 +137,9 @@ if (/исполнитель/.test(sys) || /Реализуй изменение|�
 // Чат: ответ с таблицей и блоком кода — проверить разметку ответа.
 // Чат: коммит в песочнице правок — git падает, как в настоящей песочнице; с полным доступом — получается.
 if (/чате PurpleFlow/.test(sys) && /Включил полный доступ/.test(prompt)) reply('Закоммитил.', true);
+// Как codex: отказ песочницы без события вызова — только просьба в тексте.
+if (/чате PurpleFlow/.test(sys) && /Закоммить молча/.test(prompt) && /"sandbox"/.test(opt('--settings')))
+  reply('Не удалось создать коммит: песочница запретила запись в .git/index.lock. Для этого нужен режим «Полный доступ».', true);
 if (/чате PurpleFlow/.test(sys) && /Закоммить правки/.test(prompt)) {
   const sandboxed = /"sandbox"/.test(opt('--settings'));
   say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });

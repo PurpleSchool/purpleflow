@@ -15,6 +15,7 @@ import type {
   ChatFile,
   ChatFileContent,
   ChatMessage,
+  ChatPart,
   ChatSkill,
   ChatSummary,
   DiffFile,
@@ -258,6 +259,17 @@ export async function allowChatMcp(k: Kernel, id: string, t: { server: string; t
   await sendChat(k, id, `Разрешаю вызов ${tool.server} · ${tool.tool} — повтори его.`);
 }
 
+/** Агент сам говорит, что нужен полный доступ: правила режима правок просят его назвать режим «Полный доступ». */
+const ASKS_FULL_ACCESS = /полн\S* доступ/i;
+
+/**
+ * Ход упёрся в ограничения правок. По выводу команды это видно не всегда: codex (0.172) отказ песочницы
+ * не присылает событием command_execution — только текстом ответа. Поэтому ещё и по просьбе агента в тексте.
+ */
+export function needsFullAccess(parts: ChatPart[]): boolean {
+  return parts.some((p) => (p.kind === 'tool' && p.sandboxDenied) || (p.kind === 'text' && ASKS_FULL_ACCESS.test(p.text)));
+}
+
 /**
  * Песочница правок не пустила команду: включить чату полный доступ и попросить повторить.
  * Смена режима начинает новую сессию — переписка уйдёт агенту пересказом.
@@ -481,6 +493,7 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
   answer.pending = false;
   answer.usage = res.usage;
   if (changed?.length) answer.changedFiles = [...new Set(changed)];
+  if (chat.edits && !chat.fullAccess && !res.stopped && needsFullAccess(parts)) answer.needsFullAccess = true;
   if (res.stopped) answer.stopped = true;
   else if (!res.ok) answer.error = res.error ?? 'Агент не ответил';
   save(k, chat);

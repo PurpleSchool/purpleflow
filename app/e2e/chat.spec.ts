@@ -44,6 +44,23 @@ test('чат: ссылка с параметром сохраняет черно
   }
 });
 
+test('чат: агент без вызова просит полный доступ текстом (как codex) — карточка запроса есть', async () => {
+  const box = makeSandbox();
+  const l = await launch(box);
+  const { page } = l;
+  try {
+    await page.getByRole('button', { name: /Создать/ }).click();
+    await page.getByRole('menuitem', { name: /Чат/ }).click();
+    const input = page.locator('.chat-compose textarea');
+    await input.fill('Закоммить молча');
+    await input.press('Enter');
+    await expect(page.getByRole('button', { name: 'Дать полный доступ и повторить' })).toBeVisible();
+  } finally {
+    await quit(l);
+    box.cleanup();
+  }
+});
+
 test('чат: песочница правок не пустила команду — запрос полного доступа, после него повтор без песочницы', async () => {
   const box = makeSandbox();
   const l = await launch(box);

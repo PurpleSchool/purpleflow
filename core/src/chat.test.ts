@@ -380,6 +380,28 @@ test('чат: отказ песочницы помечается в вызове
   assert.match(calls[1].prompt, /Включил полный доступ/);
 });
 
+test('чат: codex не прислал вызов, но просит полный доступ текстом — ответ помечен только в режиме правок', async () => {
+  // Так ведёт себя codex 0.172: команду, которую не пустила песочница, событием не присылает — только текст ответа.
+  const codex = async (o: AgentRunOptions) => {
+    o.onStep?.({
+      kind: 'text',
+      text: 'Не удалось создать коммит: песочница запретила запись в .git/index.lock. Для этого нужен режим «Полный доступ».',
+    });
+    return { ok: true, text: '', usage: emptyUsage() };
+  };
+  const core = makeCore({ codex });
+  const chat = await core.createChat({ agent: 'codex' });
+  const last = async () => {
+    await core.sendChat(chat.id, 'Сделай коммит');
+    return (await untilIdle(core, chat.id)).messages.at(-1)!;
+  };
+  assert.equal((await last()).needsFullAccess, true);
+  await core.updateChat(chat.id, { fullAccess: true });
+  assert.equal((await last()).needsFullAccess, undefined);
+  await core.updateChat(chat.id, { edits: false });
+  assert.equal((await last()).needsFullAccess, undefined);
+});
+
 test('чат: два вложения с одним именем не затирают друг друга', async () => {
   const seen: AgentRunOptions[] = [];
   const core = makeCore({
