@@ -211,7 +211,9 @@ test('чат: панель под полем ввода, таблица и бл�
 });
 
 test('чат: «@» подставляет файл проекта, «/» — скилл; агенту уходят их пути', async () => {
-  const box = makeSandbox();
+  // Свои скиллы из ~/.claude, ~/.agents в проверке не участвуют: иначе «/re» у разработчика попадает
+  // в его собственный скилл, и список подсказок зависит от машины, а не от проекта.
+  const box = makeSandbox({ settings: { userConfig: false } });
   const skill = path.join(box.repo, '.claude', 'skills', 'review', 'SKILL.md');
   fs.mkdirSync(path.dirname(skill), { recursive: true });
   fs.writeFileSync(skill, '---\ndescription: Ревью по чек-листу\n---\n');
@@ -261,8 +263,9 @@ test('чат: «@» подставляет файл проекта, «/» — с
     await page.getByRole('tab', { name: 'Обзор' }).click();
     const panel = page.locator('.overview-skills');
     // Скиллы — вкладками по агентам с числом скиллов: review из .claude/skills — у claude.
+    // Вкладки есть, только когда скиллы нашлись у нескольких агентов; с одним агентом его список показан сразу.
     const claudeTab = panel.getByRole('tab', { name: /^claude\s*\d+$/ });
-    await claudeTab.click();
+    if (await claudeTab.count()) await claudeTab.click();
     const review = panel.locator('.skill-list li').filter({ has: page.locator('.skill-name', { hasText: /^review$/ }) });
     await expect(review).toContainText('Ревью по чек-листу');
     // «Проект» раскрыт; заголовок сворачивает и снова разворачивает список. Ваши (если есть) — свёрнуты.

@@ -296,18 +296,58 @@ export class Git {
   }
 
   /**
+   * Пути из keep, которые действительно есть смысл исключать: игнорируемые и неотслеживаемые (.env) прятать
+   * и так нечем — `--include-untracked` их не берёт, — а названный в exclude-pathspec такой путь валит
+   * `git stash push` («The following paths are ignored…», код 1) и дерево остаётся неубранным.
+   */
+  private async stashKeeps(dir: string, keep: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const p of keep) {
+      const tracked = await run(this.bin, ['ls-files', '--', p], { cwd: dir, env: this.env, timeoutMs: 10_000 });
+      if (tracked.stdout.trim()) {
+        out.push(p);
+        continue;
+      }
+      const ignored = await run(this.bin, ['check-ignore', '-q', '--no-index', '--', p], {
+        cwd: dir,
+        env: this.env,
+        timeoutMs: 10_000,
+      });
+      if (ignored.code !== 0) out.push(p);
+    }
+    return out;
+  }
+
+  /**
    * Спрятать изменения рабочей копии, кроме перечисленных путей (файлы прогона, .env), и вернуть ссылку на stash.
    * null — прятать нечего.
    */
   async stashExcept(dir: string, message: string, keep: string[]): Promise<string | null> {
     if (!(await this.dirtyFiles(dir)).length) return null;
     return serialized(await this.stashLock(dir), async () => {
+      const status = (d: string) => this.git(d, ['--no-optional-locks', 'status', '--porcelain', '-z', '--untracked-files=all']);
       const before = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
-      await this.git(
-        dir,
-        ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...keep.map((k) => `:(glob,exclude)${k}`)],
-        60_000,
-      );
+      const was = await status(dir);
+      const excludes = (await this.stashKeeps(dir, keep)).map((k) => `:(glob,exclude)${k}`);
+      try {
+        await this.git(dir, ['stash', 'push', '--include-untracked', '-m', message, '--', '.', ...excludes], 60_000);
+      } catch (e) {
+        const top = (await this.git(dir, ['stash', 'list', '--format=%H']).catch(() => '')).trim().split('\n')[0] ?? '';
+        if (!top || top === before) throw e;
+        // push успел записать stash и упал на сбросе дерева. Дерево не тронуто — запись дублирует рабочую копию,
+        // и место ей не в общем списке: иначе каждый сбой оставлял бы в нём копию всей работы.
+        if ((await status(dir).catch(() => '')) === was) {
+          const ref = (await this.git(dir, ['stash', 'list', '--format=%gd %H']).catch(() => ''))
+            .trim()
+            .split('\n')
+            .find((l) => l.endsWith(` ${top}`))
+            ?.split(' ')[0];
+          if (ref) await this.git(dir, ['stash', 'drop', ref], 60_000).catch(() => {});
+          throw e;
+        }
+        // Дерево сброшено — «исходный код» получен, шаг можно продолжать.
+        return top;
+      }
       const top = (await this.git(dir, ['stash', 'list', '--format=%H'])).trim().split('\n')[0] ?? '';
       return top && top !== before ? top : null;
     });

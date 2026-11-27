@@ -288,3 +288,35 @@ test('дифф: картинки и видео — обе версии байт�
   check(await git.diffCommits(dir, base, 'HEAD'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('stash: игнорируемые файлы окружения в keep не валят push', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-stash-env-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const main = path.join(dir, 'main');
+  fs.mkdirSync(main);
+  const g = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: main }).toString();
+  g('init', '-q', '-b', 'main');
+  g('config', 'core.autocrlf', 'false');
+  fs.writeFileSync(path.join(main, 'a.txt'), 'a\n');
+  fs.writeFileSync(path.join(main, '.gitignore'), '.env\n');
+  g('add', '-A');
+  g('commit', '-qm', 'init');
+  const git = new Git('git', process.env);
+  const w = path.join(dir, 'w');
+  g('worktree', 'add', '-q', '-b', 'w', w);
+
+  // Как у прогона: .env скопирован в worktree и игнорируется, run.json — рабочий файл стадии.
+  fs.writeFileSync(path.join(w, '.env'), 'SECRET=1\n');
+  fs.writeFileSync(path.join(w, 'run.json'), '{"state":"RUNNING"}\n');
+  fs.writeFileSync(path.join(w, 'a.txt'), 'правка\n');
+
+  const sha = await git.stashExcept(w, 'проба', ['.env', 'run.json']);
+  assert.ok(sha, 'stash создан, а не упал на игнорируемом .env');
+  assert.equal(fs.readFileSync(path.join(w, 'a.txt'), 'utf8'), 'a\n', 'правки задачи спрятаны');
+  assert.equal(fs.readFileSync(path.join(w, '.env'), 'utf8'), 'SECRET=1\n', '.env остался на месте');
+  assert.equal(fs.readFileSync(path.join(w, 'run.json'), 'utf8'), '{"state":"RUNNING"}\n', 'run.json остался на месте');
+
+  await git.restoreStash(w, sha);
+  assert.equal(fs.readFileSync(path.join(w, 'a.txt'), 'utf8'), 'правка\n', 'правки вернулись');
+  assert.equal(g('stash', 'list').trim(), '', 'запись убрана из списка');
+});

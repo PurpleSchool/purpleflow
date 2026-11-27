@@ -89,8 +89,9 @@ test('mcp: список проекта, поиск в реестре с поля
     expect(saved.mcpServers.postgres).toMatchObject({ args: ['-y', 'pg-mcp@2'], env: { PG_URL: 'postgres://новый' } });
     await expect(page.getByText('postgres://новый')).toHaveCount(0);
 
-    // Удаление в два шага.
+    // Удаление в два шага. Вопрос перед удалением не снимается по времени: неспешный второй клик удаляет.
     await panel.getByRole('button', { name: 'Удалить broken-api' }).click();
+    await page.waitForTimeout(4500);
     await panel.getByRole('button', { name: 'Удалить из проекта?' }).click();
     await expect(panel.getByText('broken-api')).toHaveCount(0);
     await expect(panel.locator('.mcp-health')).toHaveText(/все работают/);
