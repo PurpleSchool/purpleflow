@@ -839,23 +839,118 @@ input.chat-title:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-code);
 }
 /* Своей модели у чата нет — на кнопке модель по умолчанию, тем же цветом, что и выбранная. */
 .amp-model.is-default {
   color: var(--text-1);
 }
 .amp-pop {
-  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+/* Два уровня: слева агенты со знаками, справа модели выбранного; колонки прокручиваются отдельно. */
+.amp-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+}
+.amp-cols.is-search {
+  grid-template-columns: minmax(0, 1fr);
+}
+.amp-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+  box-shadow: inset -1px 0 0 var(--line-2);
+}
+.amp-models {
+  min-height: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.amp-agent-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  text-align: left;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease),
+    opacity 0.15s var(--ease);
+}
+.amp-agent-row:hover,
+.amp-agent-row.is-on {
+  background: var(--pop-active);
+  color: var(--text-1);
+}
+.amp-agent-row.is-missing {
+  opacity: 0.5;
+}
+.amp-default-of {
+  color: var(--text-3);
+}
+.amp-agent-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.amp-agent-chev {
+  flex: none;
+  color: var(--text-4);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.amp-agent-row.is-on .amp-agent-chev {
+  opacity: 1;
+}
+/* Знаки агентов и семейств — одноцветные, в цвете строки, без плашки и обводки. */
+.vendor-icon.agent-logo {
+  background: none;
+  box-shadow: none;
+  color: inherit;
+}
+.vendor-icon.agent-logo.is-l {
+  width: 28px;
+  height: 28px;
+}
+.vendor-icon.agent-logo.is-l svg {
+  width: 22px;
+  height: 22px;
+}
+/* Семейства моделей по подписке PurpleSchool — подпункты агента: с отступом и мельче. */
+.amp .agent-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: none;
+  box-shadow: none;
+}
+.amp .agent-logo svg {
+  width: 13px;
+  height: 13px;
 }
 .amp-search {
   position: sticky;
   top: 0;
   z-index: 1;
+  flex: none;
   display: flex;
   gap: 8px;
   align-items: center;
-  margin: 0 -6px 4px;
+  margin: 0;
   padding: 10px 16px 8px;
   border-bottom: 1px solid var(--line-2);
   background: var(--pop-bg);
@@ -876,12 +971,24 @@ input.chat-title:focus {
   font-family: var(--font-ui);
 }
 .amp-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   padding: 10px 10px 4px;
   color: var(--text-4);
   font-family: var(--font-ui);
   font-size: 10.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+.amp-head .agent-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+.amp-head .agent-logo svg {
+  width: 12px;
+  height: 12px;
 }
 .amp-head em {
   font-style: normal;
@@ -2893,9 +3000,6 @@ body.is-side-resizing webview {
   color: var(--text-1);
 }
 .dd.chat-gen-menu .dd-icon {
-  color: var(--accent-hi);
-}
-.dd.chat-gen-menu.is-locked .dd-icon {
   color: var(--text-3);
 }
 /* «Создать» — как кнопки рядом: без обводки и фона, подложка только при наведении и пока меню открыто. */

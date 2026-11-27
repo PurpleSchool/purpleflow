@@ -681,7 +681,6 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                   model={conf.model}
                   fallback={fallbackModel}
                   options={trial ? trialOptions(enabled, trial) : modelOptions}
-                  noCustom={Boolean(trial)}
                   missing={(a) => !toolOk(a)}
                   disabled={busy}
                   onPick={(agent, model) => void setConf(agent === conf.agent ? { model } : { agent, model })}

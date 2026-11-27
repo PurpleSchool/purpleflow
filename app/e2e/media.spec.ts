@@ -191,6 +191,8 @@ test('«Создать» без входа: замок, подсказка на�
     await expect(p.locator('.chat-gen-wrap').getByRole('tooltip')).toContainText('после входа в PurpleSchool');
     await gen.click();
     await expect(p.getByRole('option', { name: /Картинка/ })).toContainText('Нужен вход в PurpleSchool');
+    // Первым пунктом — «Подключить PurpleSchool».
+    await expect(p.getByRole('option').first()).toContainText('Подключить PurpleSchool');
     await p.getByRole('option', { name: /Картинка/ }).click();
     // Режим не включился — вместо него подсказка войти.
     await expect(p.getByRole('group', { name: 'Создать картинку' })).toHaveCount(0);
@@ -202,6 +204,12 @@ test('«Создать» без входа: замок, подсказка на�
     await gen.click();
     await p.getByRole('option', { name: /Картинка/ }).click();
     await hint.getByRole('button', { name: 'Войти в PurpleSchool' }).click();
+    await expect(p.getByRole('heading', { name: 'Вход в PurpleSchool' })).toBeVisible();
+    // «Подключить PurpleSchool» в меню тоже ведёт ко входу.
+    await p.getByRole('button', { name: 'Создать', exact: true }).first().click();
+    await p.getByRole('menuitem', { name: /Чат/ }).click();
+    await gen.click();
+    await p.getByRole('option', { name: /Подключить PurpleSchool/ }).click();
     await expect(p.getByRole('heading', { name: 'Вход в PurpleSchool' })).toBeVisible();
   } finally {
     await quit(l);

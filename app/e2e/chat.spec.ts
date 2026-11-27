@@ -117,28 +117,47 @@ test('чат: панель под полем ввода, таблица и бл�
     await expect(mode).toContainText('Вопросы');
     // Агент и модель — одна кнопка; своей модели у чата нет — на ней модель по умолчанию из настроек, а не пустота.
     const picker = bar.getByRole('button', { name: 'Агент и модель' });
-    await expect(picker).toHaveText(/claude\s*·\s*sonnet/);
+    await expect(picker).toHaveText(/claude\s*·\s*Sonnet/);
     await expect(picker.locator('.amp-model')).toHaveClass(/is-default/);
-    // Список разбит на разделы по включённым агентам; выбор модели выбирает и агента.
+    // Два уровня: слева агенты, справа модели выбранного (сначала — текущего); выбор модели выбирает и агента.
     await picker.click();
     const pop = page.locator('.amp-pop');
+    await expect(pop.getByRole('tab', { name: 'claude', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(pop.getByRole('group', { name: 'claude' })).toBeVisible();
+    await expect(pop.getByRole('group', { name: 'codex' })).toHaveCount(0);
+    await pop.getByRole('tab', { name: 'codex', exact: true }).hover();
     await expect(pop.getByRole('group', { name: 'codex' })).toBeVisible();
+    await expect(pop.getByRole('group', { name: 'claude' })).toHaveCount(0);
+    // Модели по подписке PurpleSchool — не в списке агента, а своими пунктами по семействам.
+    await expect(pop.getByRole('group', { name: 'codex' }).getByRole('option', { name: /DeepSeek/ })).toHaveCount(0);
+    await pop.getByRole('tab', { name: 'codex: DeepSeek' }).hover();
+    await expect(pop.getByRole('group', { name: 'codex' }).getByRole('option').first()).toContainText('DeepSeek');
+    if (process.env.PURPLEFLOW_SHOTS) {
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(box.root, '..', 'pf-chat-picker-ps.png') });
+    }
+    await pop.getByRole('tab', { name: 'codex', exact: true }).hover();
+    await expect(pop.getByRole('tab', { name: 'codex', exact: true })).toHaveAttribute('aria-selected', 'true');
     if (process.env.PURPLEFLOW_SHOTS) {
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(box.root, '..', 'pf-chat-picker.png') });
     }
     await pop.getByRole('group', { name: 'codex' }).getByRole('option').nth(1).click();
-    await expect(picker).toHaveText(/codex\s*·\s*gpt/);
-    // Поиск: своё имя модели у текущего агента.
+    await expect(picker).toHaveText(/codex\s*·\s*GPT/);
+    // Поиск: колонки агентов нет, совпадения у всех агентов — по разделам; своего имени ввести нельзя.
     await picker.click();
-    await pop.getByLabel('Найти модель').fill('my-model');
-    await pop.getByLabel('Найти модель').press('Enter');
-    await expect(picker).toHaveText(/codex\s*·\s*my-model/);
+    await pop.getByLabel('Найти модель').fill('gpt 6');
+    await expect(pop.getByRole('tablist', { name: 'Агенты' })).toHaveCount(0);
+    await expect(pop.getByRole('group', { name: 'codex' })).toBeVisible();
+    await pop.getByLabel('Найти модель').fill('dd-несуществующая');
+    await expect(pop.getByText('Ничего не найдено')).toBeVisible();
+    await expect(pop.getByRole('option')).toHaveCount(0);
+    await pop.getByLabel('Найти модель').fill('');
+    await expect(pop.getByRole('tablist', { name: 'Агенты' })).toBeVisible();
     // Назад на claude по умолчанию.
-    await picker.click();
+    await pop.getByRole('tab', { name: 'claude', exact: true }).click();
     await pop.getByRole('group', { name: 'claude' }).getByRole('option', { name: 'по умолчанию' }).click();
-    await expect(picker).toHaveText(/claude\s*·\s*sonnet/);
+    await expect(picker).toHaveText(/claude\s*·\s*Sonnet/);
 
     await page.locator('.chat-compose textarea').fill('Как устроены контейнеры?');
     await page.keyboard.press('Enter');

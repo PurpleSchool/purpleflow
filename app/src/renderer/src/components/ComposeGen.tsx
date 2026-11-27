@@ -41,9 +41,10 @@ export function genFromText(text: string): { mode: GenMode; text: string } | nul
 
 /**
  * «Создать» в строке поля ввода: меню видов генерации на кнопке без обводки, с подсказкой при наведении.
- * Без входа в PurpleSchool — с замком.
+ * Без входа в PurpleSchool — с замком, а первым пунктом меню — «Подключить PurpleSchool» (вход в «Аккаунте»).
  */
 export function GenMenu({ onPick, locked = false }: { onPick: (kind: GenMode['kind']) => void; locked?: boolean }) {
+  const { go } = useStore();
   return (
     <span className="chat-gen-wrap">
       <Select<string>
@@ -54,13 +55,16 @@ export function GenMenu({ onPick, locked = false }: { onPick: (kind: GenMode['ki
         ariaLabel="Создать"
         minWidth={240}
         options={[
+          ...(locked
+            ? [{ value: 'connect', label: 'Подключить PurpleSchool', hint: 'Войти или зарегистрироваться', icon: <LogIn size={14} /> }]
+            : []),
           locked
             ? { value: 'image', label: 'Картинка', hint: 'Нужен вход в PurpleSchool', icon: <Lock size={14} /> }
             : { value: 'image', label: 'Картинка', hint: 'Модель и стороны — на выбор', icon: <ImagePlus size={14} /> },
           { value: 'video', label: 'Видео', icon: <Clapperboard size={14} />, disabled: true, badge: 'скоро' },
           { value: 'audio', label: 'Озвучка', icon: <AudioLines size={14} />, disabled: true, badge: 'скоро' },
         ]}
-        onChange={(v) => v === 'image' && onPick('image')}
+        onChange={(v) => (v === 'connect' ? go({ name: 'settings', tab: 'account' }) : v === 'image' && onPick('image'))}
       />
       <span className="compose-tip" role="tooltip">
         <strong>Создать</strong>
