@@ -3,7 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launch, makeSandbox, quit } from './harness';
+import { launch, makeSandbox, quit, openRepoProject } from './harness';
 
 test('скиллы: поиск по каталогу показывает источник и число установок', async () => {
   const queries: string[] = [];
@@ -32,7 +32,7 @@ test('скиллы: поиск по каталогу показывает ист
   const { page } = l;
   try {
     await page.getByRole('button', { name: 'Проекты', exact: true }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('tab', { name: 'Обзор' }).click();
     await page.getByRole('button', { name: 'Добавить скиллы' }).click();
     const dialog = page.getByRole('dialog', { name: 'Добавить скиллы' });

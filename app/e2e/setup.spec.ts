@@ -154,3 +154,26 @@ test('без входа слева от формы — баннер старто
   await banner.getByRole('button', { name: 'Зарегистрироваться' }).click();
   await expect(l.page.getByRole('heading', { name: 'Регистрация в PurpleSchool' })).toBeVisible();
 });
+
+test('«Новый проект» с главной: мастер — папка, сканирование начинается само, «Открыть чат» подключает проект', async () => {
+  await start({ onboarded: true });
+  await l.app.evaluate(({ dialog }, repo) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [repo] })) as typeof dialog.showOpenDialog;
+  }, box.repo);
+  await l.page
+    .getByRole('button', { name: /Новый проект/ })
+    .first()
+    .click();
+  await expect(l.page.getByRole('heading', { name: 'Новый проект' })).toBeVisible();
+  await l.page.getByRole('button', { name: 'Выбрать папку…' }).click();
+  await expect(l.page.getByText('demo', { exact: true })).toBeVisible();
+  // Сканирование — само, без кнопки «Сканировать проект».
+  await expect(l.page.locator('.fp-scan-row').first()).not.toHaveClass(/is-idle/);
+  await expect(l.page.getByRole('button', { name: 'Сканировать проект' })).toHaveCount(0);
+  await l.page.getByRole('button', { name: 'Открыть чат' }).click();
+  await expect(l.page.locator('.chat-compose textarea')).toBeVisible();
+  // Проект подключён: в списке проектов и в меню «Проекты».
+  await l.page.getByRole('button', { name: 'Проекты', exact: true }).click();
+  await expect(l.page.getByRole('menu', { name: 'Последние проекты' })).toContainText('demo');
+  await expect(l.page.getByRole('menuitem', { name: 'Новый проект' })).toBeVisible();
+});

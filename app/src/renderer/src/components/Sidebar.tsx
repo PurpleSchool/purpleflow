@@ -1,18 +1,22 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bug,
   ChevronDown,
   FolderGit2,
+  FolderPlus,
   Gift,
   House,
+  LayoutGrid,
   LayoutList,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Rocket,
+  Search,
   Settings,
   Workflow,
+  X,
 } from 'lucide-react';
 import type { ChatSummary, ProjectListItem, RunSummary } from '@purpleflow/core';
 import { useActions, useStore } from '../lib/store';
@@ -78,6 +82,76 @@ function groupItems(runs: RunSummary[], chats: ChatSummary[]) {
 
 const projectName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 
+/** Поиск по истории: каждое слово запроса — в названии или в имени проекта, без учёта регистра. */
+export function matchesQuery(query: string, title: string, project: string | undefined): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = `${title} ${project ? projectName(project) : 'без проекта'}`.toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+
+/** Ширина панели: тянется за правый край, запоминается; двойной клик по краю — обратно по умолчанию. */
+const WIDTH_KEY = 'purpleflow.sideWidth';
+const SIDE_W = { min: 220, max: 440, def: 264 };
+const clampW = (w: number) => Math.round(Math.min(SIDE_W.max, Math.max(SIDE_W.min, w)));
+function applySideWidth(w: number) {
+  document.documentElement.style.setProperty('--side-w', `${w}px`);
+}
+try {
+  const saved = Number(localStorage.getItem(WIDTH_KEY));
+  if (saved) applySideWidth(clampW(saved));
+} catch {
+  /* по умолчанию */
+}
+
+function SideResize() {
+  const start = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const left = handle.parentElement!.getBoundingClientRect().left;
+    let width = clampW(e.clientX - left);
+    document.body.classList.add('is-nav-resizing');
+    const move = (ev: PointerEvent) => {
+      width = clampW(ev.clientX - left);
+      applySideWidth(width);
+    };
+    const end = () => {
+      document.body.classList.remove('is-nav-resizing');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      try {
+        localStorage.setItem(WIDTH_KEY, String(width));
+      } catch {
+        /* без запоминания */
+      }
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
+  return (
+    <div
+      className="nav-resize"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Ширина панели"
+      title="Потяните, чтобы изменить ширину; двойной клик — как было"
+      onPointerDown={start}
+      onDoubleClick={() => {
+        applySideWidth(SIDE_W.def);
+        try {
+          localStorage.removeItem(WIDTH_KEY);
+        } catch {
+          /* ничего */
+        }
+      }}
+    />
+  );
+}
+
 /** Левая панель: «Создать» (задача или чат), история прогонов и чатов, настройки и инструменты. Сворачивается (⌘B). */
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { state, go } = useStore();
@@ -100,9 +174,34 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       /* без запоминания */
     }
   };
+  // Поиск по названию и проекту — внутри выбранного фильтра.
+  const [query, setQuery] = useState('');
+  // Поиск — круглая кнопка справа от фильтра; открытый занимает строку фильтра.
+  const [searching, setSearching] = useState(false);
+  const closeSearch = () => {
+    setQuery('');
+    setSearching(false);
+  };
+  // ⌘K / Ctrl+K — открыть поиск (или вернуть в него фокус).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearching(true);
+        requestAnimationFrame(() => searchRef.current?.focus());
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const searchRef = useRef<HTMLInputElement>(null);
   const groups = useMemo(
-    () => groupItems(filter === 'chats' ? [] : state.runs, filter === 'tasks' ? [] : state.chats),
-    [state.runs, state.chats, filter],
+    () =>
+      groupItems(
+        filter === 'chats' ? [] : state.runs.filter((r) => matchesQuery(query, r.title, r.projectPath)),
+        filter === 'tasks' ? [] : state.chats.filter((c) => matchesQuery(query, c.title, c.projectPath)),
+      ),
+    [state.runs, state.chats, filter, query],
   );
   // Пока не подключён ни один проект — кнопка «Как начать?» открывает онбординг первого проекта.
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
@@ -167,8 +266,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   return (
     <aside className="side">
+      <SideResize />
       <div className="side-top drag">
-        <button type="button" className="side-brand" title="Главная" onClick={() => go({ name: 'home' })}>
+        <button type="button" className="side-brand" title="Главная" aria-label="Главная" onClick={() => go({ name: 'home' })}>
           <Mark size={22} />
           <span>PurpleFlow</span>
         </button>
@@ -177,17 +277,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </button>
       </div>
 
-      {/* Главная и «Создать» — иконками, «Проекты» — текстом; меню открываются под строкой во всю ширину. */}
+      {/* Как строка фильтра ниже: широкая таблетка «Создать» и круглая кнопка «Проекты» справа. Главная — по логотипу. */}
       <div className="side-actions">
-        <button
-          type="button"
-          className={`side-new side-home ${v.name === 'home' ? 'is-on' : ''}`}
-          title="Главная"
-          aria-label="Главная"
-          onClick={() => go({ name: 'home' })}
-        >
-          <House size={16} />
-        </button>
         <div className="side-create side-create-new">
           <button
             title="Создать чат или задачу"
@@ -198,6 +289,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             onClick={() => setMenu(!menu)}
           >
             <Plus size={16} />
+            <span className="side-new-label">Создать</span>
             <ChevronDown size={14} className={`side-new-chev ${menu ? 'is-open' : ''}`} />
           </button>
           {menu && (
@@ -228,14 +320,15 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </div>
         <div className="side-create">
           <button
-            className={`side-new ${v.name === 'projects' || v.name === 'project' ? 'is-on' : ''}`}
+            className={`side-round ${v.name === 'projects' || v.name === 'project' || projMenu ? 'is-on' : ''}`}
+            aria-label="Проекты"
+            title="Проекты"
             aria-haspopup={recent.length ? 'menu' : undefined}
             aria-expanded={recent.length ? projMenu : undefined}
-            // Проектов ещё нет — сразу на список, там «Открыть папку…».
+            // Проектов ещё нет — сразу на экран «Проекты»: там «Новый проект» и «Открыть папку…».
             onClick={() => (recent.length ? setProjMenu(!projMenu) : go({ name: 'projects' }))}
           >
-            <FolderGit2 size={16} /> Проекты
-            {recent.length > 0 && <ChevronDown size={14} className={`side-new-chev ${projMenu ? 'is-open' : ''}`} />}
+            <FolderGit2 size={16} />
           </button>
           {projMenu && (
             <>
@@ -264,8 +357,18 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                   </button>
                 ))}
                 <div className="side-menu-sep" />
+                <button
+                  role="menuitem"
+                  className="side-projects-all"
+                  onClick={() => {
+                    setProjMenu(false);
+                    go({ name: 'addProject' });
+                  }}
+                >
+                  <FolderPlus size={14} /> Новый проект
+                </button>
                 <button role="menuitem" className="side-projects-all" onClick={() => openProject(null)}>
-                  Все проекты
+                  <LayoutGrid size={14} /> Все проекты
                 </button>
               </div>
             </>
@@ -273,26 +376,67 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </div>
       </div>
 
-      <div className="side-filter">
-        <PillTabs<Filter>
-          className="tabs"
-          value={filter}
-          onChange={setFilter}
-          items={[
-            { id: 'all', label: 'Все', icon: <LayoutList size={14} /> },
-            { id: 'chats', label: 'Чаты', icon: <MessageSquare size={14} /> },
-            {
-              id: 'tasks',
-              label: 'Задачи',
-              icon: <Workflow size={14} />,
-              extra: waiting ? (
-                <span className="tab-badge is-wait" title="Ждут вашего решения">
-                  {waiting}
-                </span>
-              ) : undefined,
-            },
-          ]}
-        />
+      <div className={`side-filter ${searching ? 'is-searching' : ''}`}>
+        {searching ? (
+          <div className="side-search">
+            <Search size={14} aria-hidden />
+            <input
+              ref={searchRef}
+              autoFocus
+              type="search"
+              value={query}
+              placeholder={filter === 'tasks' ? 'Найти задачу' : filter === 'chats' ? 'Найти чат' : 'Найти чат или задачу'}
+              aria-label="Поиск по истории"
+              spellCheck={false}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && closeSearch()}
+              // Ушли из пустого поиска — снова фильтр.
+              onBlur={() => !query.trim() && setSearching(false)}
+            />
+            <button
+              type="button"
+              className="side-search-clear"
+              aria-label="Закрыть поиск"
+              // Не терять фокус до клика: иначе blur закроет поиск раньше.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={closeSearch}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <PillTabs<Filter>
+              className="tabs"
+              value={filter}
+              onChange={setFilter}
+              minLevel={1}
+              items={[
+                { id: 'all', label: 'Все', icon: <LayoutList size={14} /> },
+                { id: 'chats', label: 'Чаты', icon: <MessageSquare size={14} /> },
+                {
+                  id: 'tasks',
+                  label: 'Задачи',
+                  icon: <Workflow size={14} />,
+                  extra: waiting ? (
+                    <span className="tab-badge is-wait" title="Ждут вашего решения">
+                      {waiting}
+                    </span>
+                  ) : undefined,
+                },
+              ]}
+            />
+            <button
+              type="button"
+              className="side-round"
+              aria-label="Поиск по истории"
+              title={`Найти чат или задачу (${bridge.platform === 'darwin' ? '⌘' : 'Ctrl+'}K)`}
+              onClick={() => setSearching(true)}
+            >
+              <Search size={15} />
+            </button>
+          </>
+        )}
       </div>
 
       <nav className="side-list tab-enter" key={filter} aria-label="История">
@@ -303,7 +447,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           </div>
         )}
         {!state.runsLoaded && [0, 1, 2].map((i) => <div key={i} className="side-skel" style={{ animationDelay: `${i * 0.15}s` }} />)}
-        {state.runsLoaded && groups.length === 0 && <p className="side-empty">{EMPTY[filter]}</p>}
+        {state.runsLoaded && groups.length === 0 && <p className="side-empty">{query.trim() ? 'Ничего не нашлось.' : EMPTY[filter]}</p>}
         {groups.map((g) => (
           <section key={g.title} className={`side-group ${g.title === 'Ждут вас' ? 'is-attention' : ''}`}>
             <h4>{g.title}</h4>
@@ -324,22 +468,30 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             <Rocket size={16} /> Как начать?
           </button>
         )}
-        <div className="side-whatsnew">
-          <button className="side-link" onClick={openWhatsNew}>
-            <Gift size={16} /> Что нового
-            {(updatePending(update) || update.kind === 'failed') && (
-              <i className={`side-dot ${update.kind === 'failed' ? 'is-err' : ''}`} aria-label="Есть обновление" />
-            )}
-          </button>
-          {(updatePending(update) || update.kind === 'failed') && (
-            <span title={'version' in update ? `Версия ${update.version}` : undefined}>
-              <UpdateButton s={update} compact />
+        {/* Есть обновление — своей строкой над настройками; нет — строки нет. */}
+        {(updatePending(update) || update.kind === 'failed') && (
+          <div className={`side-whatsnew side-update ${update.kind === 'failed' ? 'is-err' : ''}`}>
+            <i className={`side-dot ${update.kind === 'failed' ? 'is-err' : ''}`} aria-hidden />
+            <span className="side-update-text">
+              {update.kind === 'failed' ? 'Обновление не удалось' : 'version' in update ? `Версия ${update.version}` : 'Новая версия'}
             </span>
-          )}
-        </div>
+            <UpdateButton s={update} compact />
+          </div>
+        )}
         <div className="side-settings">
           <button className={`side-link ${v.name === 'settings' ? 'is-on' : ''}`} onClick={() => go({ name: 'settings' })}>
             <Settings size={16} /> Настройки
+          </button>
+          {/* «Что нового» и «Сообщить о проблеме» — значками справа от настроек. */}
+          <button className="side-bug" aria-label="Что нового" onClick={openWhatsNew}>
+            <Gift size={16} />
+            {(updatePending(update) || update.kind === 'failed') && (
+              <i className={`side-dot side-icon-dot ${update.kind === 'failed' ? 'is-err' : ''}`} aria-label="Есть обновление" />
+            )}
+            <span className="side-tip" role="tooltip">
+              <strong>Что нового</strong>
+              <span>Изменения в версиях и обновление приложения</span>
+            </span>
           </button>
           <button
             className="side-bug"

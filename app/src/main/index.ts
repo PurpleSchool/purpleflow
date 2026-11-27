@@ -532,7 +532,8 @@ handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown
 handle('settings:encryption', () => safeStorage.isEncryptionAvailable());
 handle('dialog:folder', async (_e, title?: string) => {
   const r = await dialog.showOpenDialog(win!, {
-    properties: ['openDirectory'],
+    // Новую папку можно создать прямо в окне выбора (macOS).
+    properties: ['openDirectory', 'createDirectory'],
     title: typeof title === 'string' ? title : 'Папка проекта (git-репозиторий)',
   });
   return r.canceled ? null : r.filePaths[0];

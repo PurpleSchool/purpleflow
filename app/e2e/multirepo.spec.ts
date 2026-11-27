@@ -20,6 +20,7 @@ test('папка с несколькими репозиториями: собр�
     await page.getByRole('button', { name: /^Создать задачу/ }).click();
     await page.getByRole('button', { name: /Выберите проект/ }).click();
     await page.getByRole('menuitem', { name: /Новый проект/ }).click();
+    await page.getByRole('button', { name: 'Выбрать папку…' }).click();
 
     const setup = page.locator('.multi-setup');
     await expect(setup).toContainText('В папке 3 репозитория');
@@ -30,6 +31,8 @@ test('папка с несколькими репозиториями: собр�
       await page.screenshot({ path: path.join(box.root, '..', 'pf-multi-setup.png') });
     }
     await setup.getByRole('button', { name: /Создать проект/ }).click();
+    // Мастер: проект собран — подключаем и возвращаемся к задаче.
+    await page.getByRole('button', { name: /Быстрое подключение|Подключить и создать задачу/ }).click();
     // Проект открыт по основному репозиторию, но называется по верхней папке.
     await expect(page.getByRole('button', { name: /shop/ }).first()).toBeVisible();
     await expect(page.locator('.multi-setup')).toHaveCount(0);

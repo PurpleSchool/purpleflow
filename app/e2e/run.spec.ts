@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import type { PurpleFlowBridge } from '../src/shared/ipc';
-import { launch, makeSandbox, quit, type Launched, type Sandbox } from './harness';
+import { launch, makeSandbox, quit, type Launched, type Sandbox, connectProjectForTask } from './harness';
 
 let box: Sandbox;
 let l: Launched;
@@ -29,8 +29,7 @@ async function toNewTask(page: Page) {
 
 async function fillRun(page: Page, mode: string, task: string) {
   await toNewTask(page);
-  await page.getByRole('button', { name: /Выберите проект/ }).click();
-  await page.getByRole('menuitem', { name: /Новый проект/ }).click();
+  await connectProjectForTask(page);
   await expect(page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
   await page.getByRole('radio', { name: mode, exact: true }).click();
   await page.locator('#task').fill(task);
@@ -243,12 +242,16 @@ test('подпапка чужого репозитория: прогон не у
   await toNewTask(l.page);
   await l.page.getByRole('button', { name: /Выберите проект/ }).click();
   await l.page.getByRole('menuitem', { name: /Новый проект/ }).click();
+  await l.page.getByRole('button', { name: 'Выбрать папку…' }).click();
+  // Мастер не подключит подпапку: сначала корень репозитория.
   await expect(l.page.getByText(/Папка лежит внутри репозитория/)).toBeVisible();
-  await l.page.locator('#task').fill('Добавь страницу в packages/web');
-  await expect(l.page.getByRole('button', { name: 'Запустить прогон' })).toBeDisabled();
-  await l.page.getByRole('button', { name: 'возьмите корень репозитория' }).click();
+  const connect = l.page.getByRole('button', { name: /Быстрое подключение|Подключить и создать задачу/ });
+  await expect(connect).toBeDisabled();
+  await l.page.getByRole('button', { name: 'Возьмите корень репозитория' }).click();
   await expect(l.page.getByText(/Папка лежит внутри репозитория/)).toHaveCount(0);
+  await connect.click();
   await expect(l.page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
+  await l.page.locator('#task').fill('Добавь страницу в packages/web');
   await expect(l.page.getByRole('button', { name: 'Запустить прогон' })).toBeEnabled();
 });
 
@@ -306,8 +309,7 @@ test('ревью кода: незакоммиченные правки — за�
   const head = box.git('rev-parse', 'HEAD');
   const page = l.page;
   await toNewTask(page);
-  await page.getByRole('button', { name: /Выберите проект/ }).click();
-  await page.getByRole('menuitem', { name: /Новый проект/ }).click();
+  await connectProjectForTask(page);
   await expect(page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
   await page.getByRole('radio', { name: 'Ревью кода', exact: true }).click();
   await expect(page.getByRole('radiogroup', { name: 'Что проверить' }).getByRole('radio', { name: 'Незакоммиченное' })).toHaveAttribute(

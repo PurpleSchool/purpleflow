@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launch, makeSandbox, quit } from './harness';
+import { launch, makeSandbox, quit, openRepoProject } from './harness';
 
 // Картинка в диффе: вместо «Бинарный файл» — было и стало рядом.
 const PIXEL_GREEN = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -18,7 +18,7 @@ test('дифф: картинка — было и стало рядом, а не 
   const { page } = l;
   try {
     await page.getByRole('button', { name: 'Проекты', exact: true }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('tab', { name: 'Git' }).click();
     await page.getByRole('list', { name: 'История коммитов' }).getByRole('listitem').filter({ hasText: 'Новый логотип' }).click();
     const media = page.locator('.diff-media');

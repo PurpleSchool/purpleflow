@@ -4,7 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launch, makeSandbox, quit } from './harness';
+import { launch, makeSandbox, quit, openRepoProject } from './harness';
 
 test('чат: ссылка с параметром сохраняет черновик, ссылка на якорь работает', async () => {
   const box = makeSandbox();
@@ -257,7 +257,7 @@ test('чат: «@» подставляет файл проекта, «/» — с
 
     // Экран проекта: те же скиллы и какие агенты найдут их сами.
     await page.getByRole('button', { name: 'Проекты' }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('tab', { name: 'Обзор' }).click();
     const panel = page.locator('.overview-skills');
     // Скиллы — вкладками по агентам с числом скиллов: review из .claude/skills — у claude.
@@ -416,7 +416,7 @@ test('Git (просмотр): ветки, история с графом и ди
   const { page } = l;
   try {
     await page.getByRole('button', { name: 'Проекты', exact: true }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('tab', { name: 'Git' }).click();
     const log = page.getByRole('list', { name: 'История коммитов' });
     await expect(log.getByRole('listitem')).toHaveCount(4);
@@ -511,7 +511,7 @@ test('проект: кнопка «Чат» открывает новый чат
   const { page } = l;
   try {
     await page.getByRole('button', { name: 'Проекты' }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('button', { name: 'Чат', exact: true }).click();
     // Проект уже выбран — не нужно искать его в списке.
     await expect(page.getByRole('button', { name: 'Проект', exact: true })).toContainText('demo');
@@ -523,7 +523,7 @@ test('проект: кнопка «Чат» открывает новый чат
     await expect(page.locator('.chat-msg.is-user')).toContainText('что тут?');
 
     await page.getByRole('button', { name: 'Проекты' }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     // Чаты проекта — на вкладке «Статистика».
     await page.getByRole('tab', { name: 'Статистика' }).click();
     const chats = page.locator('.overview-chats');
@@ -572,8 +572,8 @@ test('боковая панель: «Проекты» раскрывает по�
 
     await projects.click();
     await menu.getByRole('menuitem', { name: 'Все проекты' }).click();
-    // На экране проектов «Открыть папку…» бывает и в шапке, и в пустом списке.
-    await expect(page.getByRole('button', { name: 'Открыть папку…' }).first()).toBeVisible();
+    // На экране проектов «Новый проект» бывает и в шапке, и в списке.
+    await expect(page.getByRole('button', { name: 'Новый проект', exact: true }).first()).toBeVisible();
     expect(l.errors).toEqual([]);
   } finally {
     await quit(l);
@@ -817,6 +817,34 @@ test('боковая панель: «Все · Чаты · Задачи» фил
     await expect(history).not.toContainText('фильтр истории');
     await filter.getByRole('tab', { name: 'Чаты' }).click();
     await expect(history).toContainText('фильтр истории');
+    // Неактивные вкладки — значками, у выбранной — подпись.
+    await expect(filter.getByRole('tab', { name: 'Все' }).locator('.tab-label')).toBeHidden();
+    await expect(filter.getByRole('tab', { name: 'Чаты' }).locator('.tab-label')).toBeVisible();
+    // Поиск — круглой кнопкой: нет совпадений — «Ничего не нашлось», Esc закрывает и очищает.
+    await filter.getByRole('button', { name: 'Поиск по истории' }).click();
+    const search = page.getByRole('searchbox', { name: 'Поиск по истории' });
+    await expect(search).toBeFocused();
+    await search.fill('несуществующий');
+    await expect(history).toContainText('Ничего не нашлось.');
+    await search.fill('ФИЛЬТР');
+    await expect(history).toContainText('фильтр истории');
+    await search.fill('xyz');
+    await search.press('Escape');
+    await expect(search).toHaveCount(0);
+    await expect(history).toContainText('фильтр истории');
+    // ⌘K / Ctrl+K — снова поиск.
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+    await expect(search).toBeFocused();
+    await search.press('Escape');
+    // Ширина панели тянется за край и запоминается.
+    const side = page.locator('aside.side');
+    const before = (await side.boundingBox())!.width;
+    const grip = (await page.getByRole('separator', { name: 'Ширина панели' }).boundingBox())!;
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + 100, grip.y + grip.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => (await side.boundingBox())!.width).toBeGreaterThan(before + 80);
     if (process.env.PURPLEFLOW_SHOTS) {
       await page.waitForTimeout(500);
       await page.screenshot({ path: path.join(box.root, '..', 'pf-side-filter.png') });
@@ -824,6 +852,7 @@ test('боковая панель: «Все · Чаты · Задачи» фил
     // После перезапуска окна — та же вкладка.
     await page.reload();
     await expect(page.locator('.side-filter').getByRole('tab', { name: 'Чаты' })).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => (await page.locator('aside.side').boundingBox())!.width).toBeGreaterThan(before + 80);
     expect(l.errors).toEqual([]);
   } finally {
     await quit(l);

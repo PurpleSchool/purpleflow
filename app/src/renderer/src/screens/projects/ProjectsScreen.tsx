@@ -1,6 +1,6 @@
 // Экран «Проекты»: все проекты, с которыми работали.
 import type { ProjectListItem } from '@purpleflow/core';
-import { FolderGit2, FolderOpen, Plus, Rocket } from 'lucide-react';
+import { FolderGit2, Plus, Rocket } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Topbar } from '../../components/ui';
 import { shortPath, when } from '../../lib/format';
@@ -19,18 +19,11 @@ export function ProjectsScreen() {
       .catch(() => setList([]));
   }, [state.runs]);
 
-  const open = async () => {
-    const dir = await bridge.pickFolder();
-    if (!dir) return;
-    const known = list?.find((p) => p.path === dir);
-    go({ name: 'project', path: dir, tab: known?.configured ? 'overview' : 'commands' });
-  };
-
   return (
     <div className="screen">
       <Topbar title="Проекты" sub="Команды, окружение и знания каждого проекта — настраиваются один раз и подставляются в задачи">
-        <Button tone="primary" icon={<FolderOpen size={15} />} onClick={() => void open()}>
-          Открыть папку…
+        <Button tone="primary" icon={<Plus size={15} />} onClick={() => go({ name: 'addProject' })}>
+          Новый проект
         </Button>
       </Topbar>
       <div className="scroll">
@@ -46,7 +39,7 @@ export function ProjectsScreen() {
               </span>
               <strong>Проектов пока нет</strong>
               <p>Откройте папку git-репозитория — приложение найдёт команды проекта и соберёт знания о нём.</p>
-              <Button tone="primary" icon={<Rocket size={15} />} onClick={() => go({ name: 'start' })}>
+              <Button tone="primary" icon={<Rocket size={15} />} onClick={() => go({ name: 'addProject' })}>
                 Подключить первый проект
               </Button>
             </section>
@@ -85,9 +78,9 @@ export function ProjectsScreen() {
                   </span>
                 </button>
               ))}
-              <button className="project-card is-add" onClick={() => void open()}>
+              <button className="project-card is-add" onClick={() => go({ name: 'addProject' })}>
                 <Plus size={18} />
-                <span>Открыть папку…</span>
+                <span>Новый проект</span>
               </button>
             </div>
           )}

@@ -1,5 +1,5 @@
 // Главный экран: что делаем — задачу через весь конвейер или чат. Две большие карточки и «Продолжить».
-import { ArrowRight, ChevronRight, MessageSquare, Workflow } from 'lucide-react';
+import { ArrowRight, ChevronRight, FolderPlus, MessageSquare, Workflow } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { when } from '../lib/format';
 import { MODES } from '../lib/stages';
@@ -79,6 +79,17 @@ export function HomeScreen() {
             onOpen={() => go({ name: 'new' })}
           />
         </div>
+        {/* Проект — реже, чем чат и задача: строкой под карточками, открывает мастер «папка → сканирование → готово». */}
+        <button type="button" className="home-project" onClick={() => go({ name: 'addProject' })}>
+          <span className="home-project-icon">
+            <FolderPlus size={16} />
+          </span>
+          <span className="home-project-text">
+            <strong>Новый проект</strong>
+            <span>Папка, сканирование — и можно работать</span>
+          </span>
+          <ArrowRight size={15} className="home-project-go" />
+        </button>
         {waiting.length > 0 && (
           <button type="button" className="home-waiting" onClick={() => go({ name: 'run', runId: waiting[0].id })}>
             <span className="home-waiting-dot" />

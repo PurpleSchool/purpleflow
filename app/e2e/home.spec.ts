@@ -78,7 +78,7 @@ test('свёрнутая панель: колонка иконок, каждая
       await page.screenshot({ path: path.join(box.root, '..', 'pf-rail.png') });
     }
     await rail.getByRole('button', { name: 'Проекты' }).click();
-    await expect(page.getByRole('button', { name: 'Открыть папку…' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Новый проект', exact: true }).first()).toBeVisible();
     await expect(rail.getByRole('button', { name: 'Проекты' })).toHaveClass(/is-on/);
     await rail.getByRole('button', { name: 'Новый чат' }).click();
     await expect(page.locator('.chat-compose textarea')).toBeVisible();

@@ -1,5 +1,17 @@
-// Первый проект: выбрать папку, просканировать нейросетью (команды и знания) и подключить — три шага до первой задачи.
-import { ArrowRight, BookText, Check, FolderGit2, FolderOpen, ScanSearch, TerminalSquare, TriangleAlert, Zap } from 'lucide-react';
+// Мастер проекта: папка → сканирование (само, сразу после выбора папки) → подключение. Один и тот же для первого
+// проекта при онбординге (mode="first", на всё окно) и для «Новый проект» в любой момент (mode="add", в окне с панелью).
+import {
+  ArrowRight,
+  BookText,
+  Check,
+  FolderGit2,
+  FolderOpen,
+  MessageSquare,
+  ScanSearch,
+  TerminalSquare,
+  TriangleAlert,
+  Zap,
+} from 'lucide-react';
 import type { AgentKind } from '@purpleflow/core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Mark } from '../components/Sidebar';
@@ -14,7 +26,10 @@ import { setupStep } from '../lib/setupUsage';
 
 type Job = 'idle' | 'busy' | 'done' | 'error';
 
-export function FirstProjectScreen() {
+export function FirstProjectScreen({ mode = 'first' }: { mode?: 'first' | 'add' }) {
+  const first = mode === 'first';
+  // Метрики онбординга — только для первого проекта.
+  const step = (...a: Parameters<typeof setupStep>) => first && setupStep(...a);
   const { state, go, saveSettings } = useStore();
   const enabled = enabledList(state.settings?.enabledAgents);
   const enabledAgentOf = (a: AgentKind) => (enabled.includes(a) ? a : enabled[0]);
@@ -34,10 +49,12 @@ export function FirstProjectScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Папка уже подключена раньше — предлагаем просто открыть проект.
+  const [known, setKnown] = useState(false);
   // Сканирование, начатое для прошлой папки, не должно перезаписать команды новой.
   const current = useRef<string | null>(null);
   // Первый проект — следующий шаг после настройки: здесь его подключают или откладывают.
-  useEffect(() => setupStep('project'), []);
+  useEffect(() => void step('project'), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = async () => {
     setPicking(true);
@@ -46,7 +63,7 @@ export function FirstProjectScreen() {
       const dir = await bridge.pickFolder('Папка проекта');
       if (dir) await open(dir);
     } catch (e) {
-      setupStep('project', 'project');
+      step('project', 'project');
       setError(cleanErr(e));
     } finally {
       setPicking(false);
@@ -57,14 +74,15 @@ export function FirstProjectScreen() {
     setError(null);
     try {
       current.current = dir;
-      const x = await loadProject(dir);
+      const [x, list] = await Promise.all([loadProject(dir), bridge.core.listProjects().catch(() => [])]);
       if (current.current !== dir) return;
       setP(x);
+      setKnown(Boolean(list.find((l) => l.path === dir)?.configured));
       setCmdJob('idle');
       setProfileJob('idle');
       setScanError(null);
     } catch (e) {
-      setupStep('project', 'project');
+      step('project', 'project');
       setError(cleanErr(e));
     }
   };
@@ -106,16 +124,24 @@ export function FirstProjectScreen() {
       });
   };
 
-  const connect = async () => {
+  // Папка — репозиторий, ещё не подключена и не сканировалась: сканируем сразу, без лишней кнопки.
+  const autoFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!p?.info.isRepo || known || cmdJob !== 'idle' || autoFor.current === p.info.path) return;
+    autoFor.current = p.info.path;
+    scan();
+  });
+
+  const connect = async (next: 'task' | 'chat' = 'task') => {
     if (!p) return;
     setConnecting(true);
     setError(null);
     try {
       await saveLoaded({ ...p, path: p.info.path });
-      setupStep('project_added');
-      go({ name: 'new', project: p.info.path });
+      step('project_added');
+      go(next === 'chat' ? { name: 'chat', project: p.info.path } : { name: 'new', project: p.info.path });
     } catch (e) {
-      setupStep('project', 'project');
+      step('project', 'project');
       setError(cleanErr(e));
     } finally {
       setConnecting(false);
@@ -127,15 +153,24 @@ export function FirstProjectScreen() {
   const scanned = cmdJob === 'done';
 
   return (
-    <div className="onboard">
-      <div className="onboard-drag drag" aria-hidden />
+    <div className={first ? 'onboard' : 'screen onboard fp-add'}>
+      {first && <div className="onboard-drag drag" aria-hidden />}
       <div className="fp">
         <header className="fp-head">
-          <div className="onboard-logo">
-            <Mark size={52} />
-          </div>
-          <h1>Первый проект</h1>
-          <p>Три шага — и можно ставить задачу. Всё, что найдём, потом можно поправить в настройках проекта.</p>
+          {first ? (
+            <div className="onboard-logo">
+              <Mark size={52} />
+            </div>
+          ) : (
+            <div className="fp-head-icon">
+              <FolderGit2 size={26} />
+            </div>
+          )}
+          <h1>{first ? 'Первый проект' : 'Новый проект'}</h1>
+          <p>
+            Выберите папку — команды и знания о проекте соберутся сами, а затем можно сразу ставить задачу или открыть чат. Всё найденное
+            потом можно поправить в настройках проекта.
+          </p>
         </header>
 
         <ol className="fp-steps">
@@ -156,7 +191,8 @@ export function FirstProjectScreen() {
             ) : (
               <>
                 <p className="fp-text">
-                  Выберите папку git-репозитория — агенты будут работать в отдельной ветке, ваша копия не изменится.
+                  Папка с кодом проекта — существующая или новая (её можно создать прямо в окне выбора). Не git-репозиторий — создадим его
+                  здесь же. Агенты работают в отдельной ветке, ваша копия не меняется.
                 </p>
                 <Button tone="primary" icon={<FolderOpen size={16} />} busy={picking} onClick={() => void pick()}>
                   Выбрать папку…
@@ -164,12 +200,20 @@ export function FirstProjectScreen() {
               </>
             )}
             {p && <NotRepoNote project={p.info} onRoot={(dir) => void open(dir)} />}
+            {p && known && (
+              <div className="fp-known">
+                <span className="muted">Этот проект уже подключён.</span>
+                <Button tone="ghost" icon={<ArrowRight size={15} />} onClick={() => go({ name: 'project', path: p.info.path })}>
+                  Открыть проект
+                </Button>
+              </div>
+            )}
           </Step>
 
           <Step n={2} title="Сканирование" state={!repo ? 'pending' : scanned ? 'done' : 'active'} optional>
             <p className="fp-text">
-              Нейросеть найдёт команды установки, линтера, тестов и запуска и соберёт знания о проекте — стек, структуру, соглашения. Займёт
-              пару минут.
+              Начнётся само, как только выбрана папка: нейросеть найдёт команды установки, линтера, тестов и запуска и соберёт знания о
+              проекте — стек, структуру, соглашения. Займёт пару минут — ждать не обязательно.
             </p>
             {repo && (
               <div className="fp-scan">
@@ -214,8 +258,10 @@ export function FirstProjectScreen() {
             <p className="fp-text">
               {scanned
                 ? 'Команды найдены — подключим проект и перейдём к первой задаче.'
-                : 'Можно не ждать сканирования: подключим с общими настройками — команды по файлам проекта, работа в отдельном worktree.'}
-              {profileJob === 'busy' && ' Знания дособерутся в фоне.'}
+                : scanning
+                  ? 'Можно не ждать: подключим с командами, найденными по файлам проекта, а знания дособерутся в фоне.'
+                  : 'Подключим с общими настройками — команды по файлам проекта, работа в отдельном worktree.'}
+              {profileJob === 'busy' && !scanning && ' Знания дособерутся в фоне.'}
             </p>
             {error && (
               <p className="inline-error">
@@ -226,11 +272,14 @@ export function FirstProjectScreen() {
               <Button
                 tone="primary"
                 icon={scanned ? <ArrowRight size={16} /> : <Zap size={16} />}
-                disabled={!repo || cmdJob === 'busy'}
+                disabled={!repo}
                 busy={connecting}
-                onClick={() => void connect()}
+                onClick={() => void connect('task')}
               >
                 {scanned ? 'Подключить и создать задачу' : 'Быстрое подключение'}
+              </Button>
+              <Button tone="ghost" icon={<MessageSquare size={15} />} disabled={!repo || connecting} onClick={() => void connect('chat')}>
+                Открыть чат
               </Button>
               {p && repo && (
                 <button className="link" onClick={() => go({ name: 'project', path: p.info.path, tab: 'commands' })}>
@@ -241,15 +290,21 @@ export function FirstProjectScreen() {
           </Step>
         </ol>
 
-        <button
-          className="link fp-skip"
-          onClick={() => {
-            setupStep('project_skipped');
-            go({ name: 'new' });
-          }}
-        >
-          Пропустить — подключу проект позже
-        </button>
+        {first ? (
+          <button
+            className="link fp-skip"
+            onClick={() => {
+              setupStep('project_skipped');
+              go({ name: 'new' });
+            }}
+          >
+            Пропустить — подключу проект позже
+          </button>
+        ) : (
+          <button className="link fp-skip" onClick={() => go({ name: 'projects' })}>
+            Отмена
+          </button>
+        )}
       </div>
     </div>
   );

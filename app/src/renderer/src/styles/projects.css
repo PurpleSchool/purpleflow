@@ -625,10 +625,10 @@
   color: var(--ok);
 }
 .project-menu-item.is-new {
-  color: var(--accent-hi);
+  color: var(--text-2);
 }
 .project-menu-item.is-new > svg {
-  color: var(--accent-hi);
+  color: var(--text-3);
 }
 
 /* Статистика проекта */
@@ -906,8 +906,8 @@
   font-weight: 500;
 }
 .fp-step.is-active .fp-num {
-  background: var(--accent-wash);
-  color: var(--accent-hi);
+  background: var(--bg-5);
+  color: var(--text-1);
   box-shadow: inset 0 0 0 1px var(--line-on);
 }
 .fp-step.is-done .fp-num {
@@ -1400,4 +1400,25 @@ code.mcp-target {
 }
 .ses-dot.is-checking {
   animation: breathe 1.4s var(--ease) infinite;
+}
+
+/* «Новый проект» в окне с панелью: тот же мастер, со своей прокруткой и значком вместо логотипа. */
+.fp-add {
+  height: 100%;
+  overflow: auto;
+}
+.fp-head-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: var(--bg-4);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.fp-known {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  margin-top: var(--s-3);
 }

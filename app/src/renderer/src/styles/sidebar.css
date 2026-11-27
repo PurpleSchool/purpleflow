@@ -16,6 +16,7 @@
   z-index: 5;
 }
 .side {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -109,39 +110,44 @@
 .side-brand:hover {
   background: var(--bg-4);
 }
-/* «Создать» и «Проекты» в одну строку. */
+/* «Создать» — широкая таблетка, «Проекты» — круг справа: та же сетка, что у фильтра и поиска ниже. */
 .side-actions {
   position: relative;
   flex: none;
   display: flex;
-  gap: var(--s-1);
-  margin: var(--s-2) var(--s-3) var(--s-1);
+  gap: 6px;
+  align-items: center;
+  margin: var(--s-2) var(--s-3) var(--s-2);
 }
 .side-actions .side-create {
   position: static;
+  flex: none;
+}
+.side-actions .side-create.side-create-new {
   flex: 1;
   min-width: 0;
 }
-/* Главная и «Создать» — компактные кнопки-иконки, остальное место — «Проектам». */
-.side-actions .side-create.side-create-new {
-  flex: none;
-}
-.side-actions .side-home {
-  flex: none;
-  width: 36px;
-  margin: 0;
-  padding: 0;
-  justify-content: center;
-}
 .side-actions .side-create-new .side-new {
-  width: auto;
-  gap: 4px;
-}
-.side-actions .side-create .side-new {
   width: 100%;
+  height: 34px;
   margin: 0;
-  padding: 0 var(--s-3);
+  padding: 0 12px 0 14px;
   gap: 8px;
+  border-radius: var(--r-pill);
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+.side-actions .side-create-new .side-new:hover,
+.side-actions .side-create-new .side-new.is-on {
+  background: var(--bg-4);
+}
+.side-new-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 .side-actions .side-create-menu {
   left: 0;
@@ -547,4 +553,163 @@
   opacity: 1;
   transform: none;
   transition-delay: 0.3s;
+}
+
+/* Фильтр: неактивные — значками, выбранная — с подписью; справа — круглый поиск, открытый занимает строку. */
+.side-filter {
+  gap: 6px;
+  align-items: center;
+}
+.side-filter .pilltabs.is-compact .tab:not(.is-on) {
+  flex: 0 0 34px;
+  padding: 0;
+}
+.side-round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg-2);
+  color: var(--text-3);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+.side-round:hover,
+.side-round.is-on {
+  background: var(--bg-4);
+  color: var(--text-1);
+}
+.side-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 34px;
+  padding: 0 5px 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--bg-2);
+  color: var(--text-3);
+  animation: sideSearchIn 0.28s var(--ease) both;
+}
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.side-search input::placeholder {
+  color: var(--text-4);
+}
+.side-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.side-search-clear {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--text-3);
+}
+.side-search-clear:hover {
+  background: var(--bg-4);
+  color: var(--text-1);
+}
+@keyframes sideSearchIn {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 0 calc(100% - 34px) round 17px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 17px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side-search {
+    animation: none;
+  }
+}
+
+/* Ширина панели: ручка-капсула на правом краю, как у панели чата. */
+.nav-resize {
+  position: absolute;
+  top: 56px;
+  bottom: 8px;
+  right: 0;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 4;
+}
+.nav-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 40px;
+  border-radius: 4px;
+  transform: translate(-50%, -50%);
+  background: transparent;
+  transition:
+    background 0.2s var(--ease),
+    height 0.25s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.nav-resize:hover::after,
+body.is-nav-resizing .nav-resize::after {
+  height: 64px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-wash);
+}
+body.is-nav-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.is-nav-resizing .app {
+  transition: none;
+}
+body.is-nav-resizing webview,
+body.is-nav-resizing iframe {
+  pointer-events: none;
+}
+
+/* Низ панели в одну строку: «Настройки», при обновлении — кнопка, затем значки «Что нового» и «Сообщить о проблеме». */
+.side-settings {
+  gap: 2px;
+}
+.side-icon-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin: 0;
+}
+/* Строка обновления над настройками. */
+.side-update {
+  gap: var(--s-2);
+  height: 40px;
+  padding: 0 6px 0 var(--s-3);
+  border-radius: 12px;
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+  animation: rise 0.35s var(--ease) both;
+}
+.side-update .side-dot {
+  margin: 0;
+}
+.side-update-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: var(--fs-12);
 }

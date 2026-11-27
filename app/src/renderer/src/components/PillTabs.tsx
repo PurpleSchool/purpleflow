@@ -22,6 +22,7 @@ export function PillTabs<T extends string>({
   itemClassName = 'tab',
   role = 'tablist',
   collapsible: collapsibleProp,
+  minLevel = 0,
 }: {
   items: PillItem<T>[];
   value: T | null;
@@ -34,6 +35,8 @@ export function PillTabs<T extends string>({
    * По умолчанию — у вкладок с иконками.
    */
   collapsible?: boolean;
+  /** Не шире этого уровня: 1 — подпись только у выбранной, даже если место есть. */
+  minLevel?: 0 | 1 | 2;
 }) {
   const collapsible = collapsibleProp ?? items.some((it) => it.icon);
   const box = useRef<HTMLDivElement>(null);
@@ -83,13 +86,13 @@ export function PillTabs<T extends string>({
       const avail = parent.clientWidth - pad - taken - gap * others.length;
       const widths = [...(measure.current?.children ?? [])].map((c) => (c as HTMLElement).offsetWidth);
       const next = widths.findIndex((w) => w <= avail + 1);
-      setLevel((next < 0 ? 2 : next) as 0 | 1 | 2);
+      setLevel(Math.max(minLevel, next < 0 ? 2 : next) as 0 | 1 | 2);
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [collapsible, value, items]);
+  }, [collapsible, value, items, minLevel]);
 
   return (
     <div ref={box} className={`pilltabs ${className} ${compact ? 'is-compact' : ''} ${level === 2 ? 'is-icons' : ''}`} role={role}>

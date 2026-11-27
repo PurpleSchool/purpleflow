@@ -5,7 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launch, makeSandbox, quit } from './harness';
+import { launch, makeSandbox, quit, openRepoProject } from './harness';
 
 test('mcp: список проекта, поиск в реестре с полями ключей, статистика на вкладке', async () => {
   const queries: string[] = [];
@@ -55,7 +55,7 @@ test('mcp: список проекта, поиск в реестре с поля
   const { page } = l;
   try {
     await page.getByRole('button', { name: 'Проекты', exact: true }).click();
-    await page.getByRole('button', { name: 'Открыть папку…' }).click();
+    await openRepoProject(page);
     await page.getByRole('tab', { name: 'Обзор' }).click();
     const panel = page.locator('.overview-mcp');
     await expect(panel).toContainText('postgres');

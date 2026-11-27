@@ -129,3 +129,21 @@ export async function launch(box: Sandbox, env: Record<string, string> = {}, app
 export async function quit(l: Launched) {
   await l.app.close();
 }
+
+/** С экрана «Проекты»: мастер «Новый проект» → папка песочницы (диалог подменён) → «Настроить вручную» — экран проекта. */
+export async function openRepoProject(page: Page) {
+  // «Проекты» в панели при недавних проектах открывает меню — там «Новый проект» пунктом меню.
+  const item = page.getByRole('menuitem', { name: 'Новый проект' });
+  if (await item.isVisible()) await item.click();
+  else await page.getByRole('button', { name: 'Новый проект', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Выбрать папку…' }).click();
+  await page.getByRole('button', { name: 'Настроить вручную' }).click();
+}
+
+/** Выбор проекта в новой задаче: «Новый проект» → мастер → папка (диалог подменён) → подключение → снова задача. */
+export async function connectProjectForTask(page: Page) {
+  await page.getByRole('button', { name: /Выберите проект/ }).click();
+  await page.getByRole('menuitem', { name: /Новый проект/ }).click();
+  await page.getByRole('button', { name: 'Выбрать папку…' }).click();
+  await page.getByRole('button', { name: /Быстрое подключение|Подключить и создать задачу/ }).click();
+}

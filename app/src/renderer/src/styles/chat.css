@@ -1288,11 +1288,28 @@ button.dd:hover:not(:disabled),
   display: flex;
 }
 .chat-main {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* Поле ввода — поверх ленты: сообщения прокручиваются под ним до самого низа окна. Снизу лента отступает на высоту
+   поля (--compose-h, меряется в Chat.tsx), чтобы последнее сообщение докручивалось выше поля. */
+.chat-main > .chat-list .chat-feed {
+  padding-bottom: calc(var(--compose-h, 140px) + var(--s-4));
+}
+.chat-main > .chat-compose-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.chat-main > .chat-compose-wrap > * {
+  pointer-events: auto;
 }
 .chat-body.has-side .chat-feed,
 .chat-body.has-side .chat-compose-wrap {
@@ -2903,4 +2920,21 @@ body.is-side-resizing webview {
   .chat-compose-bar .chat-effort {
     padding: 0 8px;
   }
+}
+/* Ошибка над плавающим полем — на своей подложке, чтобы читалась поверх ленты. */
+.chat-main > .chat-compose-wrap .chat-error {
+  width: fit-content;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--bg-3);
+}
+/* Поле поверх ленты — тёмное матовое стекло: лента под ним почти не видна; размытие — где его рисует движок. */
+.chat-main > .chat-compose-wrap .chat-compose {
+  background: color-mix(in srgb, var(--bg-window) 92%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  backdrop-filter: blur(28px) saturate(140%);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 18px 40px -24px rgba(0, 0, 0, 0.8);
 }

@@ -109,6 +109,7 @@ export function App() {
           )}
           {v.name === 'home' && <HomeScreen />}
           {v.name === 'projects' && <ProjectsScreen />}
+          {v.name === 'addProject' && <FirstProjectScreen mode="add" />}
           {v.name === 'project' && <ProjectScreen path={v.path} initialTab={v.tab} />}
           {v.name === 'run' && <RunScreen runId={v.runId} />}
           {v.name === 'settings' && <SettingsScreen />}

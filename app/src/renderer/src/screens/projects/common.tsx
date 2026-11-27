@@ -331,9 +331,16 @@ export function ProjectPicker({ project, draft, onPick }: { project: ProjectInfo
                 ))}
               </div>
             )}
-            <button role="menuitem" className="project-menu-item is-new" onClick={async () => pick(await bridge.pickFolder())}>
+            <button
+              role="menuitem"
+              className="project-menu-item is-new"
+              onClick={() => {
+                setOpen(false);
+                go({ name: 'addProject' });
+              }}
+            >
               <Plus size={15} />
-              <span>Новый проект — выбрать папку…</span>
+              <span>Новый проект</span>
             </button>
           </div>
         </>

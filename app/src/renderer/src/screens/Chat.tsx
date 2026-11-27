@@ -152,6 +152,21 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
     const el = list.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
+  // Поле ввода висит поверх ленты: лента прокручивается под ним, а снизу у неё отступ ровно на высоту поля —
+  // последнее сообщение всегда можно докрутить выше поля. Поле растёт — лента у низа остаётся у низа.
+  const main = useRef<HTMLDivElement>(null);
+  const composeWrap = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const box = composeWrap.current;
+    if (!box) return;
+    const ro = new ResizeObserver(() => {
+      main.current?.style.setProperty('--compose-h', `${box.offsetHeight}px`);
+      const el = list.current;
+      if (el && stick.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
 
   // Поле ввода растёт по тексту.
   useLayoutEffect(() => {
@@ -455,7 +470,7 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
       </header>
 
       <div className={`chat-body ${chat ? 'has-side' : ''}`}>
-        <div className="chat-main">
+        <div className="chat-main" ref={main}>
           <div className="chat-list" ref={list} onScroll={onScroll}>
             <div className="chat-feed">
               {loading && (
@@ -508,7 +523,7 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
             </div>
           </div>
 
-          <div className="chat-compose-wrap">
+          <div className="chat-compose-wrap" ref={composeWrap}>
             {error && <p className="chat-error">{error}</p>}
             <form
               className="chat-compose"

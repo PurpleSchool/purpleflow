@@ -1,7 +1,7 @@
 // Скриншоты для README: npm run screenshots -w @purpleflow/app. Настоящее окно, задача-пример и фейковый агент.
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launch, makeSandbox, quit } from './harness';
+import { launch, makeSandbox, quit, connectProjectForTask } from './harness';
 
 const OUT = path.join(__dirname, '../../docs/screenshots');
 
@@ -20,8 +20,7 @@ test('скриншоты для README', async () => {
   };
   try {
     await page.getByRole('button', { name: /^Создать задачу/ }).click();
-    await page.getByRole('button', { name: /Выберите проект/ }).click();
-    await page.getByRole('menuitem', { name: /Новый проект/ }).click();
+    await connectProjectForTask(page);
     await page.locator('#task').fill('Добавь функцию slugify(s) в src/slugify.js: транслитерация с русского в kebab-case, и тесты к ней');
     await expect(page.getByRole('button', { name: /demo/ }).first()).toBeVisible();
     await shot('new-task');
