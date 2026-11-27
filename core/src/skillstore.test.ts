@@ -69,7 +69,10 @@ test('removeSkill: положенный руками — CLI его не зна�
     fs.writeFileSync(path.join(project, d, 'SKILL.md'), '---\ndescription: Свой\n---');
   }
   const r = await removeSkill(k, { projectPath: project, name: 'mine', source: 'project' });
-  assert.deepEqual(r.leftovers.map((p) => path.relative(project, p)).sort(), ['.agents/skills/mine', '.claude/skills/mine']);
+  assert.deepEqual(r.leftovers.map((p) => path.relative(project, p).split(path.sep).join('/')).sort(), [
+    '.agents/skills/mine',
+    '.claude/skills/mine',
+  ]);
   await assert.rejects(removeSkill(k, { projectPath: project, name: 'нет-такого', source: 'project' }), /уже удалён|Неверное имя/);
 });
 

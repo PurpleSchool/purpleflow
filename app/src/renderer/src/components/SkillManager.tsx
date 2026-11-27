@@ -1,6 +1,6 @@
 // Управление скиллами проекта: список по агентам с удалением и окно поиска по каталогу skills.sh с установкой.
-import { Check, ChevronRight, Copy, Download, LoaderCircle, Search, Trash2, TriangleAlert, X } from 'lucide-react';
-import { OpenSkill } from './RowActions';
+import { Check, ChevronRight, Copy, Download, LoaderCircle, Search, TriangleAlert, X } from 'lucide-react';
+import { ConfirmDelete, OpenSkill } from './RowActions';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentKind, ChatSkill, SkillHit } from '@purpleflow/core';
@@ -131,27 +131,12 @@ function SkillRow({
   onCopy: (to: AgentKind) => Promise<void>;
   onRemove: () => Promise<void>;
 }) {
-  const [confirm, setConfirm] = useState(false);
   const [copying, setCopying] = useState<'pick' | AgentKind | null>(null);
   const canCopy = s.kind === 'skill' && !s.plugin && copyTo.length > 0;
   const copy = async (to: AgentKind) => {
     setCopying(to);
     await onCopy(to);
     setCopying(null);
-  };
-  const [busy, setBusy] = useState(false);
-  const timer = useRef<number>(0);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  const ask = () => {
-    setConfirm(true);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setConfirm(false), 4000);
-  };
-  const remove = async () => {
-    setBusy(true);
-    await onRemove();
-    setBusy(false);
-    setConfirm(false);
   };
   return (
     <li title={s.path}>
@@ -193,23 +178,14 @@ function SkillRow({
             </button>
           ))}
         <OpenSkill s={s} />
-        {!s.plugin &&
-          (confirm ? (
-            <button
-              type="button"
-              className="skill-del is-confirm"
-              disabled={busy}
-              onClick={() => void remove()}
-              title={others.length ? `Скилл удалится и у ${others.join(', ')}` : undefined}
-            >
-              {busy ? <LoaderCircle size={13} className="spin" /> : <Trash2 size={13} />}
-              {s.source === 'user' ? 'Удалить во всех проектах?' : 'Удалить из проекта?'}
-            </button>
-          ) : (
-            <button type="button" className="skill-del" aria-label={`Удалить ${s.name}`} title="Удалить" onClick={ask}>
-              <Trash2 size={14} />
-            </button>
-          ))}
+        {!s.plugin && (
+          <ConfirmDelete
+            name={s.name}
+            ask={s.source === 'user' ? 'Удалить во всех проектах?' : 'Удалить из проекта?'}
+            title={others.length ? `Скилл удалится и у ${others.join(', ')}` : undefined}
+            onConfirm={onRemove}
+          />
+        )}
       </div>
       {s.description && <p className="skill-desc">{s.description}</p>}
     </li>

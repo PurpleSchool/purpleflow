@@ -131,7 +131,7 @@ test('listSkills: описание YAML-блоком («>», «|»), скилл�
   assert.ok(by('rn').agents!.includes('agy'));
   assert.deepEqual(
     by('rn')
-      .paths!.map((p) => path.relative(project, p))
+      .paths!.map((p) => path.relative(project, p).split(path.sep).join('/'))
       .sort(),
     ['.agents/skills/rn/SKILL.md', '.claude/skills/rn/SKILL.md'],
   );

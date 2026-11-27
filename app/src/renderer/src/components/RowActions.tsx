@@ -2,9 +2,16 @@
 import { LoaderCircle, Pencil, Trash2 } from 'lucide-react';
 import type { ChatSkill } from '@purpleflow/core';
 import { bridge } from '../lib/api';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
-/** Первое нажатие спрашивает («Удалить из проекта?»), второе удаляет; через 4 секунды вопрос снимается. */
+/**
+ * Первое нажатие спрашивает («Удалить из проекта?»), второе удаляет. Вопрос держится, пока кнопка в фокусе:
+ * после первого нажатия фокус на ней, поэтому второй клик всегда попадает в «Удалить», как бы долго он ни шёл.
+ * Снимается по уходу фокуса, Escape или после удаления.
+ *
+ * Таймера здесь быть не должно: он снимал вопрос раньше, чем приходил неспешный второй клик, кнопка под
+ * курсором снова становилась «Удалить», клик только заново взводил вопрос — удаление молча не происходило.
+ */
 export function ConfirmDelete({
   name,
   ask,
@@ -18,21 +25,9 @@ export function ConfirmDelete({
 }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
-  const timer = useRef(0);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
   if (!confirm)
     return (
-      <button
-        type="button"
-        className="skill-del"
-        aria-label={`Удалить ${name}`}
-        title="Удалить"
-        onClick={() => {
-          setConfirm(true);
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => setConfirm(false), 4000);
-        }}
-      >
+      <button type="button" className="skill-del" aria-label={`Удалить ${name}`} title="Удалить" onClick={() => setConfirm(true)}>
         <Trash2 size={14} />
       </button>
     );
@@ -42,6 +37,16 @@ export function ConfirmDelete({
       className="skill-del is-confirm"
       disabled={busy}
       title={title}
+      onBlur={() => {
+        // Пока идёт удаление, кнопка гаснет сама: вопрос не должен исчезнуть под рукой.
+        if (!busy) setConfirm(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          setConfirm(false);
+        }
+      }}
       onClick={() => {
         setBusy(true);
         void onConfirm().finally(() => {
