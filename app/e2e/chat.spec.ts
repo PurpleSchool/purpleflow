@@ -260,9 +260,10 @@ test('чат: «@» подставляет файл проекта, «/» — с
     await openRepoProject(page);
     await page.getByRole('tab', { name: 'Обзор' }).click();
     const panel = page.locator('.overview-skills');
-    // Скиллы — вкладками по агентам с числом скиллов: review из .claude/skills — у claude.
+    // Скиллы — вкладками по агентам с числом скиллов: review из .claude/skills — у claude. Вкладки есть, только когда
+    // агентов со скиллами больше одного: без codex на машине (как в CI) список claude показан сразу.
     const claudeTab = panel.getByRole('tab', { name: /^claude\s*\d+$/ });
-    await claudeTab.click();
+    if (await claudeTab.count()) await claudeTab.click();
     const review = panel.locator('.skill-list li').filter({ has: page.locator('.skill-name', { hasText: /^review$/ }) });
     await expect(review).toContainText('Ревью по чек-листу');
     // «Проект» раскрыт; заголовок сворачивает и снова разворачивает список. Ваши (если есть) — свёрнуты.
@@ -853,6 +854,63 @@ test('боковая панель: «Все · Чаты · Задачи» фил
     await page.reload();
     await expect(page.locator('.side-filter').getByRole('tab', { name: 'Чаты' })).toHaveAttribute('aria-selected', 'true');
     await expect.poll(async () => (await page.locator('aside.side').boundingBox())!.width).toBeGreaterThan(before + 80);
+    expect(l.errors).toEqual([]);
+  } finally {
+    await quit(l);
+    box.cleanup();
+  }
+});
+
+test('боковая панель: группировка по дате или по проектам, длинная история подгружается при прокрутке', async () => {
+  const box = makeSandbox();
+  // 130 чатов: 30 сегодня в проекте demo, остальные — раньше и без проекта.
+  const dir = path.join(box.profile, 'data', 'chats');
+  fs.mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  for (let i = 0; i < 130; i++) {
+    const at = new Date(now - (i < 30 ? i * 60_000 : 10 * 86_400_000 + i * 60_000)).toISOString();
+    const chat = {
+      id: `c${String(i).padStart(3, '0')}`,
+      title: `Чат номер ${i}`,
+      ...(i < 30 ? { projectPath: box.repo } : {}),
+      agent: 'claude',
+      model: '',
+      edits: false,
+      createdAt: at,
+      updatedAt: at,
+      messages: [],
+    };
+    fs.writeFileSync(path.join(dir, `${chat.id}.json`), JSON.stringify(chat));
+  }
+  const l = await launch(box);
+  const { page } = l;
+  try {
+    const history = page.getByRole('navigation', { name: 'История' });
+    const rows = history.locator('.side-chat-row');
+    // Сначала — первые 60 строк; докрутили до низа — подгружаются следующие.
+    await expect(rows).toHaveCount(60);
+    await rows.last().scrollIntoViewIfNeeded();
+    await expect(rows).toHaveCount(120);
+    await rows.last().scrollIntoViewIfNeeded();
+    await expect(rows).toHaveCount(130);
+
+    // По дате: «Сегодня» и «Ранее»; переключатель — справа от первого заголовка.
+    await expect(history.locator('.side-group h4')).toHaveText(['Сегодня', 'Ранее']);
+    await history.getByRole('button', { name: 'Группировать историю' }).click();
+    await page.getByRole('option', { name: 'По проектам' }).click();
+    await expect(history.locator('.side-group h4')).toHaveText(['demo', 'Без проекта']);
+    await expect(rows).toHaveCount(60);
+    // В группе проекта под названием — дата, а не проект.
+    await expect(rows.first().locator('.side-run-project')).toHaveText(/^сегодня, \d\d:\d\d$/);
+    if (process.env.PURPLEFLOW_SHOTS) {
+      await history.evaluate((n) => n.scrollTo(0, 0));
+      await page.mouse.move(700, 600);
+      await page.waitForTimeout(500);
+      await page.locator('aside.side').screenshot({ path: path.join(box.root, '..', 'pf-side-group.png') });
+    }
+    // Выбор запоминается.
+    await page.reload();
+    await expect(page.getByRole('navigation', { name: 'История' }).locator('.side-group h4').first()).toHaveText('demo');
     expect(l.errors).toEqual([]);
   } finally {
     await quit(l);

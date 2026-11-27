@@ -278,7 +278,7 @@ input.chat-title:focus {
   margin: 0;
   padding: 10px 16px;
   border-radius: 18px 18px 6px 18px;
-  background: var(--bg-4);
+  background: var(--bg-3);
   color: var(--text-1);
   font-size: 15px;
   font-weight: 430;
@@ -980,6 +980,52 @@ input.chat-title:focus {
 .chat-attach:hover {
   background: var(--bg-5);
   color: var(--text-1);
+}
+/* Подсказка над кнопкой поля ввода — как у значков внизу левой панели: заголовок и пояснение, с задержкой. */
+.chat-attach {
+  position: relative;
+}
+.compose-tip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 10;
+  width: max-content;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pop-bg);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 12px 28px -12px rgba(0, 0, 0, 0.7);
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s var(--ease),
+    transform 0.15s var(--ease);
+}
+.compose-tip strong {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.compose-tip span {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.chat-attach:hover .compose-tip,
+.chat-attach:focus-visible .compose-tip,
+.chat-gen-wrap:hover:not(:has(.dd.is-open)) .compose-tip,
+.chat-gen-wrap:has(.dd:focus-visible:not(.is-open)) .compose-tip {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.3s;
 }
 .chat-send {
   flex: none;
@@ -2849,6 +2895,47 @@ body.is-side-resizing webview {
 .dd.chat-gen-menu .dd-icon {
   color: var(--accent-hi);
 }
+.dd.chat-gen-menu.is-locked .dd-icon {
+  color: var(--text-3);
+}
+/* «Создать» — как кнопки рядом: без обводки и фона, подложка только при наведении и пока меню открыто. */
+.chat-gen-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+.dd.chat-gen-menu,
+.dd.chat-gen-menu:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}
+button.dd.chat-gen-menu:hover:not(:disabled),
+.dd.chat-gen-menu.is-open {
+  background: var(--bg-5);
+  box-shadow: none;
+}
+/* «Создать» — как кнопки рядом: без обводки и фона, подложка только при наведении и пока меню открыто. */
+.chat-gen-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+.dd.chat-gen-menu,
+.dd.chat-gen-menu:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}
+button.dd.chat-gen-menu:hover:not(:disabled),
+.dd.chat-gen-menu.is-open {
+  background: var(--bg-5);
+  box-shadow: none;
+}
+/* Подсказка «войдите» над полем ввода: на всю ширину поля, с отступом до него. */
+.chat-compose-wrap .compose-login {
+  margin-bottom: var(--s-2);
+  background: color-mix(in srgb, var(--bg-window) 92%, transparent);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
 /* Режим «Создать картинку»: плашка над полем — что создаём, модель, стороны, выход. */
 .compose-gen {
   display: flex;
@@ -2929,12 +3016,37 @@ body.is-side-resizing webview {
   background: var(--bg-3);
 }
 /* Поле поверх ленты — тёмное матовое стекло: лента под ним почти не видна; размытие — где его рисует движок. */
+/* Поле ввода — плашка, как полоса значков справа и карточки прогона (--bg-3). Плашка полупрозрачная, а поле лежит над
+   лентой: под неё кладём цвет темы, чтобы лента не просвечивала, а тон совпадал с плашками прямо на окне. */
+html {
+  --float-bg: linear-gradient(var(--bg-3), var(--bg-3)), var(--theme-bg, var(--bg-window));
+}
+/* Строка под полем: таблетки без заливки и обводки, как скрепка и «Создать»; подложка — при наведении и пока открыто. */
+.chat-compose-bar > .dd,
+.chat-compose-bar > .dd:focus-visible {
+  background: transparent;
+  box-shadow: none;
+}
+.chat-compose-bar > button.dd:hover:not(:disabled),
+.chat-compose-bar > .dd.is-open {
+  background: var(--bg-5);
+  box-shadow: none;
+}
+/* Тот же материал, что у полосы значков справа: серая плашка с бликом по краю, без рамки. Плашка полупрозрачная, поэтому
+   под ней — почти непрозрачный фон окна, чтобы лента не просвечивала. Своё у поля — тень (оно плавает над лентой)
+   и рамка, пока в нём фокус. */
 .chat-main > .chat-compose-wrap .chat-compose {
-  background: color-mix(in srgb, var(--bg-window) 92%, transparent);
+  border-radius: 26px;
+  background: var(--float-bg);
   -webkit-backdrop-filter: blur(28px) saturate(140%);
   backdrop-filter: blur(28px) saturate(140%);
   box-shadow:
+    var(--highlight),
+    0 18px 40px -24px rgba(0, 0, 0, 0.8);
+}
+.chat-main > .chat-compose-wrap .chat-compose:focus-within {
+  box-shadow:
+    var(--highlight),
     0 0 0 1px var(--line-2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 18px 40px -24px rgba(0, 0, 0, 0.8);
 }

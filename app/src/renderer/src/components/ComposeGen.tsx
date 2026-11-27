@@ -2,12 +2,13 @@
 // командой «/картинка»; модель и соотношение сторон — в плашке режима. При отправке сообщение прямо просит агента
 // сгенерировать картинку через MCP PurpleSchool — без гаданий, рисовать ли её кодом.
 import { useEffect, useState } from 'react';
-import { AudioLines, Clapperboard, ImagePlus, WandSparkles, X } from 'lucide-react';
+import { AudioLines, Clapperboard, ImagePlus, Lock, LogIn, WandSparkles, X } from 'lucide-react';
 import { bridge } from '../lib/api';
 import { useStore } from '../lib/store';
 import { Select } from './Dropdown';
 import { ABOUT } from './MediaModels';
 import { VendorIcon } from './VendorIcon';
+import { Button } from './ui';
 
 export interface GenMode {
   kind: 'image';
@@ -38,24 +39,34 @@ export function genFromText(text: string): { mode: GenMode; text: string } | nul
   return m ? { mode: { kind: 'image', model: '', ratio: '' }, text: text.slice(m[0].length) } : null;
 }
 
-/** Кнопка «Создать» в строке поля ввода: меню видов генерации. */
-export function GenMenu({ onPick }: { onPick: (kind: GenMode['kind']) => void }) {
+/**
+ * «Создать» в строке поля ввода: меню видов генерации на кнопке без обводки, с подсказкой при наведении.
+ * Без входа в PurpleSchool — с замком.
+ */
+export function GenMenu({ onPick, locked = false }: { onPick: (kind: GenMode['kind']) => void; locked?: boolean }) {
   return (
-    <Select<string>
-      className="chat-gen-menu"
-      value={undefined}
-      placeholder="Создать"
-      icon={<WandSparkles size={14} />}
-      ariaLabel="Создать"
-      title="Создать картинку (видео и озвучка — скоро)"
-      minWidth={240}
-      options={[
-        { value: 'image', label: 'Картинка', hint: 'Модель и стороны — на выбор', icon: <ImagePlus size={14} /> },
-        { value: 'video', label: 'Видео', icon: <Clapperboard size={14} />, disabled: true, badge: 'скоро' },
-        { value: 'audio', label: 'Озвучка', icon: <AudioLines size={14} />, disabled: true, badge: 'скоро' },
-      ]}
-      onChange={(v) => v === 'image' && onPick('image')}
-    />
+    <span className="chat-gen-wrap">
+      <Select<string>
+        className={`chat-gen-menu${locked ? ' is-locked' : ''}`}
+        value={undefined}
+        placeholder="Создать"
+        icon={locked ? <Lock size={14} /> : <WandSparkles size={14} />}
+        ariaLabel="Создать"
+        minWidth={240}
+        options={[
+          locked
+            ? { value: 'image', label: 'Картинка', hint: 'Нужен вход в PurpleSchool', icon: <Lock size={14} /> }
+            : { value: 'image', label: 'Картинка', hint: 'Модель и стороны — на выбор', icon: <ImagePlus size={14} /> },
+          { value: 'video', label: 'Видео', icon: <Clapperboard size={14} />, disabled: true, badge: 'скоро' },
+          { value: 'audio', label: 'Озвучка', icon: <AudioLines size={14} />, disabled: true, badge: 'скоро' },
+        ]}
+        onChange={(v) => v === 'image' && onPick('image')}
+      />
+      <span className="compose-tip" role="tooltip">
+        <strong>Создать</strong>
+        <span>{locked ? 'Картинки — после входа в PurpleSchool.' : 'Картинка: модель и стороны на выбор. Видео и озвучка — скоро.'}</span>
+      </span>
+    </span>
   );
 }
 
@@ -102,6 +113,26 @@ export function GenPill({ mode, onChange, onClose }: { mode: GenMode; onChange: 
         onChange={(ratio) => onChange({ ...mode, ratio })}
       />
       <button type="button" className="compose-gen-close" aria-label="Выйти из режима картинки" title="Обычное сообщение" onClick={onClose}>
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+/** Подсказка над полем ввода: картинки рисуются через PurpleSchool — сначала войти. */
+export function GenLoginHint({ onClose }: { onClose: () => void }) {
+  const { go } = useStore();
+  return (
+    <div className="chat-banner chat-offer compose-login" role="status">
+      <LogIn size={16} />
+      <div className="chat-banner-text">
+        <strong>Войдите в PurpleSchool, чтобы создавать картинки</strong>
+        <p>Агент рисует через сервис PurpleSchool — по подписке или пакету.</p>
+      </div>
+      <Button tone="primary" onClick={() => go({ name: 'settings', tab: 'account' })}>
+        Войти в PurpleSchool
+      </Button>
+      <button type="button" className="compose-gen-close" aria-label="Скрыть подсказку" onClick={onClose}>
         <X size={13} />
       </button>
     </div>

@@ -8,3 +8,4 @@ release/
 e2e-results/
 e2e-report/
 app/whisper-bin/
+e2e-linux-results/

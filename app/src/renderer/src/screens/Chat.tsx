@@ -29,7 +29,7 @@ import { shortPath } from '../lib/format';
 import { enabledList } from '../lib/tools';
 import { EFFORT_LEVELS, effortOf, effortOptions } from '../lib/effort';
 import { ACCESS_OPTIONS, accessOf, accessPatch, type ChatAccess } from '../lib/chatAccess';
-import { GenMenu, GenPill, genFromText, genPrompt, type GenMode } from '../components/ComposeGen';
+import { GenLoginHint, GenMenu, GenPill, genFromText, genPrompt, type GenMode } from '../components/ComposeGen';
 import { PICK_MARK, expandPicks, insertPick, pickToken, splitPicks, type PickedElement } from '../lib/pickElement';
 import { useChatWeb } from '../lib/chatWeb';
 import { PATH_DRAG, insertMention, mentionSegments } from '../lib/mentions';
@@ -351,7 +351,17 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
   const modelOptions = useModelOptions(projectPath);
   /** Режим «Создать»: следующее сообщение — явная просьба сгенерировать картинку. */
   const [gen, setGen] = useState<GenMode | null>(null);
+  const signedIn = Boolean(state.settings?.account);
+  /** Без входа «Создать» не включает режим, а показывает подсказку войти; повторное нажатие показывает её заново. */
+  const [loginHint, setLoginHint] = useState(0);
+  useEffect(() => {
+    if (signedIn) setLoginHint(0);
+  }, [signedIn]);
   const startGen = (kind: GenMode['kind']) => {
+    if (!signedIn) {
+      setLoginHint((n) => n + 1);
+      return;
+    }
     setGen({ kind, model: '', ratio: '' });
     requestAnimationFrame(() => input.current?.focus());
   };
@@ -525,6 +535,7 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
 
           <div className="chat-compose-wrap" ref={composeWrap}>
             {error && <p className="chat-error">{error}</p>}
+            {loginHint > 0 && <GenLoginHint key={loginHint} onClose={() => setLoginHint(0)} />}
             <form
               className="chat-compose"
               onSubmit={(e) => {
@@ -626,26 +637,23 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                 </div>
               </div>
               <div className="chat-compose-bar">
-                <button
-                  type="button"
-                  className="chat-attach"
-                  title="Прикрепить файлы или картинки (можно вставить из буфера)"
-                  onClick={() => fileInput.current?.click()}
-                >
+                <button type="button" className="chat-attach" aria-label="Прикрепить файлы" onClick={() => fileInput.current?.click()}>
                   <Paperclip size={16} />
+                  <span className="compose-tip" role="tooltip">
+                    <strong>Прикрепить файлы</strong>
+                    <span>Файлы и картинки. Картинку можно вставить из буфера.</span>
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  className="chat-attach"
-                  aria-label="Добавить папку в контекст"
-                  title="Добавить папку в контекст чата: агент сможет читать её файлы (можно перетащить папку в поле)"
-                  onClick={() => void pickDir()}
-                >
+                <button type="button" className="chat-attach" aria-label="Добавить папку в контекст" onClick={() => void pickDir()}>
                   <FolderPlus size={16} />
+                  <span className="compose-tip" role="tooltip">
+                    <strong>Добавить папку</strong>
+                    <span>Агент сможет читать её файлы. Папку можно перетащить в поле.</span>
+                  </span>
                 </button>
                 {/* Создать — не вложение: отдельная таблетка после разделителя. */}
                 <span className="chat-compose-sep" aria-hidden />
-                <GenMenu onPick={startGen} />
+                <GenMenu onPick={startGen} locked={!signedIn} />
                 <input
                   ref={fileInput}
                   type="file"

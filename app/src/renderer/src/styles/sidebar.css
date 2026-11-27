@@ -22,7 +22,8 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.018);
+  /* Своего тона нет — та же основа, что у окна; от ленты отделяет только линия. */
+  background: transparent;
   box-shadow: inset -1px 0 0 var(--line);
 }
 .side-top {
@@ -221,6 +222,51 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
+}
+/* Заголовок группы; у первого справа — «По дате / По проектам». */
+.side-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: var(--s-2) var(--s-3) 6px;
+}
+/* Отступы — у строки заголовка, чтобы подпись и переключатель стояли на одной линии. */
+.side-group .side-group-head h4 {
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd.side-group-by {
+  flex: none;
+  height: 22px;
+  padding: 0 6px 0 8px;
+  gap: 4px;
+  margin: -4px -6px -4px 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.dd.side-group-by:focus-visible {
+  box-shadow: none;
+  color: var(--text-1);
+}
+.dd.side-group-by:hover:not(:disabled),
+.dd.side-group-by.is-open {
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-1);
+}
+.dd.side-group-by .dd-icon {
+  color: inherit;
+}
+.side-more {
+  height: 1px;
 }
 .side-group.is-attention h4 {
   color: var(--wait);
@@ -712,4 +758,8 @@ body.is-nav-resizing iframe {
   white-space: nowrap;
   color: var(--text-2);
   font-size: var(--fs-12);
+}
+.dd.side-group-by .dd-chev {
+  width: 11px;
+  height: 11px;
 }

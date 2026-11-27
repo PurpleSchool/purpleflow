@@ -115,7 +115,7 @@ test('приёмка: набранное замечание переживает
 test('приёмка: дифф показывает изменение, возврат с него не роняет страницу', async () => {
   await startRun(l.page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
   // На приёмке дифф открывается сам.
-  await expect(l.page.getByRole('button', { name: 'math.js' })).toBeVisible({ timeout: 60_000 });
+  await expect(l.page.getByRole('button', { name: 'math.js', exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(l.page.locator('.monaco-diff-editor').getByText('mul', { exact: false }).first()).toBeVisible();
   await l.page.getByRole('tab', { name: 'Таймлайн' }).click();
   await expect(l.page.locator('.monaco-diff-editor')).toHaveCount(0);

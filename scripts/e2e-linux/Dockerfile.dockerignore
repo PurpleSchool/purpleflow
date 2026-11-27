@@ -1,0 +1,9 @@
+**/node_modules
+**/out
+**/dist
+**/release
+**/e2e-results
+**/e2e-report
+app/whisper-bin
+docs/posts
+.git

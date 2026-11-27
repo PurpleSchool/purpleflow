@@ -61,9 +61,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # Окно настоящее, поэтому на Linux нужен виртуальный дисплей.
+      # Окно настоящее, поэтому на Linux нужен виртуальный дисплей. Экран шире окна тестов (1440×920): на экране xvfb-run
+      # по умолчанию (1280×1024) окно сжимается, и вёрстка уходит в узкий режим.
       - if: runner.os == 'Linux'
-        run: xvfb-run -a npm run test:e2e
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run test:e2e
       - if: runner.os != 'Linux'
         run: npm run test:e2e
       - uses: actions/upload-artifact@v4

@@ -16,8 +16,10 @@ export function TerminalPane({ chatId, cwd }: { chatId: string; cwd: string | nu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, cwd]);
 
-  // Показанный терминал — в панель; размер панели меняется — терминал подстраивается.
+  // Показанный терминал — в панель; размер панели меняется — терминал подстраивается. Папка чата приходит не сразу,
+  // а до неё места под терминал нет: эффект ждёт её, иначе при повторном открытии панели терминал не возвращался.
   const key = cur?.key;
+  const ready = Boolean(cwd);
   useEffect(() => {
     const el = host.current;
     if (!el || !key) return;
@@ -25,7 +27,7 @@ export function TerminalPane({ chatId, cwd }: { chatId: string; cwd: string | nu
     const ro = new ResizeObserver(() => fitTerminal(key));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [chatId, key]);
+  }, [chatId, key, ready]);
 
   if (!cwd) return null;
   return (

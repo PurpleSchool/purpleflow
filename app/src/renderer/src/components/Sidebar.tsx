@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bug,
+  CalendarDays,
   ChevronDown,
   FolderGit2,
   FolderPlus,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react';
 import type { ChatSummary, ProjectListItem, RunSummary } from '@purpleflow/core';
 import { useActions, useStore } from '../lib/store';
-import { shortPath } from '../lib/format';
+import { shortPath, when } from '../lib/format';
 import { MODES } from '../lib/stages';
 import { shownTools, toolNeeded } from '../lib/tools';
 import { bridge } from '../lib/api';
@@ -29,6 +30,7 @@ import { recentProjects } from '../lib/recentProjects';
 import { UpdateButton, updatePending } from './WhatsNew';
 import { PillTabs } from './PillTabs';
 import { ChatTitleText } from './ChatTitle';
+import { Select } from './Dropdown';
 
 const STATUS_WORD: Record<RunSummary['status'], string> = {
   queued: 'в очереди',
@@ -49,8 +51,14 @@ const EMPTY: Record<Filter, string> = {
 
 type Item = { kind: 'run'; at: string; run: RunSummary } | { kind: 'chat'; at: string; chat: ChatSummary };
 
-/** История: прогоны и чаты вместе. Сначала прогоны, ждущие решения человека, остальное — по дням. */
-function groupItems(runs: RunSummary[], chats: ChatSummary[]) {
+type GroupBy = 'date' | 'project';
+const GROUP_KEY = 'purpleflow.sideGroupBy';
+/** Сколько строк истории показывать сразу; дальше — ещё столько же, когда список докручен до конца. */
+const PAGE = 60;
+const NO_PROJECT = 'Без проекта';
+
+/** История: прогоны и чаты вместе. Сначала прогоны, ждущие решения человека, остальное — по дням или по проектам. */
+function groupItems(runs: RunSummary[], chats: ChatSummary[], by: GroupBy = 'date') {
   const waiting = runs.filter((r) => r.status === 'waiting');
   const rest: Item[] = [
     ...runs.filter((r) => r.status !== 'waiting').map((r) => ({ kind: 'run' as const, at: r.createdAt, run: r })),
@@ -62,7 +70,7 @@ function groupItems(runs: RunSummary[], chats: ChatSummary[]) {
   yesterday.setDate(today.getDate() - 1);
   const weekAgo = new Date(today);
   weekAgo.setDate(today.getDate() - 7);
-  const label = (iso: string) => {
+  const dateLabel = (iso: string) => {
     const d = new Date(iso);
     if (day(iso) === today.toDateString()) return 'Сегодня';
     if (day(iso) === yesterday.toDateString()) return 'Вчера';
@@ -71,13 +79,34 @@ function groupItems(runs: RunSummary[], chats: ChatSummary[]) {
   };
   const groups: { title: string; items: Item[] }[] = [];
   if (waiting.length) groups.push({ title: 'Ждут вас', items: waiting.map((r) => ({ kind: 'run', at: r.createdAt, run: r })) });
+  // По проектам: группы — в порядке последней активности (список уже отсортирован), «Без проекта» — в конце.
+  const projectLabel = (it: Item) => {
+    const path = it.kind === 'run' ? it.run.projectPath : it.chat.projectPath;
+    return path ? projectName(path) : NO_PROJECT;
+  };
   for (const it of rest) {
-    const t = label(it.at);
+    const t = by === 'project' ? projectLabel(it) : dateLabel(it.at);
     const g = groups.find((x) => x.title === t);
     if (g) g.items.push(it);
     else groups.push({ title: t, items: [it] });
   }
+  if (by === 'project') {
+    const none = groups.findIndex((g) => g.title === NO_PROJECT);
+    if (none >= 0) groups.push(...groups.splice(none, 1));
+  }
   return groups;
+}
+
+/** Первые limit строк истории — по группам, без пустых групп. */
+function takeItems(groups: { title: string; items: Item[] }[], limit: number) {
+  const out: typeof groups = [];
+  let left = limit;
+  for (const g of groups) {
+    if (left <= 0) break;
+    out.push({ title: g.title, items: g.items.slice(0, left) });
+    left -= g.items.length;
+  }
+  return out;
 }
 
 const projectName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -195,14 +224,44 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const searchRef = useRef<HTMLInputElement>(null);
-  const groups = useMemo(
+  // Группировать по дате или по проектам — выбор справа от первого заголовка, запоминается.
+  const [groupBy, setGroupByState] = useState<GroupBy>(() => {
+    try {
+      return localStorage.getItem(GROUP_KEY) === 'project' ? 'project' : 'date';
+    } catch {
+      return 'date';
+    }
+  });
+  const setGroupBy = (g: GroupBy) => {
+    setGroupByState(g);
+    try {
+      localStorage.setItem(GROUP_KEY, g);
+    } catch {
+      /* без запоминания */
+    }
+  };
+  const allGroups = useMemo(
     () =>
       groupItems(
         filter === 'chats' ? [] : state.runs.filter((r) => matchesQuery(query, r.title, r.projectPath)),
         filter === 'tasks' ? [] : state.chats.filter((c) => matchesQuery(query, c.title, c.projectPath)),
+        groupBy,
       ),
-    [state.runs, state.chats, filter, query],
+    [state.runs, state.chats, filter, query, groupBy],
   );
+  // Длинная история рисуется частями: сначала PAGE строк, ещё PAGE — когда низ списка показался на экране.
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [filter, query, groupBy]);
+  const total = useMemo(() => allGroups.reduce((n, g) => n + g.items.length, 0), [allGroups]);
+  const groups = useMemo(() => takeItems(allGroups, limit), [allGroups, limit]);
+  const more = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = more.current;
+    if (!el || total <= limit) return;
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && setLimit((l) => l + PAGE), { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [total, limit]);
   // Пока не подключён ни один проект — кнопка «Как начать?» открывает онбординг первого проекта.
   const [projects, setProjects] = useState<ProjectListItem[] | null>(null);
   useEffect(() => {
@@ -448,18 +507,46 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         )}
         {!state.runsLoaded && [0, 1, 2].map((i) => <div key={i} className="side-skel" style={{ animationDelay: `${i * 0.15}s` }} />)}
         {state.runsLoaded && groups.length === 0 && <p className="side-empty">{query.trim() ? 'Ничего не нашлось.' : EMPTY[filter]}</p>}
-        {groups.map((g) => (
+        {groups.map((g, i) => (
           <section key={g.title} className={`side-group ${g.title === 'Ждут вас' ? 'is-attention' : ''}`}>
-            <h4>{g.title}</h4>
+            <div className="side-group-head">
+              <h4>{g.title}</h4>
+              {i === 0 && (
+                <Select<GroupBy>
+                  className="side-group-by"
+                  value={groupBy}
+                  ariaLabel="Группировать историю"
+                  title="Группировать по дате или по проектам"
+                  icon={groupBy === 'date' ? <CalendarDays size={12} /> : <FolderGit2 size={12} />}
+                  minWidth={170}
+                  options={[
+                    { value: 'date', label: 'По дате', icon: <CalendarDays size={14} /> },
+                    { value: 'project', label: 'По проектам', icon: <FolderGit2 size={14} /> },
+                  ]}
+                  onChange={setGroupBy}
+                />
+              )}
+            </div>
             {g.items.map((it) =>
               it.kind === 'run' ? (
-                <RunRow key={it.run.id} r={it.run} on={v.name === 'run' && v.runId === it.run.id} />
+                <RunRow
+                  key={it.run.id}
+                  r={it.run}
+                  on={v.name === 'run' && v.runId === it.run.id}
+                  sub={groupBy === 'project' ? when(it.at) : undefined}
+                />
               ) : (
-                <ChatRow key={it.chat.id} c={it.chat} on={v.name === 'chat' && v.chatId === it.chat.id} />
+                <ChatRow
+                  key={it.chat.id}
+                  c={it.chat}
+                  on={v.name === 'chat' && v.chatId === it.chat.id}
+                  sub={groupBy === 'project' ? when(it.at) : undefined}
+                />
               ),
             )}
           </section>
         ))}
+        {total > limit && <div ref={more} className="side-more" aria-hidden />}
       </nav>
 
       <div className="side-bottom">
@@ -532,7 +619,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 }
 
 /** Прогон задачи: иконка flow, цвет — статус. */
-const RunRow = memo(function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
+/** sub — подпись под названием вместо проекта: в группах по проектам там дата. */
+const RunRow = memo(function RunRow({ r, on, sub }: { r: RunSummary; on: boolean; sub?: string }) {
   const { go } = useActions();
   return (
     <button
@@ -550,7 +638,7 @@ const RunRow = memo(function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
       <span className="side-run-text">
         <span className="side-run-title">{r.title}</span>
         <span className="side-run-sub">
-          <span className="side-run-project">{r.missing ? 'run.json не найден' : projectName(r.projectPath)}</span>
+          <span className="side-run-project">{r.missing ? 'run.json не найден' : (sub ?? projectName(r.projectPath))}</span>
           {!r.missing && <span className="side-run-mode">{MODES.find((m) => m.id === (r.mode ?? 'task'))?.title}</span>}
         </span>
       </span>
@@ -558,7 +646,7 @@ const RunRow = memo(function RunRow({ r, on }: { r: RunSummary; on: boolean }) {
   );
 });
 
-const ChatRow = memo(function ChatRow({ c, on }: { c: ChatSummary; on: boolean }) {
+const ChatRow = memo(function ChatRow({ c, on, sub }: { c: ChatSummary; on: boolean; sub?: string }) {
   const { go } = useActions();
   return (
     <button
@@ -576,7 +664,7 @@ const ChatRow = memo(function ChatRow({ c, on }: { c: ChatSummary; on: boolean }
       <span className="side-run-text">
         <ChatTitleText className="side-run-title" title={c.title} titling={c.titling} />
         <span className="side-run-sub">
-          <span className="side-run-project">{c.projectPath ? projectName(c.projectPath) : 'без проекта'}</span>
+          <span className="side-run-project">{sub ?? (c.projectPath ? projectName(c.projectPath) : 'без проекта')}</span>
           <span className="side-run-mode">Чат</span>
         </span>
       </span>

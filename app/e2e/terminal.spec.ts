@@ -29,17 +29,24 @@ test('терминал чата: оболочка в папке проекта, 
     await rail.getByRole('button', { name: 'Браузер', exact: true }).click();
     await rail.getByRole('button', { name: 'Терминал' }).click();
     await expect.poll(() => screenText(page)).toContain('pf-42');
+    // Закрыли панель тем же значком и открыли снова — терминал на месте, с выводом.
+    await rail.getByRole('button', { name: 'Терминал' }).click();
+    await expect(page.locator('.term-host:visible')).toHaveCount(0);
+    await rail.getByRole('button', { name: 'Терминал' }).click();
+    await expect.poll(() => screenText(page)).toContain('pf-42');
     // Ctrl+C прерывает команду.
     await term.click();
-    await page.keyboard.type('sleep 30; echo не-прервано');
+    // Вывод отличается от набранного ($((1)) → 1): набранная строка при длинном приглашении переносится и может
+    // попасть на экран дважды, а проверяем мы только вывод команд.
+    await page.keyboard.type('sleep 30; echo не-$((1))-прервано');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
     await page.keyboard.press('Control+C');
-    await page.keyboard.type('echo после-прерывания');
+    await page.keyboard.type('echo после-$((1))-прерывания');
     await page.keyboard.press('Enter');
-    await expect.poll(() => screenText(page), { timeout: 10_000 }).toContain('после-прерывания');
-    // «не-прервано» — только в набранной строке: echo после sleep не выполнился.
-    expect((await screenText(page)).split('не-прервано').length - 1).toBe(1);
+    await expect.poll(() => screenText(page), { timeout: 10_000 }).toContain('после-1-прерывания');
+    // echo после sleep не выполнился.
+    expect(await screenText(page)).not.toContain('не-1-прервано');
     // Вторая вкладка — отдельная оболочка.
     await page.getByRole('button', { name: 'Новый терминал' }).click();
     await expect(page.locator('.term-pane').getByRole('tab')).toHaveCount(2);

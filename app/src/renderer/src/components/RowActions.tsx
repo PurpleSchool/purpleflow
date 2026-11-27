@@ -4,7 +4,10 @@ import type { ChatSkill } from '@purpleflow/core';
 import { bridge } from '../lib/api';
 import { useEffect, useRef, useState } from 'react';
 
-/** Первое нажатие спрашивает («Удалить из проекта?»), второе удаляет; через 4 секунды вопрос снимается. */
+/**
+ * Первое нажатие спрашивает («Удалить из проекта?»), второе удаляет. Через 4 секунды вопрос снимается — но не пока курсор
+ * над ним: иначе второе нажатие на медленной машине попало бы уже в снова появившуюся корзину и только задало бы вопрос заново.
+ */
 export function ConfirmDelete({
   name,
   ask,
@@ -19,7 +22,12 @@ export function ConfirmDelete({
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const timer = useRef(0);
+  const askBtn = useRef<HTMLButtonElement>(null);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  const expire = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => (askBtn.current?.matches(':hover') ? expire() : setConfirm(false)), 4000);
+  };
   if (!confirm)
     return (
       <button
@@ -29,8 +37,7 @@ export function ConfirmDelete({
         title="Удалить"
         onClick={() => {
           setConfirm(true);
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => setConfirm(false), 4000);
+          expire();
         }}
       >
         <Trash2 size={14} />
@@ -38,6 +45,7 @@ export function ConfirmDelete({
     );
   return (
     <button
+      ref={askBtn}
       type="button"
       className="skill-del is-confirm"
       disabled={busy}

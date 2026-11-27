@@ -56,6 +56,14 @@ npm run release -- 0.2.0
 - macOS подписана и нотаризована: неподписанное приложение macOS обновить само не может, в окне будет ссылка на ручную загрузку;
 - на Linux само обновляется AppImage; `deb` и `rpm` при сбое показывают ту же ссылку.
 
+**e2e на Linux локально.** Как в CI (Ubuntu, Xvfb, bash), в Docker — например, на маке с OrbStack или Docker Desktop:
+
+```bash
+scripts/e2e-linux/run.sh mcp.spec.ts chat.spec.ts:94
+```
+
+Без аргументов — все тесты. `PLATFORM=linux/amd64` — x64, как в CI (на Apple Silicon медленнее). Скриншоты и трассы падений — в `app/e2e-linux-results`.
+
 **Выпуск macOS.** После `npm run release` соберите мак на машине с сертификатом «Developer ID Application» в связке ключей. Данные для нотаризации удобно один раз сохранить в профиль notarytool — пароль приложения команда спросит сама и положит в связку ключей:
 
 ```bash

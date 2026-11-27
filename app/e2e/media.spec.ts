@@ -178,17 +178,55 @@ test('картинки без входа: просьба нарисовать �
   }
 });
 
-test('«Создать картинку»: кнопкой и командой /картинка — агенту уходит явная просьба с моделью и сторонами', async () => {
+test('«Создать» без входа: замок, подсказка над полем при каждом нажатии и переход ко входу', async () => {
   const box = makeSandbox({ settings: { enabledAgents: ['claude', 'codex'] } });
   const l = await launch(box, { PURPLEFLOW_API_URL: 'http://127.0.0.1:9' });
+  const p = l.page;
+  try {
+    await p.getByRole('button', { name: 'Создать', exact: true }).click();
+    await p.getByRole('menuitem', { name: /Чат/ }).click();
+    const gen = p.locator('.chat-compose').getByRole('button', { name: 'Создать', exact: true });
+    // Замок и подсказка при наведении; в меню «Картинка» тоже с замком.
+    await gen.hover();
+    await expect(p.locator('.chat-gen-wrap').getByRole('tooltip')).toContainText('после входа в PurpleSchool');
+    await gen.click();
+    await expect(p.getByRole('option', { name: /Картинка/ })).toContainText('Нужен вход в PurpleSchool');
+    await p.getByRole('option', { name: /Картинка/ }).click();
+    // Режим не включился — вместо него подсказка войти.
+    await expect(p.getByRole('group', { name: 'Создать картинку' })).toHaveCount(0);
+    const hint = p.locator('.compose-login');
+    await expect(hint).toContainText('Войдите в PurpleSchool');
+    await hint.getByRole('button', { name: 'Скрыть подсказку' }).click();
+    await expect(hint).toHaveCount(0);
+    // Повторное нажатие показывает подсказку снова; кнопка ведёт на вход.
+    await gen.click();
+    await p.getByRole('option', { name: /Картинка/ }).click();
+    await hint.getByRole('button', { name: 'Войти в PurpleSchool' }).click();
+    await expect(p.getByRole('heading', { name: 'Вход в PurpleSchool' })).toBeVisible();
+  } finally {
+    await quit(l);
+  }
+});
+
+test('«Создать картинку»: кнопкой и командой /картинка — агенту уходит явная просьба с моделью и сторонами', async () => {
+  const api = fakeApi({ auth: [], paid: true });
+  await new Promise<void>((r) => api.listen(0, '127.0.0.1', r));
+  const box = makeSandbox({ settings: { enabledAgents: ['claude', 'codex'] } });
+  const l = await launch(box, { PURPLEFLOW_API_URL: `http://127.0.0.1:${(api.address() as AddressInfo).port}` });
   const p = l.page;
   const field = p.locator('.chat-compose textarea');
   const lastPrompt = () => box.calls().at(-1)?.prompt ?? '';
   try {
+    await p.getByRole('button', { name: 'Настройки' }).click();
+    await p.getByRole('tab', { name: 'Аккаунт' }).click();
+    await p.getByLabel('Email').fill(EMAIL);
+    await p.locator('form.auth input[type=password]').fill('password123');
+    await p.locator('form.auth').getByRole('button', { name: 'Войти' }).click();
+    await expect(p.getByRole('switch', { name: 'Картинки, видео и озвучка в чате' })).toBeVisible();
     await p.getByRole('button', { name: 'Создать', exact: true }).click();
     await p.getByRole('menuitem', { name: /Чат/ }).click();
     // Кнопка «Создать» → «Картинка»: плашка режима; стороны 16:9.
-    await p.getByRole('button', { name: 'Создать', exact: true }).last().click();
+    await p.locator('.chat-compose').getByRole('button', { name: 'Создать', exact: true }).click();
     await p.getByRole('option', { name: /Картинка/ }).click();
     const pill = p.getByRole('group', { name: 'Создать картинку' });
     await expect(pill).toBeVisible();
@@ -215,5 +253,6 @@ test('«Создать картинку»: кнопкой и командой /�
     await expect.poll(lastPrompt).toContain('Сгенерируй картинку через generate_image: лиса в лесу');
   } finally {
     await quit(l);
+    api.close();
   }
 });
