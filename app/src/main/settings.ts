@@ -6,12 +6,14 @@ import { enabledAgents, type AgentKind, type CoreSettings, type Efforts, type Ro
 import type { PublicSettings, SettingsPatch } from '../shared/ipc';
 import { DEFAULT_THEME, themeOf, type WindowTheme } from '../shared/themes';
 import { diagnosticsFrom } from './diagnostics';
-import { ACCOUNT_ENABLED, DEFAULT_PROXY } from './provider';
+import { ACCOUNT_ENABLED, DEFAULT_PROXY, MEDIA_MCP_URL } from './provider';
 
 interface StoredSettings {
   toolPaths: CoreSettings['toolPaths'];
   /** enabled: false — ключ сохранён, но агенты работают по своим подпискам. */
   proxy: { baseUrl: string; codexBaseUrl: string; apiKeyEnc: string; enabled: boolean };
+  /** MCP PurpleSchool для картинок, видео и озвучки в чате — по ключу аккаунта. */
+  media: { enabled: boolean };
   models: CoreSettings['models'];
   /** Уровень рассуждений по ролям; нет — как в CLI. */
   efforts: Efforts;
@@ -51,6 +53,8 @@ interface StoredSettings {
 const DEFAULTS: StoredSettings = {
   toolPaths: {},
   proxy: { baseUrl: '', codexBaseUrl: '', apiKeyEnc: '', enabled: true },
+  // Генерация платная, но только по прямой просьбе в чате — подключён сразу, чтобы возможность была видна.
+  media: { enabled: true },
   models: { planner: 'opus', executor: 'sonnet', reviewer: '', visual: '', manager: '', scan: '' },
   efforts: {},
   agents: { planner: 'claude', executor: 'claude', reviewer: 'codex' },
@@ -114,6 +118,7 @@ function load(): StoredSettings {
     ...DEFAULTS,
     ...rest,
     proxy: { ...DEFAULTS.proxy, ...raw.proxy },
+    media: { ...DEFAULTS.media, ...raw.media },
     account: { ...DEFAULTS.account, ...raw.account },
     models: { ...DEFAULTS.models, ...raw.models },
     efforts: { ...raw.efforts },
@@ -242,6 +247,7 @@ export function publicSettings(): PublicSettings {
   return {
     toolPaths: s.toolPaths,
     proxy: { baseUrl: s.proxy.baseUrl, codexBaseUrl: s.proxy.codexBaseUrl, hasKey: Boolean(s.proxy.apiKeyEnc), enabled: s.proxy.enabled },
+    media: { enabled: s.media.enabled },
     models: s.models,
     efforts: s.efforts,
     agents: s.agents,
@@ -264,6 +270,20 @@ export function publicSettings(): PublicSettings {
   };
 }
 
+/** MCP картинок: включён, вход в PurpleSchool выполнен и ключ аккаунта есть (работает и без «Работать через PurpleSchool»). */
+function mediaMcp(s: StoredSettings): CoreSettings['media'] {
+  if (!ACCOUNT_ENABLED || !s.media.enabled || !s.account.tokenEnc) return undefined;
+  const key = decryptKey(s.proxy.apiKeyEnc);
+  return key ? { url: MEDIA_MCP_URL, key } : undefined;
+}
+
+/** Картинок нет — что предложить в чате на просьбу нарисовать: вход в PurpleSchool или включение в настройках. */
+function mediaOffer(s: StoredSettings): CoreSettings['mediaOffer'] {
+  if (!ACCOUNT_ENABLED) return undefined;
+  if (!s.account.tokenEnc) return 'signup';
+  return s.media.enabled ? undefined : 'enable';
+}
+
 export function coreSettings(): CoreSettings {
   const s = loadIfReadable() ?? DEFAULTS;
   const apiKey = s.proxy.enabled ? decryptKey(s.proxy.apiKeyEnc) : '';
@@ -281,6 +301,8 @@ export function coreSettings(): CoreSettings {
     enabledAgents: s.enabledAgents,
     claudeAuth: s.claudeAuth,
     userConfig: s.userConfig,
+    media: mediaMcp(s),
+    mediaOffer: mediaOffer(s),
     agentTimeoutMin: s.agentTimeoutMin,
     testTimeoutMin: s.testTimeoutMin,
     maxParallel: s.maxParallel,
@@ -312,6 +334,7 @@ export function updateSettings(patch: SettingsPatch): PublicSettings {
     if (patch.proxy.apiKey !== undefined) s.proxy.apiKeyEnc = encryptKey(patch.proxy.apiKey);
     if (patch.proxy.enabled !== undefined) s.proxy.enabled = patch.proxy.enabled;
   }
+  if (patch.media?.enabled !== undefined) s.media.enabled = patch.media.enabled;
   if (patch.agentTimeoutMin !== undefined) s.agentTimeoutMin = patch.agentTimeoutMin;
   if (patch.testTimeoutMin !== undefined) s.testTimeoutMin = patch.testTimeoutMin;
   if (patch.maxParallel !== undefined) s.maxParallel = patch.maxParallel;

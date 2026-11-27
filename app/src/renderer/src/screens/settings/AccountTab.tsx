@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Check, KeyRound, LogOut } from 'lucide-react';
 import { ACCOUNT_BENEFITS, AccountKeys, AuthForms } from '../../components/Account';
 import { EmailBonus } from '../../components/EmailBonus';
+import { MediaModels, MediaPromo } from '../../components/MediaModels';
 import { TrialBanner } from '../../components/TrialPromo';
 import { Button } from '../../components/ui';
 import { bridge } from '../../lib/api';
@@ -79,6 +80,8 @@ export function AccountTab({ draft }: { draft: SettingsDraft }) {
                 </button>
               </div>
             )}
+            {/* Картинки через MCP PurpleSchool — по тому же ключу аккаунта, независимо от «Работать через PurpleSchool». */}
+            {s.proxy.hasKey && <MediaModels />}
             <AccountKeys />
           </div>
         </>
@@ -93,6 +96,7 @@ export function AccountTab({ draft }: { draft: SettingsDraft }) {
               </div>
             </header>
             <TrialBanner onRegister={() => setAuthMode((a) => ({ mode: 'register', n: a.n + 1 }))} />
+            <MediaPromo />
             <ul className="acc-benefits">
               {ACCOUNT_BENEFITS.map((b) => (
                 <li key={b.title}>

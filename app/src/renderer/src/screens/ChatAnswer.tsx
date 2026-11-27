@@ -1,5 +1,5 @@
 // Ответ агента в чате: текст, размышления, вызовы с итогами и шагами субагентов, план, уведомления, вопросы.
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Brain,
   Check,
@@ -23,6 +23,8 @@ import {
   X,
 } from 'lucide-react';
 import type { ChatMessage, ChatPart, ChatPermissionPart, ChatQuestion, ChatToolPart, ToolStatus } from '@purpleflow/core';
+import { GeneratedMedia } from '../components/GeneratedMedia';
+import { MediaOfferCard } from '../components/MediaOfferCard';
 import { Markdown } from '../components/Markdown';
 import { Button } from '../components/ui';
 import { cleanErr } from '../lib/api';
@@ -64,7 +66,13 @@ export function AssistantMessage({
         const isLast = i === blocks.length - 1;
         switch (b.kind) {
           case 'tools':
-            return <ToolSteps key={i} items={b.items} live={live && isLast} />;
+            return (
+              <Fragment key={i}>
+                <ToolSteps items={b.items} live={live && isLast} />
+                {/* Нарисованные картинки — сразу видно, не в свёрнутом списке вызовов. */}
+                <GeneratedMedia items={b.items} />
+              </Fragment>
+            );
           case 'thinking':
             return <Thinking key={i} text={b.text} live={live && isLast} />;
           case 'todos':
@@ -75,10 +83,17 @@ export function AssistantMessage({
             return <QuestionCard key={i} questions={b.questions} answerable={answerable} onAnswer={onAnswer} />;
           case 'permission':
             return <PermissionCard key={b.id} p={b} live={live} onAnswer={onPermission} />;
+          // Предложения (подписка, вход, включить картинки) — в конце ответа, ниже текста.
+          case 'offer':
+            return null;
           default:
             return <Markdown key={i} className="md chat-md" source={b.text} />;
         }
       })}
+      {!live &&
+        blocks
+          .filter((b): b is Extract<typeof b, { kind: 'offer' }> => b.kind === 'offer')
+          .map((b) => <MediaOfferCard key={b.offer} offer={b.offer} />)}
       {refused.map((t) => (
         <McpApprovalCard
           key={`${t.server}/${t.tool}`}

@@ -31,6 +31,7 @@ import { isSamePage, isWebUrl } from '../shared/urls';
 import type { UpdateState } from '../shared/update';
 import { errorReportingActive, initErrorReporting } from './error-reporting';
 import { chatWebBridge, registerChatTab, startChatWeb } from './chatweb';
+import { fetchMedia, mediaModels } from './media';
 import { killAllTerminals, killTerminal, openTerminal, resizeTerminal, writeTerminal } from './terminal';
 import { ignoreClosedOutput } from './stdio';
 import {
@@ -504,6 +505,22 @@ handle('account:requestEmailCode', () => account.requestEmailCode());
 handle('account:confirmEmailCode', (_e, code: unknown) => account.confirmEmailCode(str(code).trim()));
 handle('account:claimInitialBalance', () => account.claimInitialBalance());
 handle('account:trialModels', () => account.trialModels());
+handle('account:mediaModels', () => mediaModels());
+handle('account:paidBalance', () => account.paidBalance());
+handle('media:fetch', (_e, url: string) => (typeof url === 'string' ? fetchMedia(url) : null));
+// Картинка из чата — в файл: человек выбирает, куда сохранить (по умолчанию «Загрузки»). Пишем только то, что он выбрал.
+handle('media:save', async (_e, o: { data: Uint8Array; name: string }) => {
+  if (!(o?.data instanceof Uint8Array) || typeof o.name !== 'string') return null;
+  const name =
+    path
+      .basename(o.name)
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .slice(0, 120) || 'image.png';
+  const r = await dialog.showSaveDialog(win!, { defaultPath: path.join(app.getPath('downloads'), name), title: 'Сохранить картинку' });
+  if (r.canceled || !r.filePath) return null;
+  fs.writeFileSync(r.filePath, o.data);
+  return r.filePath;
+});
 handle('account:usage', (_e, q: { from?: unknown; to?: unknown; bucket?: unknown; keyIds?: unknown }) =>
   account.usage({
     from: str(q?.from),

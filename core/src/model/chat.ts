@@ -43,6 +43,8 @@ export interface ChatToolPart {
   sandboxDenied?: boolean;
   /** Шаги субагента, запущенного этим вызовом. */
   sub?: ChatSubStep[];
+  /** Картинки, которые нарисовал MCP PurpleSchool (generate_image, get_image_task): ссылки на оригиналы — окно показывает их в ответе. */
+  images?: string[];
 }
 
 /**
@@ -56,7 +58,17 @@ export type ChatPart =
   | { kind: 'todos'; items: ChatTodo[] }
   | { kind: 'notice'; level: 'info' | 'warn' | 'error'; text: string; key?: string }
   | { kind: 'question'; id?: string; questions: ChatQuestion[] }
-  | ChatPermissionPart;
+  | ChatPermissionPart
+  | ChatOfferPart;
+
+/**
+ * Карточка-предложение под ответом: картинку не нарисовать без подписки (subscribe), без входа в PurpleSchool (signup)
+ * или с выключенными картинками в настройках (enable).
+ */
+export interface ChatOfferPart {
+  kind: 'offer';
+  offer: 'subscribe' | 'signup' | 'enable';
+}
 
 /** Ответ человека на запрос разрешения; expired — ход кончился раньше ответа. */
 export type PermissionState = 'pending' | 'once' | 'always' | 'denied' | 'expired';

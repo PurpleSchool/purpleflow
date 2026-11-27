@@ -16,6 +16,9 @@ import {
   type AgentRunOptions,
   type AgentStep,
   type McpTool,
+  MEDIA_KEY_ENV,
+  MEDIA_MCP_NAME,
+  MEDIA_TOOLS,
 } from './common.js';
 import { toolName } from './tools.js';
 import type { ChatTodo } from '../types.js';
@@ -49,7 +52,7 @@ export function codexProxyBase(p: NonNullable<AgentRunOptions['proxy']>): string
 export function codexArgs(
   o: Pick<
     CodexOptions,
-    'cwd' | 'model' | 'effort' | 'sandbox' | 'proxy' | 'images' | 'userConfig' | 'persist' | 'resumeThread' | 'mcpApprove'
+    'cwd' | 'model' | 'effort' | 'sandbox' | 'proxy' | 'images' | 'userConfig' | 'persist' | 'resumeThread' | 'mcpApprove' | 'media'
   >,
   extra: { schemaFile?: string; lastFile: string },
 ): string[] {
@@ -80,6 +83,16 @@ export function codexArgs(
   if (o.sandbox === 'workspace-write') args.push('-c', 'sandbox_workspace_write.network_access=true');
   if (o.model) args.push('-m', o.model);
   if (o.effort) args.push('-c', `model_reasoning_effort="${o.effort}"`);
+  // MCP PurpleSchool (картинки): ключ — из окружения, его инструменты платные только по просьбе человека — вызывать без подтверждения.
+  if (o.media?.url) {
+    args.push(
+      '-c',
+      `mcp_servers.${MEDIA_MCP_NAME}.url=${JSON.stringify(o.media.url)}`,
+      '-c',
+      `mcp_servers.${MEDIA_MCP_NAME}.bearer_token_env_var="${MEDIA_KEY_ENV}"`,
+    );
+    for (const tool of MEDIA_TOOLS) args.push('-c', `mcp_servers.${MEDIA_MCP_NAME}.tools.${tool}.approval_mode="approve"`);
+  }
   // Имя — ключ TOML без кавычек: пропускаем только безопасные.
   for (const t of o.mcpApprove ?? [])
     if (MCP_NAME.test(t.server) && MCP_NAME.test(t.tool))
@@ -177,6 +190,7 @@ export async function runCodex(o: CodexOptions): Promise<AgentResult> {
   }
   const env = cleanEnv(o.env);
   if (o.proxy?.baseUrl) env[KEY_ENV] = o.proxy.apiKey;
+  if (o.media?.key) env[MEDIA_KEY_ENV] = o.media.key;
 
   let usage = emptyUsage();
   let lastMessage = '';

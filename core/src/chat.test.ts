@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Orchestrator } from './orchestrator.js';
 import { setChatWebBridge } from './webbridge.js';
-import { cleanTitle } from './services/chat.js';
+import { cleanTitle, wantsImage } from './services/chat.js';
 import type { CoreSettings } from './types.js';
 import { claudeArgs } from './agents/claude.js';
 import { codexArgs } from './agents/codex.js';
@@ -18,7 +18,10 @@ import type { ChatFile, CoreEvent } from './types.js';
 const PROMPTS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
 
 /** Ядро с «установленными» claude и codex (скрипты отвечают версией) и подменёнными запусками. */
-function makeCore(runners: { claude?: unknown; codex?: unknown; agy?: unknown }, o: { chatTitles?: boolean; browser?: boolean } = {}) {
+function makeCore(
+  runners: { claude?: unknown; codex?: unknown; agy?: unknown },
+  o: { chatTitles?: boolean; browser?: boolean; settings?: Partial<CoreSettings> } = {},
+) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-bin-'));
   for (const n of ['codex', 'claude', 'agy']) fs.writeFileSync(path.join(bin, n), `#!/bin/sh\necho "${n} 1.0.0"\n`, { mode: 0o755 });
   const settings = {
@@ -30,6 +33,7 @@ function makeCore(runners: { claude?: unknown; codex?: unknown; agy?: unknown },
     agentTimeoutMin: 5,
     testTimeoutMin: 2,
     maxParallel: 2,
+    ...o.settings,
   } as unknown as CoreSettings;
   const core = new Orchestrator({
     dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'purpleflow-data-')),
@@ -899,3 +903,36 @@ test(
     assert.doesNotMatch(calls.at(-1)!.systemPrompt ?? '', /## Браузер/);
   },
 );
+
+test('чат: картинки — MCP PurpleSchool у claude и правило в промпте; без них просьба нарисовать даёт карточку входа', async () => {
+  const calls: AgentRunOptions[] = [];
+  const claude = async (o: AgentRunOptions) => {
+    calls.push(o);
+    return { ok: true, text: 'ок', usage: emptyUsage() };
+  };
+  const media = { url: 'https://app.purpleschool.ru/api-v2/mcp', key: 'ppk_x' };
+  const on = makeCore({ claude }, { settings: { media } });
+  const c = await on.createChat({ agent: 'claude' });
+  await on.sendChat(c.id, 'нарисуй иконку оплаты');
+  await untilIdle(on, c.id);
+  assert.deepEqual(calls.at(-1)!.media, media);
+  assert.match(calls.at(-1)!.systemPrompt ?? '', /## Картинки/);
+
+  // Не вошёл в PurpleSchool: сервера нет, под ответом на просьбу нарисовать — карточка входа; на другое — нет.
+  const off = makeCore({ claude }, { settings: { mediaOffer: 'signup' } });
+  const d = await off.createChat({ agent: 'claude' });
+  await off.sendChat(d.id, 'Нарисуй кота для обложки');
+  await untilIdle(off, d.id);
+  assert.equal(calls.at(-1)!.media, undefined);
+  const offers = async () => ((await off.getChat(d.id))!.chat.messages.at(-1)!.parts ?? []).filter((p) => p.kind === 'offer');
+  assert.deepEqual(await offers(), [{ kind: 'offer', offer: 'signup' }]);
+  await off.sendChat(d.id, 'поправь опечатку в README');
+  await untilIdle(off, d.id);
+  assert.deepEqual(await offers(), []);
+});
+
+test('wantsImage: просьбы нарисовать — да, обычные задачи — нет', () => {
+  for (const t of ['нарисуй иконку', 'Сгенерируй картинку для лендинга', 'сделай мне логотип', 'draw a cat', 'generate an image of a dog'])
+    assert.ok(wantsImage(t), t);
+  for (const t of ['поправь README', 'сделай рефакторинг', 'создай компонент кнопки', 'нарушение в логике']) assert.ok(!wantsImage(t), t);
+});

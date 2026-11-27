@@ -29,7 +29,8 @@ import { shortPath } from '../lib/format';
 import { enabledList } from '../lib/tools';
 import { EFFORT_LEVELS, effortOf, effortOptions } from '../lib/effort';
 import { ACCESS_OPTIONS, accessOf, accessPatch, type ChatAccess } from '../lib/chatAccess';
-import { formatPick, insertPick, type PickedElement } from '../lib/pickElement';
+import { GenMenu, GenPill, genFromText, genPrompt, type GenMode } from '../components/ComposeGen';
+import { PICK_MARK, expandPicks, insertPick, pickToken, splitPicks, type PickedElement } from '../lib/pickElement';
 import { useChatWeb } from '../lib/chatWeb';
 import { PATH_DRAG, insertMention, mentionSegments } from '../lib/mentions';
 import { ChatSide, ChatSideRail, useChatChanged, useSideExit, useSideWidth, type ChatPane } from './ChatSide';
@@ -252,6 +253,14 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
   const send = async (override?: string) => {
     const t = (override ?? text).trim();
     if ((!t && !files.length) || sending.current) return;
+    // «Создать картинку»: из плашки режима или «/картинка …» в начале сообщения.
+    const typed = !gen && override === undefined ? genFromText(t) : null;
+    const mode = override === undefined ? (gen ?? typed?.mode ?? null) : null;
+    const body = typed ? typed.text : t;
+    if (mode && !body.trim()) {
+      setError('Опишите, какую картинку нарисовать');
+      return;
+    }
     sending.current = true;
     setError(null);
     stick.current = true;
@@ -264,7 +273,10 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
         const created = await bridge.core.createChat(draftDirs.length ? { ...draft, dirs: draftDirs } : draft);
         id = created.id;
       }
-      await bridge.core.sendChat(id, t, attachments);
+      // Элементы страницы: в поле — чипы, агенту — полные описания в конце сообщения.
+      const said = expandPicks(body);
+      await bridge.core.sendChat(id, mode ? genPrompt(mode, said) : said, attachments);
+      setGen(null);
       setText('');
       for (const f of files) if (f.url) URL.revokeObjectURL(f.url);
       setFiles([]);
@@ -322,7 +334,13 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
   const empty = !loading && messages.length === 0;
   const projectPath = chat ? chat.projectPath : draft.projectPath;
   const modelOptions = useModelOptions(projectPath);
-  const mention = useMentions({ text, setText, input, projectPath });
+  /** Режим «Создать»: следующее сообщение — явная просьба сгенерировать картинку. */
+  const [gen, setGen] = useState<GenMode | null>(null);
+  const startGen = (kind: GenMode['kind']) => {
+    setGen({ kind, model: '', ratio: '' });
+    requestAnimationFrame(() => input.current?.focus());
+  };
+  const mention = useMentions({ text, setText, input, projectPath, onCommand: startGen });
 
   /** Элемент, указанный во вкладке «Браузер»: описание — в поле ввода, курсор — после него, чтобы дописать просьбу. */
   const mentionPath = (rel: string) => {
@@ -335,7 +353,7 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
     });
   };
   const onPick = (el: PickedElement) => {
-    setText((t) => insertPick(t, formatPick(el)));
+    setText((t) => insertPick(t, pickToken(el)));
     requestAnimationFrame(() => {
       const box = input.current;
       if (!box) return;
@@ -544,12 +562,19 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                   ))}
                 </div>
               )}
+              {gen && <GenPill mode={gen} onChange={setGen} onClose={() => setGen(null)} />}
               <div className="chat-compose-row">
                 <div className="compose-field">
                   {/* Подложка с тем же текстом: «/скилл» и «@путь» в ней — чипы; сам textarea прозрачный поверх. */}
                   <div className="compose-mirror" ref={mirror} aria-hidden>
                     {mentionSegments(text, mention.skillNames).map((seg, i) =>
-                      seg.kind ? (
+                      seg.kind === 'pick' ? (
+                        // Знак ⌖ занимает своё место в тексте, но виден вместо него значок — курсор не съезжает.
+                        <span key={i} className="compose-chip is-pick">
+                          <span className="pick-ico">{PICK_MARK}</span>
+                          {seg.text.slice(PICK_MARK.length)}
+                        </span>
+                      ) : seg.kind ? (
                         <span key={i} className={`compose-chip is-${seg.kind}`}>
                           {seg.text}
                         </span>
@@ -565,13 +590,15 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                     rows={1}
                     value={text}
                     placeholder={
-                      busy
-                        ? 'Агент отвечает — можно дописать уточнение, оно уйдёт следующим'
-                        : conf.edits && projectPath
-                          ? 'Спросите или попросите правку… @ — файл, / — скилл'
-                          : projectPath
-                            ? 'Напишите сообщение… @ — файл, / — скилл'
-                            : 'Напишите сообщение… / — скилл'
+                      gen
+                        ? 'Опишите картинку: что на ней, стиль, текст…'
+                        : busy
+                          ? 'Агент отвечает — можно дописать уточнение, оно уйдёт следующим'
+                          : conf.edits && projectPath
+                            ? 'Спросите или попросите правку… @ — файл, / — скилл'
+                            : projectPath
+                              ? 'Напишите сообщение… @ — файл, / — скилл'
+                              : 'Напишите сообщение… / — скилл'
                     }
                     onChange={(e) => {
                       setText(e.target.value);
@@ -601,6 +628,9 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
                 >
                   <FolderPlus size={16} />
                 </button>
+                {/* Создать — не вложение: отдельная таблетка после разделителя. */}
+                <span className="chat-compose-sep" aria-hidden />
+                <GenMenu onPick={startGen} />
                 <input
                   ref={fileInput}
                   type="file"
@@ -703,6 +733,8 @@ export function ChatScreen({ chatId, initialProject, initialText }: { chatId?: s
 }
 
 function UserMessage({ m, chatId, skills }: { m: ChatMessage; chatId: string; skills: ReadonlySet<string> }) {
+  // Раздел с полными описаниями элементов — для агента; в пузыре — только чипы.
+  const shown = splitPicks(m.text);
   return (
     <div className={`chat-msg is-user ${m.queued ? 'is-queued' : ''}`}>
       {m.attachments?.length ? (
@@ -717,9 +749,14 @@ function UserMessage({ m, chatId, skills }: { m: ChatMessage; chatId: string; sk
       ) : null}
       {m.text && (
         <p>
-          {/* «/скилл» и «@путь» — чипами, как в поле ввода. */}
-          {mentionSegments(m.text, skills).map((seg, i) =>
-            seg.kind ? (
+          {/* «/скилл», «@путь» и элементы страницы — чипами, как в поле ввода; описания элементов — в подсказке. */}
+          {mentionSegments(shown.text, skills).map((seg, i) =>
+            seg.kind === 'pick' ? (
+              <span key={i} className="msg-chip is-pick" title={shown.details.get(seg.text.slice(PICK_MARK.length))}>
+                <span className="pick-ico">{PICK_MARK}</span>
+                {seg.text.slice(PICK_MARK.length)}
+              </span>
+            ) : seg.kind ? (
               <span key={i} className={`msg-chip is-${seg.kind}`}>
                 {seg.text}
               </span>

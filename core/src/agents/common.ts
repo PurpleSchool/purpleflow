@@ -6,6 +6,18 @@ export interface McpTool {
   tool: string;
 }
 
+/** MCP-сервер генерации медиа PurpleSchool. */
+export interface MediaMcp {
+  url: string;
+  key: string;
+}
+/** Имя сервера у агента: инструменты видны как purpleschool · generate_image. */
+export const MEDIA_MCP_NAME = 'purpleschool';
+/** Переменная окружения агента с ключом: claude подставляет её в заголовок, codex берёт как bearer token. */
+export const MEDIA_KEY_ENV = 'PURPLEFLOW_MEDIA_KEY';
+/** Инструменты сервера, которые codex вызывает без подтверждения (платные — только по просьбе человека, это в их описании). */
+export const MEDIA_TOOLS = ['list_models', 'generate_image', 'get_image_task'];
+
 export interface AgentRunOptions {
   bin: string;
   cwd: string;
@@ -42,6 +54,8 @@ export interface AgentRunOptions {
   sandbox?: string;
   /** claude в песочнице: папки с unix-сокетами, к которым можно подключаться (браузер чата, открытый ядром снаружи). */
   sandboxSockets?: string[];
+  /** MCP PurpleSchool для картинок, видео и озвучки: адрес и ключ аккаунта (ключ уходит агенту через окружение, не в аргументах). */
+  media?: MediaMcp;
   /** codex: ID сессии (thread), чтобы продолжить её в следующем ходе чата. */
   onSession?: (id: string) => void;
 }

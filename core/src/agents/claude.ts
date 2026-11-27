@@ -13,6 +13,8 @@ import {
   type AgentResult,
   type AgentRunOptions,
   type AgentStep,
+  MEDIA_KEY_ENV,
+  MEDIA_MCP_NAME,
 } from './common.js';
 import { questionsOf, todosOf, toolName, toolView } from './tools.js';
 
@@ -34,6 +36,7 @@ export function claudeArgs(
     | 'partial'
     | 'sandbox'
     | 'sandboxSockets'
+    | 'media'
   >,
 ): string[] {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions'];
@@ -61,6 +64,14 @@ export function claudeArgs(
     settings.permissions = { deny: [`Edit(/${path.join(o.sandbox, '.git').replaceAll('\\', '/')}/**)`] };
   }
   if (Object.keys(settings).length) args.push('--settings', JSON.stringify(settings));
+  // MCP PurpleSchool (картинки): ключ — не в аргументах (их видно в списке процессов), а в окружении: claude подставит его сам.
+  if (o.media?.url)
+    args.push(
+      '--mcp-config',
+      JSON.stringify({
+        mcpServers: { [MEDIA_MCP_NAME]: { type: 'http', url: o.media.url, headers: { Authorization: `Bearer \${${MEDIA_KEY_ENV}}` } } },
+      }),
+    );
   // Сессию сохраняем только исполнителю — чтобы следующая попытка продолжила её, а не читала проект заново.
   if (o.resume) args.push('--resume', o.resume);
   else if (o.sessionId) args.push('--session-id', o.sessionId);
@@ -83,8 +94,9 @@ export function claudeInput(o: Pick<AgentRunOptions, 'prompt' | 'systemPrompt'>,
   return { prompt: `${o.systemPrompt}\n\n---\n\n${o.prompt}`, systemPrompt: undefined };
 }
 
-export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth'>): NodeJS.ProcessEnv {
+export function claudeEnv(o: Pick<AgentRunOptions, 'env' | 'proxy' | 'claudeAuth' | 'media'>): NodeJS.ProcessEnv {
   const env = cleanEnv(o.env);
+  if (o.media?.key) env[MEDIA_KEY_ENV] = o.media.key;
   if (o.proxy?.baseUrl) {
     // Прокси PurpleSchool проверяет ключ в заголовке x-api-key — его claude отправляет из ANTHROPIC_API_KEY.
     env.ANTHROPIC_BASE_URL = o.proxy.baseUrl;

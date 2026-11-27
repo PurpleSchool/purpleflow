@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatPick, insertPick, PICK_SCRIPT } from './pickElement';
+import { mentionSegments } from './mentions';
+import { expandPicks, formatPick, insertPick, PICK_SCRIPT, pickLabel, pickToken, splitPicks, type PickedElement } from './pickElement';
 
 test('formatPick: тег, текст, компонент с файлом, селектор, атрибуты и размер', () => {
   assert.equal(
@@ -34,12 +35,45 @@ test('formatPick: без текста и компонентов — только
   assert.match(formatPick({ url: 'http://x/', tag: 'p', selector: 'p', source: 'App.vue', width: 1, height: 1 }), /- файл: App\.vue/);
 });
 
-test('insertPick: отдельным абзацем, курсор — для просьбы после', () => {
-  assert.equal(insertPick('', 'E'), 'E\n\n');
-  assert.equal(insertPick('Поправь   \n', 'E'), 'Поправь\n\nE\n\n');
+test('insertPick: токен — в строку через пробел, курсор — для просьбы после', () => {
+  assert.equal(insertPick('', 'E'), 'E ');
+  assert.equal(insertPick('Поправь   \n', 'E'), 'Поправь E ');
 });
 
 test('PICK_SCRIPT: синтаксически корректен', () => {
   // new Function только разбирает код, не выполняет его.
   assert.doesNotThrow(() => new Function(`return ${PICK_SCRIPT}`));
+});
+
+const button: PickedElement = {
+  url: 'http://localhost:58058/sign-in',
+  tag: 'div',
+  classes: ['css-view-g5y9jx'],
+  text: 'Продолжить',
+  selector: 'button > div',
+  components: ['View', 'Pressable', 'PrimaryButton'],
+  width: 358,
+  height: 50,
+};
+
+test('элемент страницы: в поле — короткий чип, агенту — полное описание, в пузыре — снова чип', () => {
+  assert.equal(pickLabel(button), 'PrimaryButton «Продолжить»');
+  assert.equal(pickLabel({ ...button, components: undefined, tag: 'a', text: undefined }), 'a');
+  const text = insertPick('Сделай кнопку шире', pickToken(button));
+  assert.equal(text, 'Сделай кнопку шире ⌖PrimaryButton «Продолжить» ');
+  // Чип — ровно токен, остальное — текст.
+  assert.deepEqual(mentionSegments(text, new Set()), [
+    { text: 'Сделай кнопку шире ' },
+    { text: '⌖PrimaryButton «Продолжить»', kind: 'pick' },
+    { text: ' ' },
+  ]);
+  const sent = expandPicks(text.trim());
+  assert.match(sent, /— Элементы со страницы —\n⌖PrimaryButton «Продолжить»:\nЭлемент на странице localhost:58058\/sign-in/);
+  assert.match(sent, /- селектор: button > div/);
+  const shown = splitPicks(sent);
+  assert.equal(shown.text, 'Сделай кнопку шире ⌖PrimaryButton «Продолжить»');
+  assert.match(shown.details.get('PrimaryButton «Продолжить»') ?? '', /размер: 358×50/);
+  // Без элементов — текст как есть.
+  assert.equal(expandPicks('просто текст'), 'просто текст');
+  assert.equal(splitPicks('просто текст').text, 'просто текст');
 });

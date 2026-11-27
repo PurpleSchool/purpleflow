@@ -106,6 +106,80 @@ if (/ревьюер в конвейере PurpleFlow/.test(prompt) && /РЕВЬ�
 }
 if (/ревьюер в конвейере PurpleFlow/.test(prompt)) reply('{"blocking": [], "notes": []}');
 
+// НЕТ_ТОКЕНОВ: generate_image падает — на балансе не хватает токенов (под ответом — карточка подписки).
+if (/НЕТ_ТОКЕНОВ/.test(prompt)) {
+  say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });
+  say({
+    type: 'assistant',
+    message: { content: [{ type: 'tool_use', id: 'img2', name: 'mcp__purpleschool__generate_image', input: { prompt: 'A cat' } }] },
+  });
+  say({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'img2',
+          is_error: true,
+          content: [{ type: 'text', text: 'Insufficient balance. Top up your subscription.' }],
+        },
+      ],
+    },
+  });
+  say({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: 'Не получилось: не хватает токенов.',
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+  process.exit(0);
+}
+
+// НАРИСУЙ_КОТА: «вызов» generate_image MCP PurpleSchool — если окно подключило сервер (--mcp-config) и ключ пришёл
+// в окружении. Ссылка на картинку — с того же фейкового сервера, что и MCP.
+if (/НАРИСУЙ_КОТА/.test(prompt)) {
+  const cfg = opt('--mcp-config');
+  const server = cfg ? JSON.parse(cfg).mcpServers?.purpleschool : null;
+  if (!server || !process.env.PURPLEFLOW_MEDIA_KEY) reply(`MCP не подключён: ${server ? 'нет ключа' : 'нет сервера'}`);
+  const auth = server.headers?.Authorization === 'Bearer ${PURPLEFLOW_MEDIA_KEY}' ? 'env' : 'плохой заголовок';
+  say({ type: 'system', subtype: 'init', model: 'fake', cwd: process.cwd() });
+  say({
+    type: 'assistant',
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'img1',
+          name: 'mcp__purpleschool__generate_image',
+          input: { prompt: 'A cozy orange cat', model: 'flux-3-klein' },
+        },
+      ],
+    },
+  });
+  say({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'img1',
+          content: [{ type: 'text', text: JSON.stringify({ status: 'completed', url: server.url.replace(/\/mcp$/, '/img/cat.png') }) }],
+        },
+      ],
+    },
+  });
+  say({ type: 'assistant', message: { content: [{ type: 'text', text: `Нарисовал кота (ключ: ${auth}).` }] } });
+  say({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: `Нарисовал кота (ключ: ${auth}).`,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+  process.exit(0);
+}
+
 // Визуальная проверка: настоящий pw из PATH (браузер уже открыт PurpleFlow) — снимок, телефонная ширина, скриншот.
 // ДЕРЖИ_БРАУЗЕР в задаче — подождать, пока тест смотрит на окно; вывод pw — в pw.log рядом с журналом вызовов.
 if (/QA-инженер в конвейере PurpleFlow/.test(sys)) {

@@ -31,6 +31,8 @@ const bridge: PurpleFlowBridge = {
     confirmEmailCode: (code) => ipcRenderer.invoke('account:confirmEmailCode', code),
     claimInitialBalance: () => ipcRenderer.invoke('account:claimInitialBalance'),
     trialModels: () => ipcRenderer.invoke('account:trialModels'),
+    mediaModels: () => ipcRenderer.invoke('account:mediaModels'),
+    paidBalance: () => ipcRenderer.invoke('account:paidBalance'),
     autoKey: () => ipcRenderer.invoke('account:autoKey'),
     overview: () => ipcRenderer.invoke('account:overview'),
     usage: (q) => ipcRenderer.invoke('account:usage', q),
@@ -87,6 +89,8 @@ const bridge: PurpleFlowBridge = {
       return () => ipcRenderer.removeListener('term:exit', h);
     },
   },
+  mediaFetch: (url) => ipcRenderer.invoke('media:fetch', url),
+  mediaSave: (data, name) => ipcRenderer.invoke('media:save', { data, name }),
   chatWebTab: (chatId, id, reqId) => ipcRenderer.invoke('chatweb:tab', chatId, id, reqId),
   onChatWeb(fn) {
     const open = (_: unknown, chatId: string, url: string, reqId: string) => fn({ type: 'open', chatId, url, reqId });

@@ -62,6 +62,13 @@ export function applyStep(a: ChatAnswer, st: AgentStep): void {
       if (!t) return;
       t.status = status;
       if (st.output) t.output = st.output;
+      if (st.ok && st.output) {
+        const images = mediaImages(t.text, st.output);
+        if (images.length) t.images = images;
+      }
+      // Не хватило токенов или нет подписки — под ответом предложение её оформить (одно на ответ).
+      if (!st.ok && st.output && mediaNeedsPlan(t.text, st.output) && !a.parts.some((p) => p.kind === 'offer' && p.offer === 'subscribe'))
+        a.parts.push({ kind: 'offer', offer: 'subscribe' });
       if (st.approval) t.approval = st.approval;
       if (!st.ok && st.output && SANDBOX_DENIED.test(st.output)) t.sandboxDenied = true;
       return;
@@ -119,3 +126,24 @@ export const partsText = (parts: ChatPart[]) =>
     .filter((p): p is Extract<ChatPart, { kind: 'text' }> => p.kind === 'text')
     .map((p) => p.text)
     .join('\n\n');
+
+/** Вызов, который отдаёт картинку: generate_image или get_image_task сервера purpleschool (claude и codex пишут его одинаково). */
+const MEDIA_CALL = /^purpleschool · (generate_image|get_image_task)\b/;
+
+/** Ссылки на готовые картинки из ответа MCP PurpleSchool; у прочих вызовов — пусто. */
+export function mediaImages(toolText: string, output: string): string[] {
+  if (!MEDIA_CALL.test(toolText)) return [];
+  // https; http — только с этой машины (локальный сервер разработки, e2e).
+  const urls = (output.match(/https?:\/\/[^\s"'<>()\]\\]+/g) ?? []).filter(
+    (u) => u.startsWith('https://') || /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u),
+  );
+  return [...new Set(urls.map((u) => u.replace(/[.,;:]+$/, '')))].slice(0, 4);
+}
+
+/** Генерация упала из-за баланса или подписки: формулировки сервера не зафиксированы — ищем по смыслу. */
+const NEEDS_PLAN =
+  /insufficient|not enough|balance|subscription|no active plan|quota|payment required|\b402\b|недостаточно|баланс|подписк|тариф|не хватает|пополн/i;
+
+export function mediaNeedsPlan(toolText: string, output: string): boolean {
+  return MEDIA_CALL.test(toolText) && NEEDS_PLAN.test(output);
+}

@@ -312,6 +312,22 @@ export async function trialModels(): Promise<AccountResult<TrialModel[] | null>>
 }
 
 /**
+ * Есть ли непробный баланс — подписка или купленный пакет: картинки рисуются только за него. Пробный бонус не считается:
+ * остаток кошелька больше бонуса — значит, что-то куплено.
+ */
+export async function paidBalance(): Promise<AccountResult<boolean>> {
+  const ov = await authed<{
+    balance?: { remainingUnits?: string; initialBalanceGrant?: { remainingUnits?: string } | null };
+    currentPlan?: unknown;
+  }>('GET', '/public/ai-proxy/overview');
+  if (!ov.ok) return ov;
+  if (ov.data?.currentPlan) return { ok: true, data: true };
+  const total = big(ov.data?.balance?.remainingUnits);
+  const bonus = big(ov.data?.balance?.initialBalanceGrant?.remainingUnits ?? undefined) ?? 0n;
+  return { ok: true, data: total !== null && total > bonus };
+}
+
+/**
  * После входа и регистрации агенты сразу работают через PurpleSchool: свой ключ уже есть — включаем его, нет — подставляем
  * активный ключ аккаунта, нет и такого — создаём новый.
  */

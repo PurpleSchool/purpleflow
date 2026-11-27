@@ -429,6 +429,8 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
   // Шаги ответа копятся здесь и уходят в окно не чаще FLUSH_MS.
   const acc: ChatAnswer = { parts: [] };
   const parts = acc.parts;
+  /** Карточка под ответом, если картинку попросили, а рисовать нечем (нет входа или картинки выключены). */
+  let offer: 'signup' | 'enable' | null = null;
   let timer: NodeJS.Timeout | null = null;
   const sync = () => {
     answer.parts = structuredClone(parts);
@@ -473,7 +475,11 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
     const browser = compact
       ? null
       : await chatBrowser(k, { id, dir: chatFilesDir(k, id), text: said, readOnly: !chat.edits }).catch(() => null);
-    const sys = systemPrompt(k, chat, cwd) + (browser ? `\n${browser.block}` : '');
+    // Картинки через MCP PurpleSchool — включены в настройках аккаунта; умеют подключать его claude и codex.
+    const media = !compact && s.media && (agent === 'claude' || agent === 'codex') ? s.media : undefined;
+    // Картинок нет, а человек просит нарисовать — под ответом карточка: войти в PurpleSchool или включить картинки.
+    if (!compact && !media && s.mediaOffer && wantsImage(said)) offer = s.mediaOffer;
+    const sys = systemPrompt(k, chat, cwd) + (browser ? `\n${browser.block}` : '') + (media ? `\n\n${k.prompts.raw('chat-media.md')}` : '');
     const images = attachments.filter(isImageFile);
     const others = attachments.filter((f) => !isImageFile(f));
     let prompt = (session ? '' : historyBlock(prevMessages)) + (text.trim() || 'Посмотри вложения.');
@@ -500,6 +506,7 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
       onOutput: () => {},
       onStep,
       proxy: s.proxy.baseUrl ? s.proxy : undefined,
+      media,
       userConfig: s.userConfig,
       addDirs: [...dirs, ...(attachments.length ? [path.dirname(attachments[0])] : []), ...(browser ? [browser.dir] : [])].filter(
         (d, i, all) => all.indexOf(d) === i,
@@ -623,6 +630,7 @@ async function turn(k: Kernel, chat: ChatFile, batch: ChatMessage[], compact = f
     });
   // Финальный ответ: если текста не было (ошибка до старта или codex без событий), берём итоговый текст.
   if (!parts.some((p) => p.kind === 'text') && res.text.trim()) parts.push({ kind: 'text', text: res.text.trim() });
+  if (offer && !res.stopped) parts.push({ kind: 'offer', offer });
   settleParts(parts);
   sync();
   answer.pending = false;
@@ -854,4 +862,11 @@ export async function listChatSkills(k: Kernel, projectPath?: string): Promise<C
     if (!tracked.has(rel)) s.untracked = true;
   }
   return skills;
+}
+
+/** Человек просит нарисовать картинку — по словам сообщения (рисовать без MCP агенту нечем, предлагаем вход или включение). */
+export function wantsImage(text: string): boolean {
+  return /нарису|нарисова|(сгенерир|созда|сдела)\S*\s+(мне\s+)?(картин|изображени|иконк|логотип|обложк|иллюстрац|аватар|баннер|постер)|\bdraw\b|generate\s+(an?\s+)?(image|picture|icon|logo|illustration)/i.test(
+    text,
+  );
 }

@@ -581,7 +581,7 @@ test('боковая панель: «Проекты» раскрывает по�
   }
 });
 
-test('чат: «Указать элемент» в браузере вставляет описание элемента в поле ввода', async () => {
+test('чат: «Указать элемент» в браузере вставляет чип элемента, агенту уходит его описание', async () => {
   const page0 = `<!doctype html><html><body style="margin:0;font:16px sans-serif">
     <main><section class="hero"><a class="btn btn-primary" href="/signup" style="display:inline-block;margin:120px;padding:20px 40px;background:#fcc">Создать</a></section></main>
     <script>document.querySelector('a').addEventListener('click', () => { document.title = 'clicked'; });</script>
@@ -620,14 +620,22 @@ test('чат: «Указать элемент» в браузере вставл
     await page.mouse.move(vb.x + 160, vb.y + 145);
     await page.mouse.click(vb.x + 160, vb.y + 145);
 
-    await expect(input).toHaveValue(/^Сделай кнопку синей\n\nЭлемент на странице 127\.0\.0\.1:\d+: <a\.btn\.btn-primary> «Создать»\n/);
-    const value = await input.inputValue();
-    expect(value).toContain('- селектор: main > section.hero > a.btn.btn-primary');
-    expect(value).toContain('- ссылка: /signup');
-    expect(value.endsWith('\n\n')).toBe(true);
+    // В поле — короткий чип элемента, курсор после него: можно дописать просьбу.
+    await expect(input).toHaveValue('Сделай кнопку синей ⌖a «Создать» ');
+    await expect(page.locator('.compose-chip.is-pick')).toHaveText('⌖a «Создать»');
     await expect(side.getByText(/Наведите на элемент/)).toBeHidden();
     // Клик ушёл в выбор, а не в обработчик страницы.
     expect(await view.evaluate((w: Electron.WebviewTag) => w.getTitle())).not.toBe('clicked');
+    // Агенту — полное описание элемента; в пузыре сообщения — только чип.
+    await input.press('Enter');
+    await expect.poll(() => box.calls().at(-1)?.prompt ?? '').toContain('— Элементы со страницы —');
+    const prompt = box.calls().at(-1)!.prompt;
+    expect(prompt).toMatch(/Элемент на странице 127\.0\.0\.1:\d+: <a\.btn\.btn-primary> «Создать»/);
+    expect(prompt).toContain('- селектор: main > section.hero > a.btn.btn-primary');
+    expect(prompt).toContain('- ссылка: /signup');
+    const bubble = page.locator('.chat-msg.is-user').last();
+    await expect(bubble.locator('.msg-chip.is-pick')).toHaveText('⌖a «Создать»');
+    await expect(bubble).not.toContainText('Элементы со страницы');
   } finally {
     await quit(l);
     box.cleanup();

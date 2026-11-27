@@ -166,8 +166,55 @@ export function formatPick(p: PickedElement): string {
   return lines.join('\n');
 }
 
-/** Вставить описание в текст поля: отдельным абзацем, курсор — после, чтобы сразу дописать просьбу. */
-export function insertPick(text: string, pick: string): string {
+/** Знак элемента в поле ввода: «⌖PrimaryButton «Продолжить»» — чип, а полное описание уходит агенту при отправке. */
+export const PICK_MARK = '⌖';
+/** Раздел с полными описаниями в конце сообщения: агент читает его, а пузырь сообщения прячет. */
+export const PICKS_HEADER = '— Элементы со страницы —';
+
+/** Полные описания выбранных элементов по их метке — до отправки сообщения (и для подсказки на чипе). */
+const picked = new Map<string, string>();
+
+/** Короткая метка: самый внешний компонент (или тег) и видимый текст. */
+export function pickLabel(p: PickedElement): string {
+  const name = p.components?.at(-1) ?? p.tag;
+  const text = (p.text ?? '').replace(/\s+/g, ' ').trim();
+  return `${name}${text ? ` «${text.length > 28 ? `${text.slice(0, 27)}…` : text}»` : ''}`;
+}
+
+/** Элемент → токен для поля ввода; полное описание запоминаем до отправки. */
+export function pickToken(p: PickedElement): string {
+  const label = pickLabel(p);
+  picked.set(label, formatPick(p));
+  return `${PICK_MARK}${label}`;
+}
+
+/** Токены элементов в тексте: «⌖Имя» и, если есть, « «текст»». */
+export const PICK_RE = new RegExp(`${PICK_MARK}[^\\s«${PICK_MARK}]+(?: «[^»\\n]*»)?`, 'g');
+
+/** Вставить токен в текст поля — в конец через пробел, курсор после: сразу дописать просьбу. */
+export function insertPick(text: string, token: string): string {
   const before = text.replace(/\s+$/, '');
-  return `${before ? `${before}\n\n` : ''}${pick}\n\n`;
+  return `${before ? `${before} ` : ''}${token} `;
+}
+
+/** Перед отправкой: к тексту с токенами — полные описания элементов, чтобы агент нашёл их в коде. */
+export function expandPicks(text: string): string {
+  const blocks: string[] = [];
+  for (const m of new Set(text.match(PICK_RE) ?? [])) {
+    const full = picked.get(m.slice(PICK_MARK.length));
+    if (full) blocks.push(`${m}:\n${full}`);
+  }
+  return blocks.length ? `${text}\n\n${PICKS_HEADER}\n${blocks.join('\n\n')}` : text;
+}
+
+/** Отправленное сообщение: текст без раздела описаний и описания по меткам — для подсказки на чипе. */
+export function splitPicks(text: string): { text: string; details: Map<string, string> } {
+  const i = text.indexOf(`\n\n${PICKS_HEADER}\n`);
+  if (i < 0) return { text, details: new Map() };
+  const details = new Map<string, string>();
+  for (const block of text.slice(i + PICKS_HEADER.length + 3).split(/\n\n(?=⌖)/)) {
+    const nl = block.indexOf(':\n');
+    if (block.startsWith(PICK_MARK) && nl > 0) details.set(block.slice(PICK_MARK.length, nl), block.slice(nl + 2));
+  }
+  return { text: text.slice(0, i), details };
 }

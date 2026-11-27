@@ -13,6 +13,8 @@ export interface PublicSettings {
   toolPaths: Partial<Record<ToolName, string>>;
   /** enabled — ключ подставляется агентам; выключенный ключ хранится, но не используется. */
   proxy: { baseUrl: string; codexBaseUrl: string; hasKey: boolean; enabled: boolean };
+  /** MCP PurpleSchool для картинок, видео и озвучки в чате (нужны вход и ключ). */
+  media: { enabled: boolean };
   models: Models;
   efforts: Efforts;
   agents: Record<Role, AgentKind> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
@@ -42,6 +44,7 @@ export interface PublicSettings {
 export interface SettingsPatch {
   toolPaths?: Partial<Record<ToolName, string>>;
   proxy?: { baseUrl?: string; codexBaseUrl?: string; apiKey?: string; enabled?: boolean };
+  media?: { enabled?: boolean };
   models?: Partial<Models>;
   efforts?: Efforts;
   agents?: Partial<Record<Role, AgentKind>> & { visual?: AgentKind; manager?: AgentKind; scan?: AgentKind };
@@ -112,6 +115,11 @@ export interface InitialBalance {
   grant: InitialBalanceGrant | null;
 }
 export type TrialModel = InitialBalance['offer']['models'][number];
+/** Модель картинок MCP PurpleSchool; price — цена картинки 1K в кредитах, если сервер её отдал. */
+export interface MediaModel {
+  id: string;
+  price?: number;
+}
 export interface InitialBalanceGrant {
   grantId: number;
   initialUnits: string;
@@ -160,6 +168,10 @@ export interface AccountApi {
   claimInitialBalance(): Promise<AccountResult<InitialBalanceGrant>>;
   /** На балансе только пробные токены и нет подписки — модели программы; иначе null. */
   trialModels(): Promise<AccountResult<TrialModel[] | null>>;
+  /** Модели картинок MCP PurpleSchool по ключу аккаунта (для настроек). */
+  mediaModels(): Promise<AccountResult<{ models: MediaModel[]; default: string | null }>>;
+  /** Есть ли непробный баланс (подписка или пакет): картинки рисуются только за него. */
+  paidBalance(): Promise<AccountResult<boolean>>;
 }
 
 export type CoreMethod = keyof CoreApi;
@@ -316,6 +328,10 @@ export interface PurpleFlowBridge {
   onPreviewNewTab(fn: (fromId: number, url: string) => void): () => void;
   /** Браузер чата: вкладка (webview) готова — мост отдаёт её агенту; возвращает её id в CDP. */
   chatWebTab(chatId: string, webContentsId: number, reqId?: string): Promise<string | null>;
+  /** Картинка из ответа MCP PurpleSchool по https-ссылке — байтами (CSP окна не пускает внешние картинки). */
+  mediaFetch(url: string): Promise<{ mime: string; data: Uint8Array } | null>;
+  /** Сохранить картинку из чата через системный диалог; путь к файлу или null — отменили. */
+  mediaSave(data: Uint8Array, name: string): Promise<string | null>;
   /** Терминал панели чата: оболочка пользователя в PTY (main-процесс). */
   terminal: {
     open(o: { cwd: string; cols: number; rows: number }): Promise<number>;

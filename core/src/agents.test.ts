@@ -660,3 +660,23 @@ test('claudeInput: на Windows системный промпт — в stdin, в
   assert.match(win.prompt, /^строка 1\nстрока 2[\s\S]*задача$/);
   assert.deepEqual(claudeInput({ prompt: 'задача' }, 'win32'), { prompt: 'задача', systemPrompt: undefined });
 });
+
+test('MCP PurpleSchool для картинок: адрес — в аргументах claude и codex, ключ — только в окружении', () => {
+  const media = { url: 'https://app.purpleschool.ru/api-v2/mcp', key: 'ppk_secret' };
+  const args = claudeArgs({ media });
+  const cfg = JSON.parse(args[args.indexOf('--mcp-config') + 1]);
+  assert.deepEqual(cfg.mcpServers.purpleschool, {
+    type: 'http',
+    url: media.url,
+    headers: { Authorization: 'Bearer ${PURPLEFLOW_MEDIA_KEY}' },
+  });
+  assert.ok(!args.join(' ').includes('ppk_secret'), 'ключ не в аргументах — их видно в списке процессов');
+  assert.equal(claudeEnv({ env: {}, media }).PURPLEFLOW_MEDIA_KEY, 'ppk_secret');
+  assert.ok(!claudeArgs({}).includes('--mcp-config'));
+
+  const cx = codexArgs({ cwd: '/w', sandbox: 'read-only', media }, { lastFile: '/l' }).join(' ');
+  assert.match(cx, /mcp_servers\.purpleschool\.url="https:\/\/app\.purpleschool\.ru\/api-v2\/mcp"/);
+  assert.match(cx, /mcp_servers\.purpleschool\.bearer_token_env_var="PURPLEFLOW_MEDIA_KEY"/);
+  assert.match(cx, /mcp_servers\.purpleschool\.tools\.generate_image\.approval_mode="approve"/);
+  assert.ok(!cx.includes('ppk_secret'));
+});

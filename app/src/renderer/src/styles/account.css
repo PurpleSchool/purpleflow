@@ -1417,3 +1417,329 @@
   gap: var(--s-2);
   align-items: center;
 }
+
+/* Картинки, видео и озвучка: переключатель MCP PurpleSchool и модели по ключу аккаунта. */
+.acc-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.acc-media.is-on .acc-state {
+  background: var(--ok-wash);
+  color: var(--ok);
+}
+.acc-media-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.acc-media-kinds span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  background: var(--bg-3);
+}
+.acc-media-kinds span.is-on {
+  color: var(--text-1);
+  background: var(--bg-5);
+}
+.acc-media-kinds em {
+  font-style: normal;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--bg-4);
+  color: var(--text-3);
+  font-size: 11px;
+}
+.acc-media-kinds span.is-on em {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+.acc-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.acc-media-grid li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s-4);
+  border-radius: var(--r-m);
+  background: var(--bg-3);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.acc-media-top {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+  font-size: var(--fs-12);
+}
+.acc-media-default {
+  margin-left: auto;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+  font-size: 11px;
+}
+.acc-media-grid strong {
+  font-weight: 600;
+  font-size: var(--fs-13);
+}
+.acc-media-grid p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.acc-media-price {
+  margin-top: auto;
+  font: 500 12px var(--font-code);
+}
+.acc-media-grid code {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.acc-media-hint,
+.acc-media-error {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.acc-media-error {
+  color: var(--err);
+}
+
+/* До входа: картинки, которые даёт аккаунт, — компактно, под стартовым балансом. */
+.acc-media-promo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  margin-top: var(--s-6);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+}
+.acc-media-promo-head {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+}
+.acc-media-promo-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+.acc-media-promo-head strong {
+  font-weight: 600;
+  font-size: var(--fs-14, 14px);
+}
+.acc-media-promo-head p {
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.acc-media-promo-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.acc-media-promo-list li {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--r-m);
+  background: var(--bg-3);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.acc-media-promo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.acc-media-promo-text strong {
+  font-weight: 500;
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
+.acc-media-promo-text span {
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.acc-media-promo-soon {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+/* Плитка со знаком поставщика модели. */
+.vendor-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--bg-5);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-1);
+}
+.vendor-icon.is-s {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.vendor-icon b {
+  font-weight: 600;
+  font-size: var(--fs-13);
+}
+.acc-media-top {
+  gap: var(--s-3);
+}
+
+/* После входа без подписки: картинки рисуются по подписке — предложение её оформить. */
+.acc-media-plan {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-m);
+  background: var(--accent-wash);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.acc-media-plan > svg {
+  flex: none;
+  color: var(--accent-hi);
+}
+.acc-media-plan span {
+  flex: 1;
+}
+.acc-media-plan .btn {
+  flex: none;
+}
+
+/* Значок поставщика в списке (выбор модели картинки). */
+.vendor-icon.is-xs {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.vendor-icon.is-xs svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Модели грузятся: заглушки с мягким переливом, затем карточки проявляются по очереди. */
+.acc-media-grid .sk {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-4) 0%, var(--bg-5) 40%, var(--bg-4) 80%) 0 0 / 300% 100%;
+  animation: accShimmer 1.6s ease-in-out infinite;
+}
+.acc-media-grid .sk-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.acc-media-grid .sk-vendor {
+  width: 64px;
+  height: 10px;
+}
+.acc-media-grid .sk-name {
+  width: 58%;
+  height: 13px;
+  margin-top: 6px;
+}
+.acc-media-grid .sk-line {
+  width: 92%;
+  height: 10px;
+  margin-top: 4px;
+}
+.acc-media-grid .sk-line.is-short {
+  width: 64%;
+}
+.acc-media-grid .sk-code {
+  width: 100%;
+  height: 18px;
+  margin-top: auto;
+}
+.acc-media-skeleton {
+  min-height: 190px;
+}
+/* Длинное имя поставщика рядом с «по умолчанию» — многоточием, а не за край карточки. */
+.acc-media-top .muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-media-skeleton .acc-media-top {
+  margin-bottom: 2px;
+}
+.acc-media-kinds em.is-loading {
+  width: 18px;
+  height: 15px;
+  padding: 0;
+  background: linear-gradient(90deg, var(--bg-4) 0%, var(--bg-5) 40%, var(--bg-4) 80%) 0 0 / 300% 100%;
+  animation: accShimmer 1.6s ease-in-out infinite;
+}
+.acc-media-card {
+  animation: accCardIn 0.45s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.acc-media-plan {
+  animation: accCardIn 0.35s var(--ease) both;
+}
+@keyframes accShimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@keyframes accCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .acc-media-grid .sk,
+  .acc-media-kinds em.is-loading,
+  .acc-media-card,
+  .acc-media-plan {
+    animation: none;
+  }
+}

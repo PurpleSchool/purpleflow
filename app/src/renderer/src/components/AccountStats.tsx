@@ -6,7 +6,7 @@ import { Select } from './Dropdown';
 import { useStore } from '../lib/store';
 import { bridge } from '../lib/api';
 
-const PLANS_URL = 'https://purpleschool.ru/ai-for-code';
+export const PLANS_URL = 'https://purpleschool.ru/ai-for-code';
 
 type PeriodId = 'week' | 'month' | 'quarter' | 'year';
 const PERIODS: { id: PeriodId; label: string; bucket: UsageBucket }[] = [

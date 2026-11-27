@@ -1,9 +1,13 @@
 // «@» и «/» в поле ввода чата: список файлов проекта или скиллов над полем, выбор стрелками и Enter.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
-import { FileText, Sparkles } from 'lucide-react';
+import { FileText, ImagePlus, Sparkles } from 'lucide-react';
 import type { ChatSkill } from '@purpleflow/core';
 import { bridge } from '../lib/api';
 import { applyMention, rankFiles, rankSkills, tokenAt } from '../lib/mentions';
+import { GEN_COMMANDS, type GenMode } from '../components/ComposeGen';
+
+/** Значение пункта-команды в списке: отличаем от имени скилла. */
+const CMD = '\u0000cmd:';
 
 interface Item {
   value: string;
@@ -26,6 +30,8 @@ export function useMentions(o: {
   setText: (t: string) => void;
   input: RefObject<HTMLTextAreaElement | null>;
   projectPath?: string;
+  /** «/картинка» из подсказок: включить режим генерации (команда в текст не вставляется). */
+  onCommand?: (kind: GenMode['kind']) => void;
 }): {
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onInput: () => void;
@@ -34,7 +40,7 @@ export function useMentions(o: {
   /** Имена скиллов — для подсветки «/скилл» чипом в поле. */
   skillNames: ReadonlySet<string>;
 } {
-  const { text, setText, input, projectPath } = o;
+  const { text, setText, input, projectPath, onCommand } = o;
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   // Escape закрывает список, пока человек не продолжит печатать или не перейдёт к другому слову.
@@ -91,14 +97,27 @@ export function useMentions(o: {
       if (!items.length && !token.query) empty = 'В проекте нет файлов';
     }
   } else if (token?.kind === 'skill') {
-    if (!skills) empty = token.query ? null : 'Загружаю скиллы…';
-    else {
-      items = rankSkills(skills, token.query).map((s) => ({
-        value: s.name,
-        label: `/${s.name}`,
-        hint: s.description,
-        badge: s.source === 'project' ? 'проект' : undefined,
-      }));
+    // Встроенные команды генерации — первыми, если подходят к набранному.
+    const q = token.query.toLowerCase();
+    const commands: Item[] = GEN_COMMANDS.filter((c) => c.name.startsWith(q)).map((c) => ({
+      value: `${CMD}${c.name}`,
+      label: `/${c.name}`,
+      hint: c.hint,
+      badge: c.kind ? 'создать' : 'скоро',
+    }));
+    if (!skills) {
+      items = commands;
+      empty = token.query ? null : 'Загружаю скиллы…';
+    } else {
+      items = [
+        ...commands,
+        ...rankSkills(skills, token.query).map((s) => ({
+          value: s.name,
+          label: `/${s.name}`,
+          hint: s.description,
+          badge: s.source === 'project' ? 'проект' : undefined,
+        })),
+      ];
       if (!items.length && !token.query) empty = 'Скиллов нет. Добавьте их в .claude/skills проекта или в ~/.claude/skills';
     }
   }
@@ -119,6 +138,16 @@ export function useMentions(o: {
 
   const pick = (value: string) => {
     if (!token) return;
+    if (value.startsWith(CMD)) {
+      // Команда генерации: убираем «/картинка» из текста и включаем режим («скоро» — просто закрываем).
+      const cmd = GEN_COMMANDS.find((c) => `${CMD}${c.name}` === value);
+      const rest = text.slice(token.end).replace(/^ /, '');
+      pendingCaret.current = token.start;
+      setText(text.slice(0, token.start) + rest);
+      setCaret(token.start);
+      if (cmd?.kind) onCommand?.(cmd.kind);
+      return;
+    }
     const r = applyMention(text, token, value);
     pendingCaret.current = r.caret;
     setText(r.text);
@@ -173,7 +202,7 @@ export function useMentions(o: {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => pick(it.value)}
           >
-            {token.kind === 'file' ? <FileText size={14} /> : <Sparkles size={14} />}
+            {token.kind === 'file' ? <FileText size={14} /> : it.value.startsWith(CMD) ? <ImagePlus size={14} /> : <Sparkles size={14} />}
             <span className="chat-mention-label">{it.label}</span>
             {it.hint && <span className="chat-mention-hint">{it.hint}</span>}
             {it.badge && <span className="chat-mention-badge">{it.badge}</span>}
@@ -182,6 +211,7 @@ export function useMentions(o: {
       </div>
     ) : null;
 
-  const skillNames = useMemo(() => new Set((skills ?? []).map((s) => s.name)), [skills]);
+  // «/картинка» набрали руками — тоже чип.
+  const skillNames = useMemo(() => new Set([...(skills ?? []).map((s) => s.name), ...GEN_COMMANDS.map((c) => c.name)]), [skills]);
   return { onKeyDown, onInput, onCaret, menu, skillNames };
 }

@@ -124,3 +124,49 @@ test('settleParts: после хода вызовы без итога не «в�
     { kind: 'tool', id: 'ok', text: 'Read', status: 'ok' },
   ]);
 });
+
+test('applyStep: картинка от MCP PurpleSchool — ссылки в вызове; у других вызовов и при ошибке — нет', () => {
+  const a = build([
+    { kind: 'tool', id: 'g', text: 'purpleschool · generate_image A cozy cat' },
+    {
+      kind: 'tool_result',
+      id: 'g',
+      ok: true,
+      output: '{"status":"completed","url":"https://cdn.purpleschool.ru/ai/img/1.png?sig=abc","task_id":"t"}',
+    },
+    // Картинка дорисовалась позже — её отдаёт get_image_task.
+    { kind: 'tool', id: 'p', text: 'purpleschool · get_image_task' },
+    { kind: 'tool_result', id: 'p', ok: true, output: 'Done. Original: https://cdn.example.com/x.webp.' },
+    // Ссылка в выводе обычной команды — не картинка; ошибка генерации — тоже.
+    { kind: 'tool', id: 'b', text: 'Bash curl https://example.com/a.png' },
+    { kind: 'tool_result', id: 'b', ok: true, output: 'https://example.com/a.png' },
+    { kind: 'tool', id: 'e', text: 'purpleschool · generate_image x' },
+    { kind: 'tool_result', id: 'e', ok: false, output: 'Insufficient balance https://app.purpleschool.ru/pay' },
+  ]);
+  const images = a.parts.flatMap((p) => (p.kind === 'tool' ? [p.images] : []));
+  assert.deepEqual(images, [
+    ['https://cdn.purpleschool.ru/ai/img/1.png?sig=abc'],
+    ['https://cdn.example.com/x.webp'],
+    undefined,
+    undefined,
+  ]);
+});
+
+test('applyStep: генерация упала из-за баланса или подписки — карточка «Оформить подписку», одна на ответ', () => {
+  const a = build([
+    { kind: 'tool', id: 'g', text: 'purpleschool · generate_image cat' },
+    { kind: 'tool_result', id: 'g', ok: false, output: 'Insufficient balance: top up your subscription' },
+    { kind: 'tool', id: 'h', text: 'purpleschool · generate_image dog' },
+    { kind: 'tool_result', id: 'h', ok: false, output: 'Недостаточно токенов на балансе' },
+  ]);
+  assert.equal(a.parts.filter((p) => p.kind === 'offer').length, 1);
+  assert.ok(a.parts.some((p) => p.kind === 'offer' && p.offer === 'subscribe'));
+  // Другая ошибка генерации или чужой инструмент — без карточки.
+  const b = build([
+    { kind: 'tool', id: 'g', text: 'purpleschool · generate_image cat' },
+    { kind: 'tool_result', id: 'g', ok: false, output: 'Prompt is too long' },
+    { kind: 'tool', id: 'b', text: 'Bash npm i' },
+    { kind: 'tool_result', id: 'b', ok: false, output: 'insufficient permissions' },
+  ]);
+  assert.equal(b.parts.filter((p) => p.kind === 'offer').length, 0);
+});

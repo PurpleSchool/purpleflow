@@ -1,4 +1,5 @@
 // Подсказки в поле ввода чата: «@» — файл проекта, «/» — скилл или команда.
+import { PICK_RE } from './pickElement';
 import type { ChatSkill } from '@purpleflow/core';
 
 export interface MentionToken {
@@ -18,7 +19,7 @@ export function tokenAt(text: string, caret: number): MentionToken | null {
   const kind = word[0] === '@' ? 'file' : word[0] === '/' ? 'skill' : null;
   if (!kind) return null;
   // «/» — только имя скилла: путь вроде /usr/bin подсказку не открывает.
-  if (kind === 'skill' && !/^\/[\w:.-]*$/.test(word)) return null;
+  if (kind === 'skill' && !/^\/[\w\u0400-\u04ff:.-]*$/.test(word)) return null;
   let end = caret;
   while (end < text.length && !/\s/.test(text[end])) end++;
   return { kind, query: word.slice(1), start, end };
@@ -94,7 +95,7 @@ export const PATH_DRAG = 'application/x-purpleflow-path';
 /** Кусок текста поля ввода: обычный текст или упоминание, которое рисуется чипом. */
 export interface MentionSegment {
   text: string;
-  kind?: 'file' | 'skill';
+  kind?: 'file' | 'skill' | 'pick';
 }
 
 /**
@@ -102,6 +103,20 @@ export interface MentionSegment {
  * в начале строки или после пробела. Знак препинания в конце слова остаётся обычным текстом.
  */
 export function mentionSegments(text: string, skills: ReadonlySet<string>): MentionSegment[] {
+  // Элементы страницы («⌖PrimaryButton «Продолжить»») — чипами; текст между ними — как раньше.
+  const out: MentionSegment[] = [];
+  let at = 0;
+  for (const m of text.matchAll(PICK_RE)) {
+    const start = m.index ?? 0;
+    if (start > at) out.push(...plainSegments(text.slice(at, start), skills));
+    out.push({ text: m[0], kind: 'pick' });
+    at = start + m[0].length;
+  }
+  if (at < text.length) out.push(...plainSegments(text.slice(at), skills));
+  return out;
+}
+
+function plainSegments(text: string, skills: ReadonlySet<string>): MentionSegment[] {
   const out: MentionSegment[] = [];
   let last = 0;
   for (const m of text.matchAll(/(^|\s)([@/][^\s]+)/g)) {

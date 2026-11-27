@@ -27,6 +27,9 @@ export const ACCOUNT_API = (process.env.PURPLEFLOW_API_URL || 'https://app.purpl
  * claude — Anthropic API, codex — OpenAI Responses API. Переопределяются переменными PURPLEFLOW_PROXY_URL и
  * PURPLEFLOW_CODEX_PROXY_URL или полями baseUrl и codexBaseUrl в settings.json. Без аккаунта адресов по умолчанию нет.
  */
+/** MCP PurpleSchool: картинки (а позже видео и озвучка) по ключу аккаунта — тот же api-v2, что у аккаунта и прокси. */
+export const MEDIA_MCP_URL = process.env.PURPLEFLOW_MEDIA_MCP_URL || `${ACCOUNT_API}/mcp`;
+
 export const DEFAULT_PROXY = {
   claude: process.env.PURPLEFLOW_PROXY_URL || (ACCOUNT_ENABLED ? `${ACCOUNT_API}/public/ai-proxy/anthropic` : ''),
   codex: process.env.PURPLEFLOW_CODEX_PROXY_URL || (ACCOUNT_ENABLED ? `${ACCOUNT_API}/public/ai-proxy/openai/v1` : ''),

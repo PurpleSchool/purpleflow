@@ -95,6 +95,10 @@ export interface CoreSettings {
   };
   models: Models;
   efforts?: Efforts;
+  /** MCP PurpleSchool для картинок, видео и озвучки в чате: есть, когда включён в настройках аккаунта и есть ключ. */
+  media?: { url: string; key: string };
+  /** Картинок нет — что предложить, если человек просит нарисовать: войти в PurpleSchool или включить их в настройках. */
+  mediaOffer?: 'signup' | 'enable';
   /** Агент на роль; по умолчанию планировщик и исполнитель — claude, ревьюер — codex. */
   agents?: Agents;
   /** Какими CLI пользоваться: выключенный не запускается, даже если установлен. Пусто или не задано — claude и codex. */
