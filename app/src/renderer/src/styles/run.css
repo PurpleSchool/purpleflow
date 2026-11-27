@@ -264,6 +264,34 @@
   line-height: 1.6;
 }
 
+/*
+ * Баннер прогона с длинным текстом (предупреждения, ошибка стадии) не растягивает экран:
+ * текст прокручивается внутри — не выше 40% высоты окна, а значки и кнопки остаются на виду.
+ */
+.run-main .banner {
+  flex: none;
+  align-items: flex-start;
+  max-height: min(40vh, 360px);
+  overflow: hidden;
+}
+/* Значок и кнопка — по верхнему краю, а не по центру высокой колонки: иначе «Скрыть» уезжает вниз. */
+.run-main .banner > svg,
+.run-main .banner > button {
+  flex: none;
+  align-self: flex-start;
+}
+/* Высота — во весь баннер, иначе содержимое просто обрезается и прокручивать нечего. */
+.run-main .banner > .banner-body {
+  flex: 1;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding-right: var(--s-2);
+}
+
 .b-coral > svg {
   color: var(--err);
 }

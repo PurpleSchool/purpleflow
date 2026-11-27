@@ -299,6 +299,49 @@ test('длинное описание задачи раскрывается с �
   await expect(l.page.getByText('Пункт 120:', { exact: false })).toBeInViewport();
 });
 
+test('предупреждения: длинный текст прокручивается внутри баннера, «Скрыть» на виду', async () => {
+  const page = l.page;
+  await startRun(page, 'Быстрая правка', 'Добавь функцию mul в src/math.js');
+  await expect(accept(page)).toBeVisible({ timeout: 60_000 });
+
+  // Два длинных предупреждения — как их пишет ядро, когда не удались зависимости и артефакты.
+  const [summary] = await page.evaluate(() => (window as unknown as { purpleflow: PurpleFlowBridge }).purpleflow.core.listRuns());
+  const backup = path.join(box.profile, 'data', 'runs', `${summary.id}.json`);
+  const saved = JSON.parse(fs.readFileSync(backup, 'utf8')) as { warnings?: { at: string; text: string }[] };
+  const lines = (n: number) =>
+    Array.from({ length: 12 }, (_, i) => `    строка ${n}.${i + 1}: путь ~/проекты/очень/длинный/путь/agent.log`).join('\n');
+  saved.warnings = [
+    { at: new Date().toISOString(), text: `Первое предупреждение — конец первого\n${lines(1)}` },
+    { at: new Date().toISOString(), text: `Второе предупреждение — конец второго\n${lines(2)}` },
+  ];
+  fs.writeFileSync(backup, JSON.stringify(saved, null, 2) + '\n');
+
+  // Баннер живёт над вкладками: он виден и в «Логе», не только в «Таймлайне».
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByText('Добавь функцию mul', { exact: false }).first().click();
+  const banner = page.locator('.banner.warnings');
+  await expect(banner).toBeVisible();
+  await page.getByRole('tab', { name: 'Лог' }).click();
+  await expect(banner).toBeVisible();
+
+  // Текст целиком доступен: прокрутка внутри баннера...
+  const body = banner.locator('.banner-body');
+  await expect.poll(() => body.evaluate((el) => el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY === 'auto')).toBe(true);
+  // ...а баннер и кнопка «Скрыть» не уезжают за край окна.
+  const viewport = page.viewportSize() ?? (await page.evaluate(() => ({ width: innerWidth, height: innerHeight })));
+  const rect = await banner.boundingBox();
+  expect(rect!.y + rect!.height).toBeLessThanOrEqual(viewport.height);
+  const hide = banner.getByRole('button', { name: 'Скрыть' });
+  await expect(hide).toBeInViewport({ ratio: 1 });
+
+  await body.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(page.getByText(/конец второго/)).toBeInViewport();
+  if (process.env.PURPLEFLOW_SHOTS) await page.screenshot({ path: path.join(box.root, '..', 'pf-run-warnings.png') });
+
+  await hide.click();
+  await expect(banner).toHaveCount(0);
+});
+
 test('ревью кода: незакоммиченные правки — замечания на разбор, исправление уходит в чат, проект не тронут', async () => {
   const file = path.join(box.repo, 'src/math.js');
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8') + 'export const sub = (a, b) => a + b;\n');

@@ -100,7 +100,7 @@ function CancelledBanner({ run }: { run: RunFile }) {
   return (
     <div className="banner b-quiet">
       <X size={18} />
-      <div>
+      <div className="banner-body">
         <strong>Прогон отменён</strong>
         <p>
           {gone
@@ -126,7 +126,7 @@ export function Banner({ run }: { run: RunFile }) {
     return (
       <div className="banner b-quiet">
         <Clock3 size={18} />
-        <div>
+        <div className="banner-body">
           <strong>В очереди</strong>
           <p>
             Начнётся сам, когда освободится место — лимит одновременных прогонов задаётся в «Настройки → Модели». «Запустить сейчас» — без
@@ -142,7 +142,7 @@ export function Banner({ run }: { run: RunFile }) {
     return (
       <div className={`banner ${failed ? 'b-coral' : 'b-amber'}`}>
         {failed ? <ShieldAlert size={18} /> : <Hand size={18} />}
-        <div>
+        <div className="banner-body">
           <strong>{failed ? 'Стадия остановлена из-за ошибки' : 'Прогон остановлен'}</strong>
           <p>{run.message}</p>
         </div>
@@ -153,7 +153,7 @@ export function Banner({ run }: { run: RunFile }) {
     return (
       <div className="banner b-amber">
         <Hand size={18} />
-        <div>
+        <div className="banner-body">
           <strong>Нужно ваше решение</strong>
           <p>{run.message}</p>
         </div>
@@ -179,7 +179,7 @@ export function LongRunBanner({ run, limitMin }: { run: RunFile; limitMin: numbe
   return (
     <div className="banner b-amber">
       <Clock3 size={18} />
-      <div>
+      <div className="banner-body">
         <strong>
           {STAGE_TITLES_RU[a.stage] ?? 'Агент'} идёт уже {min} мин — дольше обычного
         </strong>
@@ -546,9 +546,10 @@ export function Warnings({ run }: { run: RunFile }) {
   return (
     <div className="banner b-quiet warnings">
       <TriangleAlert size={18} />
-      <div>
+      {/* Текст предупреждений бывает длинным: он прокручивается внутри баннера, «Скрыть» остаётся на виду. */}
+      <div className="banner-body" tabIndex={0}>
         <strong>{list.length === 1 ? 'Предупреждение' : `Предупреждений: ${list.length}`}</strong>
-        {list.slice(-3).map((w, i) => (
+        {list.map((w, i) => (
           <p key={i}>{w.text}</p>
         ))}
       </div>
