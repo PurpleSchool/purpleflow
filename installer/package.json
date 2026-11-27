@@ -1,7 +1,7 @@
 {
   "name": "@purpleflow/installer",
   "productName": "Установщик PurpleFlow",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Установщик PurpleFlow: ставит приложение и всё, что ему нужно, без терминала",
   "author": "PurpleSchool",
   "homepage": "https://purpleschool.ru",
